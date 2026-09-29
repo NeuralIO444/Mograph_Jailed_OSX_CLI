@@ -13,7 +13,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Fail on unsanitized strings
         run: |
-          if grep -rliE "upco|\bnbc\b|comcast|peacock|nbcuniversal" . --exclude-dir=.git; then
+          # NB: .github is excluded because this workflow file itself
+          # contains the guard patterns as data.
+          if grep -rliE "upco|\bnbc\b|comcast|peacock|nbcuniversal" . --exclude-dir=.git --exclude-dir=.github; then
             echo "::error::Unsanitized string found in the tree"
             exit 1
           fi
@@ -39,8 +41,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Install zsh
-        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Install zsh and ffmpeg
+        # ffmpeg is test-fixture tooling only (generates sample media for
+        # run_m3.sh); it is not a MographJailed runtime dependency.
+        run: sudo apt-get update && sudo apt-get install -y zsh ffmpeg
       - name: Portable test suite
         run: bash tests/run_all.sh
       - name: Protocol fuzz (1000 cases)
