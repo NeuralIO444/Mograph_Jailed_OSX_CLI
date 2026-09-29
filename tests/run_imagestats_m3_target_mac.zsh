@@ -144,7 +144,7 @@ else
   skip_test compare second_frame_unavailable
 fi
 
-# 7. Rejects non-PNG file
+# 7. Rejects non-PNG file (error responses exit nonzero by design; check the JSON, not the exit code)
 echo "not a png" > "$TMP/fake.txt"
 cat > "$TMP/stats_bad.req" <<REQ
 MOGRAPHJAILED_REQUEST 1
@@ -152,11 +152,11 @@ requestId=imagestats-m3-stats-bad
 command=image.stats
 arg.path=$(b64 "$TMP/fake.txt")
 REQ
-if run_req stats_bad && /usr/bin/jq -e '.ok==false' "$TMP/stats_bad.json" >/dev/null; then
-  pass_test rejection non_png_rejected
-else
+if run_req stats_bad; then
   fail_test rejection non_png_accepted
-fi
+elif /usr/bin/jq -e '.ok==false' "$TMP/stats_bad.json" >/dev/null; then
+  pass_test rejection non_png_rejected
+else fail_test rejection non_png_unexpected_output; fi
 
 # 8. Rejects missing file
 cat > "$TMP/stats_missing.req" <<REQ
@@ -165,11 +165,11 @@ requestId=imagestats-m3-stats-missing
 command=image.stats
 arg.path=$(b64 "/nonexistent/image.png")
 REQ
-if run_req stats_missing && /usr/bin/jq -e '.ok==false' "$TMP/stats_missing.json" >/dev/null; then
-  pass_test rejection missing_file_rejected
-else
+if run_req stats_missing; then
   fail_test rejection missing_file_accepted
-fi
+elif /usr/bin/jq -e '.ok==false' "$TMP/stats_missing.json" >/dev/null; then
+  pass_test rejection missing_file_rejected
+else fail_test rejection missing_file_unexpected_output; fi
 
 # 9. Source unchanged: sha256 before/after
 BEFORE=$(/usr/bin/shasum -a 256 "$FRAME_A" | /usr/bin/awk '{print $1}')
