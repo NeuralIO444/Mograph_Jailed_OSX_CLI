@@ -3703,6 +3703,10 @@ handle_project_snapshot() {
   is_absolute_path "$_path" && is_absolute_path "$_outdir" || { set_error "INVALID_PATH" "Snapshot path and output directory must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Snapshot target must be a regular file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Snapshot target is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
+  case "${_path##*/}" in
+    *.[aA][eE][pP]) ;;
+    *) set_error "INVALID_TARGET" "Snapshot target must be an After Effects project (.aep)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;;
+  esac
   [ -d "$_outdir" ] || { set_error "OUTPUT_UNAVAILABLE" "Snapshot output directory does not exist."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
   [ -w "$_outdir" ] || { set_error "OUTPUT_UNAVAILABLE" "Snapshot output directory is not writable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
   cap_available stat && cap_available uname && cap_available cp || { set_error "UNSUPPORTED" "Project snapshot requires stock macOS stat/uname/cp capabilities."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
@@ -3715,8 +3719,8 @@ handle_project_snapshot() {
   [ -n "$_sha_value" ] || { set_error "UNSUPPORTED" "No approved native SHA-256 utility is available."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
 
   _base=${_path##*/}
-  _stem=${_base%.aep}
-  [ -n "$_stem" ] || _stem="project"
+  _stem="${_base%.*}"
+  [ -n "$_stem" ] && [ "$_stem" != "$_base" ] || _stem="project"
   _latest_file="$_outdir_real/$_stem.latest.json"
   if [ -f "$_latest_file" ]; then
     _prev_sha=$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sha256",""))' "$_latest_file" 2>/dev/null || printf '')
@@ -3788,7 +3792,7 @@ PY_SNAPSHOT_RECEIPT
   printf ',"hashSource":'; json_quote "$_sha_source"
   printf ',"snapshotCreated":true,"snapshotPath":'; json_quote "$_dest"
   printf ',"receiptPath":'; json_quote "$_receipt"
-  printf ',"bytesCopied":%s' "$_bytes"
+  printf ',"bytesCopied":%s' "${_bytes:-0}"
   printf ',"cloneUsed":'; $_clone_used && printf 'true' || printf 'false'
   printf ',"sourceUnchanged":true}'
   emit_success_end

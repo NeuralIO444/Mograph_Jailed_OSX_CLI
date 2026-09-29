@@ -170,6 +170,12 @@ check test -f "$SNAP3"
 # missing source -> error, nothing written
 run_req "$(req project.snapshot "path=/nope/missing.aep" "output=$TMP/versions")" "$TMP/snap-bad.json" >/dev/null
 check jq -e '.ok==false' "$TMP/snap-bad.json"
+# non-.aep source -> rejected before any copy
+printf 'not-a-project' > "$TMP/notes.txt"
+N2=$(ls "$TMP"/versions/*.aep | wc -l)
+run_req "$(req project.snapshot "path=$TMP/notes.txt" "output=$TMP/versions")" "$TMP/snap-txt.json" >/dev/null
+check jq -e '.ok==false and .error.code=="INVALID_TARGET"' "$TMP/snap-txt.json"
+check test "$(ls "$TMP"/versions/*.aep | wc -l)" = "$N2"
 
 # --- dashboard (btop-style, read-only) ---
 DASH_TMP=$(mktemp -d)
@@ -186,6 +192,14 @@ check printf '%s' "$DASH_OUT" | grep -q "PROJECT VITALS"
 check printf '%s' "$DASH_OUT" | grep -q "EXPRESSION LINT"
 check printf '%s' "$DASH_OUT" | grep -q "WATCHER"
 check printf '%s' "$DASH_OUT" | grep -q "READ-ONLY"
+# every rendered line must fit the terminal width (no misaligned borders)
+check python3 - "$DASH_OUT" <<'PY_ALIGN'
+import re, sys, unicodedata
+def w(s):
+    return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
+bad = [l for l in sys.argv[1].splitlines() if w(l) > 100]
+sys.exit(1 if bad else 0)
+PY_ALIGN
 # dashboard must not modify the versions dir (read-only Tier 0)
 check test "$(ls "$DASH_TMP/versions" | wc -l)" = "2"
 rm -rf "$DASH_TMP"

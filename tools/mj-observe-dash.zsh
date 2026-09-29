@@ -71,6 +71,19 @@ FG = {
 }
 BG_BAR = ESC + "48;5;236m"
 
+def disp_width(s):
+    # Terminal cell width: East Asian Wide/Fullwidth count as 2, all else 1.
+    # Matches the common Western-locale rendering of box-drawing/ambiguous chars.
+    import unicodedata
+    w = 0
+    for ch in s:
+        w += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return w
+
+def strip_ansi(s):
+    import re
+    return re.sub(r"\x1b\[[0-9;]*m", "", s)
+
 SPARKS = "▁▂▃▄▅▆▇█"
 
 def cli_request(command, args):
@@ -212,24 +225,23 @@ def bar(frac, width):
 def hline(width, left="├", right="┤", title=""):
     if title:
         t = " %s " % title
-        fill = width - len(left) - len(right) - len(t)
-        return FG["dark"] + left + "─" * 2 + FG["teal"] + BOLD + t + FG["dark"] + "─" * (fill - 2) + right + RESET
-    return FG["dark"] + left + "─" * (width - 2) + right + RESET
+        fill = width - disp_width(left) - disp_width(right) - disp_width(strip_ansi(t))
+        return FG["dark"] + left + "─" * 2 + FG["teal"] + BOLD + t + FG["dark"] + "─" * max(0, fill - 2) + right + RESET
+    return FG["dark"] + left + "─" * max(0, width - disp_width(left) - disp_width(right)) + right + RESET
 
 def render(d, W, H):
     L = []
     def pad(s, w):
-        # strip ANSI for width math (approx: assume no wide chars in content)
-        import re
-        plain = re.sub(r"\x1b\[[0-9;]*m", "", s)
-        return s + " " * max(0, w - len(plain))
+        # pad by display cells, not codepoints, so wide chars stay aligned
+        plain = strip_ansi(s)
+        return s + " " * max(0, w - disp_width(plain))
     inner = W - 2
     # header
     L.append(FG["dark"] + "╭" + "─" * inner + "╮" + RESET)
     clock = time.strftime("%H:%M:%S")
     title = "%s%s MOGRAPHJAILED %s·%s TIER 0 OBSERVER " % (BOLD, FG["cyan"], FG["grey"], FG["cyan"])
     badge = "%s%s READ-ONLY %s" % (FG["dark"], BG_BAR, RESET)
-    L.append("│" + pad(title + badge, inner - len(clock) - 1) + FG["grey"] + clock + RESET + "│")
+    L.append("│" + pad(title + badge, inner - disp_width(strip_ansi(clock))) + FG["grey"] + clock + RESET + "│")
     L.append(hline(W, "├", "┤", "PROJECT SNAPSHOTS (%d)" % len(d["projects"])))
     if not d["projects"]:
         L.append("│" + pad(DIM + "  no snapshots yet — run project.snapshot or install the watcher" + RESET, inner) + "│")
