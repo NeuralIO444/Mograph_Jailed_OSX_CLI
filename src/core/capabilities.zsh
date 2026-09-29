@@ -25,6 +25,7 @@ cap_path() {
     mdfind) printf '/usr/bin/mdfind' ;;
     xattr) printf '/usr/bin/xattr' ;;
     osascript) printf '/usr/bin/osascript' ;;
+    python3) printf '/usr/bin/python3' ;;
     base64) printf '/usr/bin/base64' ;;
     awk) printf '/usr/bin/awk' ;;
     uname) printf '/usr/bin/uname' ;;

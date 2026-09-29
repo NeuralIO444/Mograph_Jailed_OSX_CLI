@@ -23,7 +23,7 @@ emit_probe_data() {
   printf '"osBuild":'; json_quote "$(system_os_build)"; printf ','
   printf '"architecture":'; json_quote "$(system_architecture)"; printf ','
   printf '"capabilities":{'
-  for _cap in zsh sw_vers stat file df mktemp plutil sqlite3 jq sips ditto sha256 shasum mdls avmediainfo avconvert afinfo afconvert mdfind xattr osascript base64 awk uname sed rm mv pwd; do
+  for _cap in zsh sw_vers stat file df mktemp plutil sqlite3 jq sips ditto sha256 shasum mdls avmediainfo avconvert afinfo afconvert mdfind xattr osascript python3 base64 awk uname sed rm mv pwd; do
     [ "$_first" -eq 1 ] || printf ','
     _first=0
     json_quote "$_cap"; printf ':'; emit_capability_object "$_cap"

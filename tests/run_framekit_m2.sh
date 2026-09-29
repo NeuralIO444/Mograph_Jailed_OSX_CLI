@@ -77,11 +77,11 @@ REQ
 check jq -e '.ok==false and .error.code=="UNEXPECTED_ARGUMENT"' "$TMP/extra.json"
 
 # Static safety boundaries around the embedded adapter.
-check grep -q 'use framework "AVFoundation"' "$ROOT/src/lib/frame_kit.zsh"
-check grep -q 'use framework "AppKit"' "$ROOT/src/lib/frame_kit.zsh"
+check grep -q 'AVFoundation.framework' "$ROOT/src/lib/frame_kit.zsh"
+check grep -q 'ImageIO.framework' "$ROOT/src/lib/frame_kit.zsh"
 check grep -q "setRequestedTimeToleranceBefore:" "$ROOT/src/lib/frame_kit.zsh"
 check grep -q "setRequestedTimeToleranceAfter:" "$ROOT/src/lib/frame_kit.zsh"
-check grep -q "setAppliesPreferredTrackTransform:true" "$ROOT/src/lib/frame_kit.zsh"
+check grep -q "setAppliesPreferredTrackTransform:" "$ROOT/src/lib/frame_kit.zsh"
 check grep -q "copyCGImageAtTime:" "$ROOT/src/lib/frame_kit.zsh"
 check grep -q 'actualSeconds' "$ROOT/src/lib/frame_kit.zsh"
 check grep -q 'MJ_FRAMEKIT_FLOOR_VALUE' "$ROOT/src/lib/frame_kit.zsh"
