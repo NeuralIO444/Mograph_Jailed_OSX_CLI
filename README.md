@@ -4,6 +4,29 @@ Zero-install native macOS capability and evidence layer for MJ applications.
 
 Development source is modular zsh. Deployment bundles deterministically to one `dist/mograph-jailed.zsh` runtime. Product code submits allowlisted structured requests; there is no public arbitrary-shell or arbitrary-SQL command.
 
+## Quickstart
+
+```sh
+git clone https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI.git
+cd Mograph_Jailed_OSX_CLI
+```
+
+Send a request file at the bundled runtime (stock `/bin/zsh` on macOS; the portable surface also runs on Linux):
+
+```sh
+printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=hello\ncommand=system.probe\n' > /tmp/mj-request.txt
+zsh -f dist/mograph-jailed.zsh --request /tmp/mj-request.txt
+```
+
+You get one JSON envelope on stdout. `system.describe` lists all 21 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`).
+
+## Production rules
+
+- No sudo. No package manager. No Xcode. No background daemon.
+- No public arbitrary-shell or arbitrary-SQL operation; product code submits allowlisted structured requests.
+- Standard Library work is local-only by default; network and unknown storage fail closed.
+- Source media is never mutated; derivatives never overwrite.
+
 ## Runtime requirements
 
 - stock macOS with `/bin/zsh`
