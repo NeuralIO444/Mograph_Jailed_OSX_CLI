@@ -8,7 +8,24 @@
 # - bounded output dimensions;
 # - zero AVAssetImageGenerator time tolerance (frame-accurate request);
 # - preferred track transform applied;
-# - no generic JXA/Objective-C bridge is exposed to callers.
+# - no generic AppleScript/JXA Objective-C bridge is exposed to callers.
+#
+# Bridge note (target-Mac Gate A, 2026-09-29): macOS Tahoe (26.x) broke JXA's
+# ObjC bridge for AVFoundation ($.AVURLAsset is undefined even though
+# ObjC.import('AVFoundation') succeeds), while Foundation still bridges.
+# AppleScriptObjC (use framework "AVFoundation") still sees AVFoundation
+# classes on Tahoe, so the adapter is AppleScriptObjC. The embedded script is
+# fixed; request data enters only through environment variables.
+#
+# Frame-grid note: with zero tolerance, AVAssetImageGenerator returns nil
+# unless the requested time is exactly a sample presentation time. A raw
+# request like 1.0s in 29.97fps media names no real frame, so the adapter
+# snaps the request down to the containing frame's exact presentation time
+# using integer math on the video track's natural timescale, then extracts
+# with zero tolerance. requestedSeconds echoes the caller's time;
+# actualSeconds/value/timescale name the extracted frame. Consumers must use
+# actualTime for verification (the media.frame contract already provides it
+# alongside deltaSeconds).
 
 MJ_FRAMEKIT_RESULT_JSON=""
 MJ_FRAMEKIT_REQUESTED_SECONDS=""
@@ -52,17 +69,15 @@ frame_kit_time_before_duration() {
   }'
 }
 
-# Executes a fixed embedded JXA adapter. Request data is supplied only through
-# environment variables; no request value is interpreted as JavaScript source.
-# The adapter uses the synchronous Objective-C compatibility API because JXA
-# cannot consume Swift async/await. It is isolated here so a future native
-# helper can replace it without changing the public media.frame contract.
+# Executes a fixed embedded AppleScriptObjC adapter. Request data is supplied
+# only through environment variables; no request value is interpreted as
+# AppleScript source. The adapter extracts the full-resolution frame; the
+# caller (media.frame) bounds dimensions afterwards with sips so the adapter
+# stays narrow and every bridge call is an object call or a proven C function.
 frame_kit_extract_png() {
   local _source="$1"
   local _output="$2"
   local _seconds="$3"
-  local _timescale="$4"
-  local _max_pixels="$5"
   local _json=""
 
   frame_kit_reset
@@ -71,94 +86,70 @@ frame_kit_extract_png() {
   _json=$(MJ_FRAMEKIT_SOURCE="$_source" \
     MJ_FRAMEKIT_OUTPUT="$_output" \
     MJ_FRAMEKIT_SECONDS="$_seconds" \
-    MJ_FRAMEKIT_TIMESCALE="$_timescale" \
-    MJ_FRAMEKIT_MAX_PIXELS="$_max_pixels" \
-    /usr/bin/osascript -l JavaScript - <<'JXA_FRAMEKIT' 2>/dev/null
-ObjC.import('Foundation');
-ObjC.import('AppKit');
-ObjC.import('AVFoundation');
-ObjC.import('CoreMedia');
-ObjC.import('CoreGraphics');
+    /usr/bin/osascript - <<'ASOBJC_FRAMEKIT' 2>/dev/null
+use framework "AVFoundation"
+use framework "Foundation"
+use framework "AppKit"
+use scripting additions
 
-function envString(name) {
-    var value = $.NSProcessInfo.processInfo.environment.objectForKey(name);
-    if (!value) { throw new Error('missing environment value: ' + name); }
-    return ObjC.unwrap(value);
-}
+on errorJSON(code, message)
+  return "{\"ok\":false,\"code\":\"" & code & "\",\"message\":\"" & message & "\"}"
+end errorJSON
 
-function errorJSON(code, message) {
-    return JSON.stringify({ok:false, code:String(code), message:String(message)});
-}
+try
+  set srcPath to system attribute "MJ_FRAMEKIT_SOURCE"
+  set outPath to system attribute "MJ_FRAMEKIT_OUTPUT"
+  set secsText to system attribute "MJ_FRAMEKIT_SECONDS"
+  if srcPath is missing value or srcPath is "" then return my errorJSON("INVALID_SOURCE", "Missing source path.")
+  if outPath is missing value or outPath is "" then return my errorJSON("INVALID_OUTPUT", "Missing output path.")
+  if secsText is missing value or secsText is "" then return my errorJSON("INVALID_TIME", "Missing requested time.")
+  set tSecs to secsText as real
+  if tSecs < 0 then return my errorJSON("INVALID_TIME", "Requested time is negative.")
 
-function run() {
-    try {
-        var source = envString('MJ_FRAMEKIT_SOURCE');
-        var output = envString('MJ_FRAMEKIT_OUTPUT');
-        var seconds = Number(envString('MJ_FRAMEKIT_SECONDS'));
-        var timescale = Number(envString('MJ_FRAMEKIT_TIMESCALE'));
-        var maxPixels = Number(envString('MJ_FRAMEKIT_MAX_PIXELS'));
-        if (!isFinite(seconds) || seconds < 0) { return errorJSON('INVALID_TIME', 'Requested time is invalid.'); }
-        if (!isFinite(timescale) || timescale < 1 || timescale > 2147483647) { return errorJSON('INVALID_TIMESCALE', 'Media timescale is invalid.'); }
-        if (!isFinite(maxPixels) || maxPixels < 64 || maxPixels > 4096) { return errorJSON('INVALID_BOUND', 'Pixel bound is invalid.'); }
+  set theURL to current application's NSURL's fileURLWithPath:srcPath
+  if theURL is missing value then return my errorJSON("ASSET_OPEN_FAILED", "Could not form a file URL for the source.")
+  set theAsset to current application's AVURLAsset's alloc()'s initWithURL:theURL options:(missing value)
+  if theAsset is missing value then return my errorJSON("ASSET_OPEN_FAILED", "AVURLAsset could not open the source.")
 
-        var url = $.NSURL.fileURLWithPath(source);
-        var asset = $.AVURLAsset.alloc.initWithURLOptions(url, $());
-        if (!asset) { return errorJSON('ASSET_OPEN_FAILED', 'AVURLAsset could not open the source.'); }
+  set vTracks to theAsset's tracksWithMediaType:(current application's AVMediaTypeVideo)
+  if (count of vTracks) < 1 then return my errorJSON("NO_VIDEO_TRACK_ADAPTER", "The asset has no video track.")
+  set vTrack to item 1 of vTracks
+  set fps to vTrack's nominalFrameRate
+  set nts to vTrack's naturalTimeScale
+  if fps <= 0 or nts <= 0 then return my errorJSON("FRAME_GRID_UNAVAILABLE", "The video track has no usable frame grid; variable frame rate media is not supported.")
+  set ticksPerFrame to round (nts / fps)
+  if ticksPerFrame < 1 then return my errorJSON("FRAME_GRID_UNAVAILABLE", "The video track frame grid is not usable.")
 
-        var generator = $.AVAssetImageGenerator.alloc.initWithAsset(asset);
-        if (!generator) { return errorJSON('GENERATOR_FAILED', 'AVAssetImageGenerator could not be created.'); }
-        generator.appliesPreferredTrackTransform = true;
-        generator.maximumSize = $.CGSizeMake(maxPixels, maxPixels);
-        var zero = $.CMTimeMake(0, 1);
-        generator.requestedTimeToleranceBefore = zero;
-        generator.requestedTimeToleranceAfter = zero;
+  set frameIndex to (tSecs * fps) div 1
+  set frameValue to frameIndex * ticksPerFrame
+  set requestedTime to current application's CMTimeMake(frameValue, nts)
+  set actualSeconds to frameValue / nts
 
-        var requested = $.CMTimeMakeWithSeconds(seconds, timescale);
-        var actualRef = Ref();
-        var errorRef = $();
-        var image = generator.copyCGImageAtTimeActualTimeError(requested, actualRef, errorRef);
-        if (!image) {
-            var message = 'AVFoundation did not return an image.';
-            try {
-                if (!errorRef.isNil()) { message = ObjC.unwrap(errorRef.localizedDescription); }
-            } catch (ignoreError) {}
-            return errorJSON('FRAME_GENERATION_FAILED', message);
-        }
+  set gen to current application's AVAssetImageGenerator's assetImageGeneratorWithAsset:theAsset
+  if gen is missing value then return my errorJSON("GENERATOR_FAILED", "AVAssetImageGenerator could not be created.")
+  gen's setAppliesPreferredTrackTransform:true
+  gen's setRequestedTimeToleranceBefore:(current application's CMTimeMake(0, nts))
+  gen's setRequestedTimeToleranceAfter:(current application's CMTimeMake(0, nts))
 
-        var actual = actualRef[0];
-        var actualSeconds = Number($.CMTimeGetSeconds(actual));
-        var width = Number($.CGImageGetWidth(image));
-        var height = Number($.CGImageGetHeight(image));
-        if (!isFinite(actualSeconds) || width < 1 || height < 1) {
-            return errorJSON('FRAME_RESULT_INVALID', 'AVFoundation returned invalid frame metadata.');
-        }
+  set cgImage to gen's copyCGImageAtTime:requestedTime actualTime:(missing value) |error|:(missing value)
+  if cgImage is missing value then return my errorJSON("FRAME_GENERATION_FAILED", "AVFoundation did not return an image for the snapped frame time.")
 
-        var bitmap = $.NSBitmapImageRep.alloc.initWithCGImage(image);
-        if (!bitmap) { return errorJSON('PNG_ENCODE_FAILED', 'NSBitmapImageRep could not wrap the generated image.'); }
-        var png = bitmap.representationUsingTypeProperties($.NSPNGFileType, $());
-        if (!png) { return errorJSON('PNG_ENCODE_FAILED', 'AppKit could not encode the generated image as PNG.'); }
-        if (!png.writeToFileAtomically(output, true)) {
-            return errorJSON('PNG_WRITE_FAILED', 'PNG data could not be written to the staged output.');
-        }
+  set rep to current application's NSBitmapImageRep's alloc()'s initWithCGImage:cgImage
+  if rep is missing value then return my errorJSON("PNG_ENCODE_FAILED", "NSBitmapImageRep could not wrap the generated image.")
+  set pngData to rep's representationUsingType:(current application's NSPNGFileType) |properties|:(missing value)
+  if pngData is missing value then return my errorJSON("PNG_ENCODE_FAILED", "AppKit could not encode the generated image as PNG.")
+  set wroteOK to pngData's writeToFile:outPath atomically:true
+  if wroteOK is not true then return my errorJSON("PNG_WRITE_FAILED", "PNG data could not be written to the staged output.")
 
-        return JSON.stringify({
-            ok:true,
-            requestedSeconds:seconds,
-            actualSeconds:actualSeconds,
-            actualValue:Number(actual.value),
-            actualTimescale:Number(actual.timescale),
-            pixelWidth:width,
-            pixelHeight:height,
-            transformApplied:true,
-            toleranceBeforeSeconds:0,
-            toleranceAfterSeconds:0,
-            adapter:'JXA_AVAssetImageGenerator'
-        });
-    } catch (e) {
-        return errorJSON('JXA_EXCEPTION', e && e.message ? e.message : String(e));
-    }
-}
-JXA_FRAMEKIT
+  set w to rep's pixelsWide()
+  set h to rep's pixelsHigh()
+  if w < 1 or h < 1 then return my errorJSON("FRAME_RESULT_INVALID", "AVFoundation returned invalid frame dimensions.")
+
+  return "{\"ok\":true,\"requestedSeconds\":" & (tSecs as text) & ",\"actualSeconds\":" & (actualSeconds as text) & ",\"actualValue\":" & (frameValue as text) & ",\"actualTimescale\":" & (nts as text) & ",\"pixelWidth\":" & (w as text) & ",\"pixelHeight\":" & (h as text) & ",\"transformApplied\":true,\"toleranceBeforeSeconds\":0,\"toleranceAfterSeconds\":0,\"adapter\":\"ASOBJC_AVAssetImageGenerator\"}"
+on error e
+  return my errorJSON("ASOBJC_EXCEPTION", "AppleScriptObjC adapter failed: " & (e as text))
+end try
+ASOBJC_FRAMEKIT
   ) || return 1
 
   MJ_FRAMEKIT_RESULT_JSON="$_json"

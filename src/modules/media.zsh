@@ -183,7 +183,7 @@ handle_media_frame() {
   frame_kit_is_max_pixels "$_max" || { set_error "INVALID_ARGUMENT" "maxPixels must be an integer from 64 through 4096."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   case "$_output" in *.png|*.PNG) ;; *) set_error "INVALID_OUTPUT" "FrameKit output must be a .png file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
 
-  standard_library_framekit_available || { set_error "UNSUPPORTED" "FrameKit requires the qualified local JXA/AVFoundation, MediaProbe, ImageKit, jq, and LocalFS capabilities."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
+  standard_library_framekit_available || { set_error "UNSUPPORTED" "FrameKit requires the qualified local AppleScriptObjC/AVFoundation, MediaProbe, ImageKit, jq, and LocalFS capabilities."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
   if ! mj_require_local_existing_path "$_path"; then emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; fi
 
   _parent=$(parent_path "$_output")
@@ -207,7 +207,7 @@ handle_media_frame() {
   _stage="$MJ_STAGE_DIR"
   _stage_file="$_stage/frame.png"
 
-  if ! frame_kit_extract_png "$_path" "$_stage_file" "$_time" "$MJ_MEDIA_VIDEO_TIMESCALE" "$_max"; then
+  if ! frame_kit_extract_png "$_path" "$_stage_file" "$_time"; then
     cleanup_mj_stage_dir "$_stage" "$_parent_real" "$_stage_prefix" || { set_error "STAGE_CLEANUP_REFUSED" "Frame extraction failed and staging cleanup could not be proven safe."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
     if [ -n "$MJ_FRAMEKIT_ERROR_MESSAGE" ]; then
       set_error "FRAME_EXTRACTION_FAILED" "$MJ_FRAMEKIT_ERROR_MESSAGE"
@@ -234,6 +234,34 @@ handle_media_frame() {
     set_error "FRAME_VALIDATION_FAILED" "Generated PNG dimensions did not match AVFoundation frame metadata."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74;
   }
 
+  # Bound derivative dimensions with sips (downscale only, aspect preserved).
+  # The adapter always extracts full resolution; this step never touches the
+  # source and never upscales.
+  _final_width="$_out_width"
+  _final_height="$_out_height"
+  case "$_out_width" in ''|*[!0-9]*)
+    cleanup_mj_stage_dir "$_stage" "$_parent_real" "$_stage_prefix" || { set_error "STAGE_CLEANUP_REFUSED" "Frame dimension check failed and staging cleanup was refused."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+    set_error "FRAME_VALIDATION_FAILED" "Generated PNG dimensions are not usable integers."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74 ;;
+  esac
+  case "$_out_height" in ''|*[!0-9]*)
+    cleanup_mj_stage_dir "$_stage" "$_parent_real" "$_stage_prefix" || { set_error "STAGE_CLEANUP_REFUSED" "Frame dimension check failed and staging cleanup was refused."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+    set_error "FRAME_VALIDATION_FAILED" "Generated PNG dimensions are not usable integers."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74 ;;
+  esac
+  if [ "$_out_width" -gt "$_max" ] || [ "$_out_height" -gt "$_max" ]; then
+    /usr/bin/sips -Z "$_max" "$_stage_file" >/dev/null 2>&1 || {
+      cleanup_mj_stage_dir "$_stage" "$_parent_real" "$_stage_prefix" || { set_error "STAGE_CLEANUP_REFUSED" "Frame scaling failed and staging cleanup was refused."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+      set_error "FRAME_SCALE_FAILED" "Could not bound the frame derivative dimensions."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74;
+    }
+    _final_width=$(sips_property pixelWidth "$_stage_file" 2>/dev/null || printf '')
+    _final_height=$(sips_property pixelHeight "$_stage_file" 2>/dev/null || printf '')
+    case "$_final_width" in ''|*[!0-9]*) _final_width="" ;; esac
+    case "$_final_height" in ''|*[!0-9]*) _final_height="" ;; esac
+    { [ -n "$_final_width" ] && [ -n "$_final_height" ] && [ "$_final_width" -ge 1 ] && [ "$_final_height" -ge 1 ] && [ "$_final_width" -le "$_max" ] && [ "$_final_height" -le "$_max" ]; } || {
+      cleanup_mj_stage_dir "$_stage" "$_parent_real" "$_stage_prefix" || { set_error "STAGE_CLEANUP_REFUSED" "Frame scaling validation failed and staging cleanup was refused."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+      set_error "FRAME_SCALE_FAILED" "Scaled frame derivative dimensions are invalid."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74;
+    }
+  fi
+
   if ! /bin/mv -n "$_stage_file" "$_out_real" 2>/dev/null; then
     cleanup_mj_stage_dir "$_stage" "$_parent_real" "$_stage_prefix" || { set_error "STAGE_CLEANUP_REFUSED" "Frame publish failed and staging cleanup was refused."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
     set_error "FRAME_PUBLISH_FAILED" "Could not publish the frame derivative without overwrite."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74
@@ -255,10 +283,10 @@ handle_media_frame() {
   printf ',"requestedTime":{"seconds":%s,"timescale":%s}' "$MJ_FRAMEKIT_REQUESTED_SECONDS" "$MJ_MEDIA_VIDEO_TIMESCALE"
   printf ',"actualTime":{"seconds":%s,"value":%s,"timescale":%s}' "$MJ_FRAMEKIT_ACTUAL_SECONDS" "$MJ_FRAMEKIT_ACTUAL_VALUE" "$MJ_FRAMEKIT_ACTUAL_TIMESCALE"
   printf ',"deltaSeconds":%s' "$_delta"
-  printf ',"pixelWidth":%s,"pixelHeight":%s' "$MJ_FRAMEKIT_PIXEL_WIDTH" "$MJ_FRAMEKIT_PIXEL_HEIGHT"
+  printf ',"pixelWidth":%s,"pixelHeight":%s' "$_final_width" "$_final_height"
   printf ',"frameAccurateRequest":true,"toleranceBeforeSeconds":0,"toleranceAfterSeconds":0,"preferredTrackTransformApplied":true'
   printf ',"sourceUnchanged":true,"scope":{"classification":"local","policy":"LOCAL_ONLY"}'
-  printf ',"adapter":"JXA_AVAssetImageGenerator_COMPAT_1"'
-  printf ',"notes":["FrameKit requests zero AVFoundation time tolerance. actualTime is reported independently and must be used by consumers for verification.","The JXA adapter isolates the deprecated synchronous Objective-C compatibility API behind the stable media.frame contract."]}'
+  printf ',"adapter":"ASOBJC_AVAssetImageGenerator_1"'
+  printf ',"notes":["FrameKit requests zero AVFoundation time tolerance. actualTime is reported independently and must be used by consumers for verification.","The AppleScriptObjC adapter snaps the requested time down to the containing video frame exact presentation time (integer frame-grid math on the track natural timescale) and extracts with zero tolerance."]}'
   emit_success_end
 }
