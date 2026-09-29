@@ -6,7 +6,7 @@
     var cliFile = new File(root.fsName + "/dist/mograph-jailed.zsh");
     var movie = new File("/System/Library/PrivateFrameworks/Slideshows.framework/Versions/A/Resources/Content/Styles/SlidingPanels.mrbStyle/Contents/Resources/Preview.mov");
     var output = new File(Folder.temp.fsName + "/MographJailed_FrameKit_AE_" + (new Date().getTime()) + ".png");
-    var receipt = new File(Folder.temp.fsName + "/MographJailed_FrameKit_AE_Qualification.txt");
+    var receipt = new File(Folder.desktop.fsName + "/MographJailed_FrameKit_AE_Qualification.txt");
     var lines = [];
     var pass = 0, fail = 0;
 
