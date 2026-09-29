@@ -33,6 +33,18 @@ mj-top --ascii
 
 The dashboard consumes `system.doctor`, `system.describe`, `runtime.verify`, and `storage.preflight` through MographJailed. It does not call media/filesystem evidence utilities directly.
 
+## mj-observe-dash
+
+btop-style live dashboard for the Tier 0 Observer.
+
+```text
+tools/mj-observe-dash.zsh --versions ~/AE_Versions --receipts ~/AE_Receipts
+```
+
+Shows project snapshot counts and sizes with sparklines, project vitals from the newest scrape receipt, expression lint findings, and watcher launchd state. Keys: `q` quit, `r` refresh. `--once` renders a single frame for scripting; `--interval N` sets the refresh period (default 5s).
+
+Strictly read-only: the dashboard only invokes `project.ingest` and `expression.lint`, and never modifies After Effects projects or snapshot history.
+
 ## Presentation fallback
 
 - modern: ANSI color + Unicode box drawing

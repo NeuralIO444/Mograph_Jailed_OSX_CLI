@@ -39,6 +39,17 @@
 
 `media.timing` reports native duration/timescale, track count, selected video codec/dimensions/timescale, nominal FPS, minimum sample duration, frame-reordering requirement, and decode-support evidence. It does not enumerate the full sample table.
 
+## Tier 0 Observer
+
+Read-only project observation. It can look at everything and change nothing — `project.snapshot` only ever creates new versioned copies: it never overwrites and never mutates the source.
+
+- `project.ingest` — validate an `MJ_PROJECT_SCRAPE_1` JSON receipt (written by the After Effects scraper) and summarize it: comps, layers, expressions, effects, fonts, footage, missing/unlinked footage.
+- `expression.lint` — static analysis over scraped expressions: broken layer/effect references (`E001`/`E002`), `sampleImage()` inside loops (`W001`), hard-coded absolute paths (`W002`), and more.
+- `plugin.audit` — enumerate and SHA-256 hash an After Effects Plug-ins directory. Reads only; never modifies it.
+- `project.snapshot` — hash an `.aep` and save a timestamped, hash-suffixed versioned copy (APFS copy-on-write clone when available); skips unchanged projects; refuses to overwrite an existing snapshot.
+
+Use `mj-man terminal` for the btop-style observer dashboard.
+
 ## Reports and packages
 
 - `report.tech` — native diagnostic receipt including Standard Library status.

@@ -18,7 +18,7 @@ printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=hello\ncommand=system.probe\n' > /tmp
 zsh -f dist/mograph-jailed.zsh --request /tmp/mj-request.txt
 ```
 
-You get one JSON envelope on stdout. `system.describe` lists all 21 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`).
+You get one JSON envelope on stdout. `system.describe` lists all 27 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
 
 ## Production rules
 
@@ -39,19 +39,19 @@ Ruby/Perl, Xcode tools, Python, Node, and GNU utilities may be used by isolated 
 
 ## Current development line
 
-`0.3.0-dev.2` advances **MJ Standard Library 1.0** with the SL-M2 FrameKit candidate. Protocol v1 is preserved and the public surface grows additively from 20 to 21 allowlisted operations with `media.frame`.
+`0.3.0` is the qualified production baseline. The current line is the **Tier 0 Observer**: read-only After Effects project intelligence. It can look at everything and change nothing — unless you tell it to, and then it still won't overwrite.
 
-The first library slice is aimed at **MJ_Organize** and **MJ_AE_Looper**:
+- **`project.ingest`** — validate an `MJ_PROJECT_SCRAPE_1` receipt from the After Effects scraper and summarize it: comps, layers, expressions, effects, fonts, footage, missing/unlinked footage.
+- **`expression.lint`** — static analysis over scraped expressions: broken layer/effect references, `sampleImage()` in loops, hard-coded paths, and more.
+- **`plugin.audit`** — enumerate and SHA-256 hash an After Effects Plug-ins directory. Reads only.
+- **`project.snapshot`** — hash an `.aep` and save a timestamped, hash-suffixed versioned copy (APFS clone when available); skips unchanged projects; refuses to overwrite.
+- **AE scraper** — `integrations/after-effects/MographJailed_ProjectScraper.jsx`: ES3 project traversal that writes one user-selected JSON receipt and never modifies the open project. A static guard (`scripts/check-scraper-readonly.sh`) proves it.
+- **Watcher** — an optional user-level LaunchAgent that fires `project.snapshot` on `.aep` changes. No sudo, no network.
+- **Dashboard** — `tools/mj-observe-dash.zsh`: a btop-style live terminal view of snapshots, project vitals, lint findings, and watcher state. Strictly read-only.
 
-- **LocalFS** — shared filesystem classification and local-only execution guard
-- **NativeDB** — stock SQLite runtime/JSON/FTS5 capability layer with no public SQL API
-- **MediaProbe** — bounded normalized `avmediainfo` timing adapter
-- **ImageKit foundation** — reusable `sips` inspection primitives
-- **FrameKit** — implemented as a local-only `media.frame` candidate; target-Mac + After Effects child-process qualification is still required before promotion
+Protocol v1 is preserved and the public surface grows additively from 23 to 27 allowlisted operations. See `docs/TIER0_OBSERVER.md` and `docs/MJ_PROJECT_SCRAPE_1.md`.
 
-`media.timing` remains the bounded local-only timing primitive. `media.frame` adds one explicit, non-overwriting PNG derivative operation backed by a fixed JXA/AVFoundation adapter. It requests zero time tolerance, applies preferred track transforms, returns requested and actual media time, and re-checks source identity around decode.
-
-The target-Mac-qualified `0.3.0-dev.1` install remains the production baseline until the dev.2 FrameKit gates pass.
+The Standard Library 1.0 line (`media.frame`, `media.timing`, ImageKit, FrameKit) remains intact underneath; `0.3.0-dev.3` qualified the `image.stats` / `image.compare` slice.
 
 ## Existing asset intelligence
 
