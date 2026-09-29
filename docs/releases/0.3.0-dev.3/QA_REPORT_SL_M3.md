@@ -94,21 +94,24 @@ Two new operations for the loop-seam use case:
 7. `image.compare` requires pathB (MISSING_ARGUMENT)
 8. (Integration) Full stats computation via Python engine
 
-## Target-Mac qualification (pending)
+## Target-Mac qualification (PASSED 2026-09-29)
 
-The following must be verified on Matt's Mac before SL-M3 promotes:
+1. **Gate A (Terminal):** `tests/run_imagestats_m3_target_mac.zsh` on Matt's Mac Studio
+   - `SUMMARY|pass=8|fail=0|skip=0`
+   - Registry: image.stats + image.compare available, ImageStats DERIVED_IMAGE_SIGNATURE
+   - image.stats returns valid MJ_IMAGE_STATS_1 (64-bin histogram, 8x8 grid)
+   - Determinism: identical output across two runs
+   - image.compare: identical images → 1.0; different frames → in range
+   - Rejections: non-PNG and missing file both rejected (ok:false)
+   - Immutability: sha256 unchanged before/after
 
-1. **Gate A (Terminal):** Run the ImageStats qualification script
-   - `image.stats` on a real PNG (e.g., FrameKit output)
-   - `image.compare` on two frames (identical → score 1.0, different → score < 1.0)
-   - Verify determinism (run twice, compare output)
-   - Verify source unchanged (sha256 before/after)
+2. **Gate B (After Effects):** `tests/MographJailed_ImageStats_AE_Qualification.jsx`
+   - `SUMMARY|pass=15|fail=0|skip=0`
+   - client.imageStats() / client.imageCompare() via ExtendScript child process
+   - All schema, determinism, compare-score, and rejection checks passed
+   - Receipt: ~/Desktop/MographJailed_ImageStats_AE_Qualification.txt
 
-2. **Gate B (After Effects):** Run via AE client
-   - `client.imageStats()` and `client.imageCompare()` from ExtendScript
-   - Verify the JSON response parses correctly
-
-3. **CI:** Must stay green (currently green on main)
+3. **CI:** green on the final qualification-script commit (e4bb406)
 
 ## Boundaries preserved
 
