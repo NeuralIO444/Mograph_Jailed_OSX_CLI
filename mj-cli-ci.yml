@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  sanitize-guard:
+    name: Sanitize guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on unsanitized strings
+        run: |
+          # NB: .github is excluded because this workflow file itself
+          # contains the guard patterns as data.
+          if grep -rliE "upco|\bnbc\b|comcast|peacock|nbcuniversal" . --exclude-dir=.git --exclude-dir=.github; then
+            echo "::error::Unsanitized string found in the tree"
+            exit 1
+          fi
+          echo "Sanitize guard clean"
+
+  dist-parity:
+    name: dist parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild dist from source
+        run: |
+          sh scripts/build.zsh
+          bash scripts/build-linux-test.sh
+      - name: dist must match committed bundle
+        run: git diff --exit-code -- dist/
+
+  portable-tests:
+    name: Portable tests + fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install zsh and ffmpeg
+        # ffmpeg is test-fixture tooling only (generates sample media for
+        # run_m3.sh); it is not a MographJailed runtime dependency.
+        run: sudo apt-get update && sudo apt-get install -y zsh ffmpeg
+      - name: Portable test suite
+        run: bash tests/run_all.sh
+      - name: Protocol fuzz (1000 cases)
+        run: bash tests/qa_only/run_fuzz_1000.sh
