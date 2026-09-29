@@ -413,4 +413,4 @@
         isAllowedCommand: isAllowedCommand,
         hasProtocolControl: hasProtocolControl
     };
-}(this));
+}(typeof $.global !== "undefined" ? $.global : this));
