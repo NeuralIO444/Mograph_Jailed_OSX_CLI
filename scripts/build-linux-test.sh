@@ -33,6 +33,7 @@ for f in \
   src/modules/search.zsh \
   src/modules/report.zsh \
   src/modules/package.zsh \
+  src/modules/project.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$OUT"
   cat "$ROOT/$f" >> "$OUT"

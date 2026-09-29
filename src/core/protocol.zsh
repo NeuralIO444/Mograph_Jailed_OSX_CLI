@@ -16,7 +16,7 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -183,6 +183,14 @@ validate_request_schema() {
       _required=" path "
       ;;
     package.create)
+      _allowed=" path output "
+      _required=" path output "
+      ;;
+    project.ingest|expression.lint|plugin.audit)
+      _allowed=" path "
+      _required=" path "
+      ;;
+    project.snapshot)
       _allowed=" path output "
       _required=" path output "
       ;;

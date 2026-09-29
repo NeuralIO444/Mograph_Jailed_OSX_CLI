@@ -21,13 +21,17 @@ operation_names() {
     media.inspect \
     media.timing \
     media.frame \
+    project.ingest \
+    expression.lint \
+    plugin.audit \
+    project.snapshot \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -100,6 +104,15 @@ operation_available() {
     media.frame)
       standard_library_framekit_available
       ;;
+    project.ingest|expression.lint)
+      cap_available python3
+      ;;
+    plugin.audit)
+      cap_available stat && cap_available uname && { cap_available sha256 || cap_available shasum; }
+      ;;
+    project.snapshot)
+      cap_available stat && cap_available uname && cap_available cp && cap_available date && cap_available rm && { cap_available sha256 || cap_available shasum; }
+      ;;
     package.create)
       cap_available ditto && cap_available mktemp && cap_available rm && cap_available mv && cap_available stat && cap_available uname
       ;;
@@ -122,6 +135,9 @@ operation_cost() {
     media.inspect) printf 'PATH_DEPENDENT' ;;
     media.timing) printf 'BOUNDED_MEDIA_PROBE' ;;
     media.frame) printf 'FRAME_DECODE' ;;
+    project.ingest|expression.lint) printf 'SIZE_DEPENDENT' ;;
+    plugin.audit) printf 'PATH_DEPENDENT' ;;
+    project.snapshot) printf 'IO_BOUND' ;;
     package.create) printf 'IO_BOUND' ;;
     *) printf 'UNKNOWN' ;;
   esac
@@ -132,7 +148,7 @@ operation_mutation() {
     temp.create) printf 'TEMP_CREATE' ;;
     temp.clean) printf 'TEMP_DELETE' ;;
     search.candidate) printf 'INTERNAL_TEMP' ;;
-    image.derivative|media.frame|package.create) printf 'DERIVATIVE_CREATE' ;;
+    image.derivative|media.frame|package.create|project.snapshot) printf 'DERIVATIVE_CREATE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -154,20 +170,24 @@ operation_authority() {
     media.timing) printf 'NORMALIZED_NATIVE_MEDIA' ;;
     media.frame) printf 'NATIVE_FRAME_DERIVATIVE' ;;
     report.tech) printf 'DIAGNOSTIC' ;;
+    project.ingest) printf 'DERIVED_PROJECT_SUMMARY' ;;
+    expression.lint) printf 'DERIVED_LINT_FINDINGS' ;;
+    plugin.audit) printf 'AUTHORITATIVE_FILESYSTEM_METADATA' ;;
+    project.snapshot) printf 'AUTHORITATIVE_OPERATION' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
 
 operation_interactive_safe() {
   case "$1" in
-    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create) return 1 ;;
+    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot) return 1 ;;
     *) return 0 ;;
   esac
 }
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -193,6 +213,9 @@ operation_required_all() {
     media.timing) printf '%s\n' avmediainfo awk df uname ;;
     media.frame) printf '%s\n' avmediainfo python3 jq sips awk df mktemp mv rm stat uname ;;
     package.create) printf '%s\n' ditto mktemp rm mv stat uname ;;
+    project.ingest|expression.lint) printf '%s\n' python3 ;;
+    plugin.audit) printf '%s\n' stat uname ;;
+    project.snapshot) printf '%s\n' stat uname cp date rm ;;
   esac
 }
 
@@ -211,7 +234,7 @@ emit_operation_requires() {
   operation_required_all "$_name" | emit_string_array_lines
   printf ',"anyOf":['
   case "$_name" in
-    file.hash)
+    file.hash|plugin.audit|project.snapshot)
       printf '["sha256","shasum"]'
       ;;
   esac
@@ -234,7 +257,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; if [ "$_name" = "media.timing" ] || [ "$_name" = "media.frame" ]; then json_quote "LOCAL_ONLY"; else json_quote "EXPLICIT_PATH_OR_NONE"; fi
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   printf '}'

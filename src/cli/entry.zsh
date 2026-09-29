@@ -32,6 +32,10 @@ main() {
     media.inspect) handle_media_inspect ;;
     media.timing) handle_media_timing ;;
     media.frame) handle_media_frame ;;
+    project.ingest) handle_project_ingest ;;
+    expression.lint) handle_expression_lint ;;
+    plugin.audit) handle_plugin_audit ;;
+    project.snapshot) handle_project_snapshot ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

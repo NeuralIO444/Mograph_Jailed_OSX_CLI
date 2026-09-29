@@ -15,7 +15,7 @@ The code is in good shape. This is a carefully built, well-tested codebase — n
 
 ## Where things stand (updated Sept 29, 2026)
 
-- **0.3.0** is the qualified production baseline. Both target-Mac gates passed on Matt's Mac Studio (Gate A 9/9 Terminal, Gate B 13/13 After Effects). Supersedes 0.3.0-dev.1.
+- **0.3.0** is the qualified production baseline. Both target-Mac gates passed on Matt's Mac Studio (Gate A 9 pass / 0 fail / 1 skip in Terminal, Gate B 13/13 After Effects). Supersedes 0.3.0-dev.1.
 - **0.3.0-dev.3 (SL-M3)** is qualified and tagged. Both gates passed (Gate A 8/8, Gate B 15/15). Adds `image.stats` and `image.compare`.
 
 **Honest risks worth knowing:**
@@ -29,7 +29,7 @@ The code is in good shape. This is a carefully built, well-tested codebase — n
 Sanitized port to the public repo, MIT license, README quickstart, CI with three jobs: sanitize guard (fails the build if old internal names ever reappear), dist-parity check (source-to-bundle rebuild must be clean), portable suite + fuzz. All green.
 
 ### Phase 1 — Qualify 0.3.0 ✅ DONE (Sept 29, 2026)
-Gate A passed 9/9 in Terminal on Matt's Mac Studio (~2:25 PM). Gate B passed 13/13 in After Effects (~2:35 PM). Fixed one real AE client scoping bug along the way (`$.global` anchoring). Tagged `0.3.0` qualified; dev.2 replaced dev.1 as the baseline. VFR remains an honest SKIP until a real fixture exists.
+Gate A passed 9 pass / 0 fail / 1 skip in Terminal on Matt's Mac Studio (~2:25 PM; VFR was the honest skip). Gate B passed 13/13 in After Effects (~2:35 PM). Fixed one real AE client scoping bug along the way (`$.global` anchoring). Tagged `0.3.0` qualified; dev.2 replaced dev.1 as the baseline. VFR remains an honest SKIP until a real fixture exists.
 
 ### Phase 2 — SL-M3: ImageKit analysis ✅ DONE (Sept 29, 2026)
 Two new operations for the loop-seam use case, qualified on the target Mac:

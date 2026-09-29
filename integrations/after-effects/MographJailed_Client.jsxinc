@@ -57,7 +57,8 @@
             "system.probe", "system.doctor", "system.describe", "runtime.verify", "file.inspect", "file.hash", "file.provenance",
             "asset.manifest", "asset.verify", "search.candidate", "image.inspect", "image.derivative", "image.stats", "image.compare", "storage.preflight",
             "volume.inspect", "temp.create", "temp.clean", "media.inspect",
-            "media.timing", "media.frame", "package.create", "report.tech"
+            "media.timing", "media.frame", "package.create", "report.tech",
+            "project.ingest", "expression.lint", "plugin.audit", "project.snapshot"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -367,6 +368,22 @@
 
     Client.prototype.imageCompare = function (pathA, pathB) {
         return this.call("image.compare", { pathA: pathA, pathB: pathB });
+    };
+
+    Client.prototype.projectIngest = function (path) {
+        return this.call("project.ingest", { path: path });
+    };
+
+    Client.prototype.expressionLint = function (path) {
+        return this.call("expression.lint", { path: path });
+    };
+
+    Client.prototype.pluginAudit = function (path) {
+        return this.call("plugin.audit", { path: path });
+    };
+
+    Client.prototype.projectSnapshot = function (path, output) {
+        return this.call("project.snapshot", { path: path, output: output });
     };
 
     Client.prototype.storagePreflight = function (path, requiredBytes) {

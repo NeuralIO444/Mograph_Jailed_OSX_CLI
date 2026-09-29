@@ -31,7 +31,9 @@ cap_path() {
     uname) printf '/usr/bin/uname' ;;
     sed) printf '/usr/bin/sed' ;;
     rm) printf '/bin/rm' ;;
+    date) printf '/bin/date' ;;
     mv) printf '/bin/mv' ;;
+    cp) printf '/bin/cp' ;;
     pwd) printf '/bin/pwd' ;;
     *) return 1 ;;
   esac

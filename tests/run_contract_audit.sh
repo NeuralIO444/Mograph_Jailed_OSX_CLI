@@ -19,6 +19,10 @@ media.inspect
 media.timing
 media.frame
 package.create
+project.ingest
+expression.lint
+plugin.audit
+project.snapshot
 report.tech
 runtime.verify
 search.candidate

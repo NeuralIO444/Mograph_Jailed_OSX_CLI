@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  MographJailed Tier 0 watcher — launchd template.
+  Rendered by tools/watch-install.zsh, which substitutes the __PLACEHOLDERS__.
+  User-profile only: installed to ~/Library/LaunchAgents, never /Library.
+  This agent may ONLY trigger Tier 0 (observe) operations: it fires
+  project.snapshot requests and nothing else.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.neuralio.mograph-jailed.watcher</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>__FIRE_SCRIPT__</string>
+    </array>
+    <key>WatchPaths</key>
+    <array>
+        <string>__WATCH_DIR__</string>
+    </array>
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>__VERSIONS_DIR__/watcher.log</string>
+    <key>StandardErrorPath</key>
+    <string>__VERSIONS_DIR__/watcher.log</string>
+</dict>
+</plist>
