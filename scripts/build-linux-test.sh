@@ -17,6 +17,7 @@ for f in \
   src/lib/native_db.zsh \
   src/lib/media_probe.zsh \
   src/lib/image_kit.zsh \
+  src/lib/image_stats.zsh \
   src/lib/frame_kit.zsh \
   src/lib/standard_library.zsh \
   src/modules/system.zsh \

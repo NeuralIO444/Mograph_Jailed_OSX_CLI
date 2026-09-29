@@ -12,7 +12,9 @@ file.hash
 file.inspect
 file.provenance
 image.derivative
+image.compare
 image.inspect
+image.stats
 media.inspect
 media.timing
 media.frame

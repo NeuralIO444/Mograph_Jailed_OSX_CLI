@@ -12,6 +12,8 @@ operation_names() {
     search.candidate \
     image.inspect \
     image.derivative \
+    image.stats \
+    image.compare \
     storage.preflight \
     volume.inspect \
     temp.create \
@@ -25,7 +27,7 @@ operation_names() {
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -74,6 +76,9 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
+    image.stats|image.compare)
+      cap_available python3 && cap_available sips && cap_available awk
+      ;;
     storage.preflight)
       cap_available df && cap_available awk && cap_available uname
       ;;
@@ -113,6 +118,7 @@ operation_cost() {
     asset.manifest|asset.verify) printf 'MODE_DEPENDENT' ;;
     search.candidate) printf 'INDEX_DEPENDENT' ;;
     image.derivative) printf 'IO_BOUND' ;;
+    image.stats|image.compare) printf 'SIZE_DEPENDENT' ;;
     media.inspect) printf 'PATH_DEPENDENT' ;;
     media.timing) printf 'BOUNDED_MEDIA_PROBE' ;;
     media.frame) printf 'FRAME_DECODE' ;;
@@ -142,6 +148,7 @@ operation_authority() {
     asset.manifest|asset.verify) printf 'ASSET_IDENTITY' ;;
     search.candidate) printf 'ADVISORY_INDEX' ;;
     image.inspect) printf 'AUTHORITATIVE_IMAGE_STRUCTURE' ;;
+    image.stats|image.compare) printf 'DERIVED_IMAGE_SIGNATURE' ;;
     image.derivative|temp.create|temp.clean|package.create) printf 'AUTHORITATIVE_OPERATION' ;;
     media.inspect) printf 'ADVISORY_METADATA' ;;
     media.timing) printf 'NORMALIZED_NATIVE_MEDIA' ;;
@@ -160,7 +167,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -178,6 +185,7 @@ operation_required_all() {
     search.candidate) printf '%s\n' mdfind mktemp rm ;;
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
+    image.stats|image.compare) printf '%s\n' python3 sips awk ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
     temp.clean) printf '%s\n' sed rm pwd ;;

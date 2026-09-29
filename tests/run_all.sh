@@ -17,6 +17,7 @@ node "$ROOT/tests/run_m4.js"
 "$ROOT/tests/run_stage_hardening.sh"
 "$ROOT/tests/run_stdlib_1.sh"
 "$ROOT/tests/run_framekit_m2.sh"
+"$ROOT/tests/run_imagestats_m3.sh"
 
 "$ROOT/tests/run_dev4_terminal_ux.sh"
 

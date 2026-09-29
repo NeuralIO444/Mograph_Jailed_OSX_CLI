@@ -16,19 +16,21 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 is_safe_arg_name() {
   case "$1" in
-    path|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels) return 0 ;;
+    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 REQUEST_ARG_path=""
+REQUEST_ARG_pathA=""
+REQUEST_ARG_pathB=""
 REQUEST_ARG_target=""
 REQUEST_ARG_label=""
 REQUEST_ARG_runId=""
@@ -58,6 +60,8 @@ request_arg_set() {
   REQUEST_ARG_NAMES="$REQUEST_ARG_NAMES $_name"
   case "$_name" in
     path) REQUEST_ARG_path="$_value" ;;
+    pathA) REQUEST_ARG_pathA="$_value" ;;
+    pathB) REQUEST_ARG_pathB="$_value" ;;
     target) REQUEST_ARG_target="$_value" ;;
     label) REQUEST_ARG_label="$_value" ;;
     runId) REQUEST_ARG_runId="$_value" ;;
@@ -83,6 +87,8 @@ request_arg_get() {
   request_arg_present "$_name" || return 1
   case "$_name" in
     path) printf '%s' "$REQUEST_ARG_path" ;;
+    pathA) printf '%s' "$REQUEST_ARG_pathA" ;;
+    pathB) printf '%s' "$REQUEST_ARG_pathB" ;;
     target) printf '%s' "$REQUEST_ARG_target" ;;
     label) printf '%s' "$REQUEST_ARG_label" ;;
     runId) printf '%s' "$REQUEST_ARG_runId" ;;
@@ -164,6 +170,14 @@ validate_request_schema() {
       _allowed=" input output target "
       _required=" input output target "
       ;;
+    image.stats)
+      _allowed=" path "
+      _required=" path "
+      ;;
+    image.compare)
+      _allowed=" pathA pathB "
+      _required=" pathA pathB "
+      ;;
     storage.preflight)
       _allowed=" path requiredBytes "
       _required=" path "
@@ -178,7 +192,7 @@ validate_request_schema() {
       ;;
   esac
 
-  for _arg in path target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels; do
+  for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels; do
     if request_arg_present "$_arg"; then
       case "$_allowed" in *" $_arg "*) ;; *)
         set_error "UNEXPECTED_ARGUMENT" "Argument is not valid for command: $_arg."
@@ -190,6 +204,12 @@ validate_request_schema() {
 
   case "$_required" in
     *" path "*) request_arg_present path || { set_error "MISSING_ARGUMENT" "Required argument is missing: path."; return 1; } ;;
+  esac
+  case "$_required" in
+    *" pathA "*) request_arg_present pathA || { set_error "MISSING_ARGUMENT" "Required argument is missing: pathA."; return 1; } ;;
+  esac
+  case "$_required" in
+    *" pathB "*) request_arg_present pathB || { set_error "MISSING_ARGUMENT" "Required argument is missing: pathB."; return 1; } ;;
   esac
   case "$_required" in
     *" output "*) request_arg_present output || { set_error "MISSING_ARGUMENT" "Required argument is missing: output."; return 1; } ;;
@@ -228,6 +248,8 @@ load_request_file() {
   REQUEST_COMMAND=""
   REQUEST_ARG_NAMES=""
   REQUEST_ARG_path=""
+  REQUEST_ARG_pathA=""
+  REQUEST_ARG_pathB=""
   REQUEST_ARG_target=""
   REQUEST_ARG_label=""
   REQUEST_ARG_runId=""

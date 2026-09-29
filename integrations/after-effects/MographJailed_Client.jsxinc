@@ -55,7 +55,7 @@
     function isAllowedCommand(command) {
         var allowed = [
             "system.probe", "system.doctor", "system.describe", "runtime.verify", "file.inspect", "file.hash", "file.provenance",
-            "asset.manifest", "asset.verify", "search.candidate", "image.inspect", "image.derivative", "storage.preflight",
+            "asset.manifest", "asset.verify", "search.candidate", "image.inspect", "image.derivative", "image.stats", "image.compare", "storage.preflight",
             "volume.inspect", "temp.create", "temp.clean", "media.inspect",
             "media.timing", "media.frame", "package.create", "report.tech"
         ];
@@ -215,7 +215,7 @@
             writeRequestLine(f, "requestId=" + requestId);
             writeRequestLine(f, "command=" + command);
             if (args) {
-                allowed = ["path", "target", "label", "runId", "output", "input", "format", "expectedCliVersion", "expectedProtocolVersion", "expectedFilename", "expectedSha256", "expectedSizeBytes", "expectedModifiedEpoch", "requiredBytes", "maxResults", "timeSeconds", "maxPixels"];
+                allowed = ["path", "pathA", "pathB", "target", "label", "runId", "output", "input", "format", "expectedCliVersion", "expectedProtocolVersion", "expectedFilename", "expectedSha256", "expectedSizeBytes", "expectedModifiedEpoch", "requiredBytes", "maxResults", "timeSeconds", "maxPixels"];
                 for (i = 0; i < allowed.length; i++) {
                     key = allowed[i];
                     if (typeof args[key] !== "undefined" && args[key] !== null) {
@@ -359,6 +359,14 @@
 
     Client.prototype.createImageDerivative = function (input, output, maxPixels) {
         return this.call("image.derivative", { input: input, output: output, target: String(maxPixels) });
+    };
+
+    Client.prototype.imageStats = function (path) {
+        return this.call("image.stats", { path: path });
+    };
+
+    Client.prototype.imageCompare = function (pathA, pathB) {
+        return this.call("image.compare", { pathA: pathA, pathB: pathB });
     };
 
     Client.prototype.storagePreflight = function (path, requiredBytes) {

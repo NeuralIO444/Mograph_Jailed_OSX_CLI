@@ -8,6 +8,7 @@ emit_standard_library_descriptor() {
   local _db_version=""
   local _media=false
   local _image=false
+  local _imagestats=false
   local _frame=false
   standard_library_localfs_available && _localfs=true
   if standard_library_nativedb_available; then
@@ -18,6 +19,7 @@ emit_standard_library_descriptor() {
   fi
   standard_library_mediaprobe_available && _media=true
   standard_library_imagekit_available && _image=true
+  image_stats_available && _imagestats=true
   standard_library_framekit_available && _frame=true
 
   printf '{"version":'; json_quote "$MOGRAPHJAILED_STANDARD_LIBRARY_VERSION"
@@ -27,6 +29,7 @@ emit_standard_library_descriptor() {
   printf ',"NativeDB":{"available":'; $_db && printf 'true' || printf 'false'; printf ',"state":'; if $_db; then json_quote 'AVAILABLE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"LOCAL_STRUCTURED_STORAGE","publicSql":false,"version":'; [ -n "$_db_version" ] && json_quote "$_db_version" || printf 'null'; printf ',"features":{"json":'; $_db_json && printf 'true' || printf 'false'; printf ',"fts5":'; $_db_fts5 && printf 'true' || printf 'false'; printf '}}'
   printf ',"MediaProbe":{"available":'; $_media && printf 'true' || printf 'false'; printf ',"state":'; if $_media; then json_quote 'AVAILABLE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"NORMALIZED_NATIVE_MEDIA"}'
   printf ',"ImageKit":{"available":'; $_image && printf 'true' || printf 'false'; printf ',"state":'; if $_image; then json_quote 'AVAILABLE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"NATIVE_IMAGE"}'
+  printf ',"ImageStats":{"available":'; $_imagestats && printf 'true' || printf 'false'; printf ',"state":'; if $_imagestats; then json_quote 'AVAILABLE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"DERIVED_IMAGE_SIGNATURE","executionScope":"LOCAL_ONLY","deterministic":true,"bounded":true}'
   printf ',"FrameKit":{"available":'; $_frame && printf 'true' || printf 'false'; printf ',"state":'; if $_frame; then json_quote 'AVAILABLE_CANDIDATE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"NATIVE_FRAME_DERIVATIVE","executionScope":"LOCAL_ONLY","exactRequest":true,"trackTransform":true,"publicGenericJXA":false,"targetMacQualificationRequired":true}'
   printf '}}'
 }

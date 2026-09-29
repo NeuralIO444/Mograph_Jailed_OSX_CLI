@@ -23,6 +23,8 @@ main() {
     search.candidate) handle_search_candidate ;;
     image.inspect) handle_image_inspect ;;
     image.derivative) handle_image_derivative ;;
+    image.stats) handle_image_stats ;;
+    image.compare) handle_image_compare ;;
     storage.preflight) handle_storage_preflight ;;
     volume.inspect) handle_volume_inspect ;;
     temp.create) handle_temp_create ;;

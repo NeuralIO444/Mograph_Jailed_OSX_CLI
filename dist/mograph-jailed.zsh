@@ -124,19 +124,21 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 is_safe_arg_name() {
   case "$1" in
-    path|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels) return 0 ;;
+    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 REQUEST_ARG_path=""
+REQUEST_ARG_pathA=""
+REQUEST_ARG_pathB=""
 REQUEST_ARG_target=""
 REQUEST_ARG_label=""
 REQUEST_ARG_runId=""
@@ -166,6 +168,8 @@ request_arg_set() {
   REQUEST_ARG_NAMES="$REQUEST_ARG_NAMES $_name"
   case "$_name" in
     path) REQUEST_ARG_path="$_value" ;;
+    pathA) REQUEST_ARG_pathA="$_value" ;;
+    pathB) REQUEST_ARG_pathB="$_value" ;;
     target) REQUEST_ARG_target="$_value" ;;
     label) REQUEST_ARG_label="$_value" ;;
     runId) REQUEST_ARG_runId="$_value" ;;
@@ -191,6 +195,8 @@ request_arg_get() {
   request_arg_present "$_name" || return 1
   case "$_name" in
     path) printf '%s' "$REQUEST_ARG_path" ;;
+    pathA) printf '%s' "$REQUEST_ARG_pathA" ;;
+    pathB) printf '%s' "$REQUEST_ARG_pathB" ;;
     target) printf '%s' "$REQUEST_ARG_target" ;;
     label) printf '%s' "$REQUEST_ARG_label" ;;
     runId) printf '%s' "$REQUEST_ARG_runId" ;;
@@ -272,6 +278,14 @@ validate_request_schema() {
       _allowed=" input output target "
       _required=" input output target "
       ;;
+    image.stats)
+      _allowed=" path "
+      _required=" path "
+      ;;
+    image.compare)
+      _allowed=" pathA pathB "
+      _required=" pathA pathB "
+      ;;
     storage.preflight)
       _allowed=" path requiredBytes "
       _required=" path "
@@ -286,7 +300,7 @@ validate_request_schema() {
       ;;
   esac
 
-  for _arg in path target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels; do
+  for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels; do
     if request_arg_present "$_arg"; then
       case "$_allowed" in *" $_arg "*) ;; *)
         set_error "UNEXPECTED_ARGUMENT" "Argument is not valid for command: $_arg."
@@ -298,6 +312,12 @@ validate_request_schema() {
 
   case "$_required" in
     *" path "*) request_arg_present path || { set_error "MISSING_ARGUMENT" "Required argument is missing: path."; return 1; } ;;
+  esac
+  case "$_required" in
+    *" pathA "*) request_arg_present pathA || { set_error "MISSING_ARGUMENT" "Required argument is missing: pathA."; return 1; } ;;
+  esac
+  case "$_required" in
+    *" pathB "*) request_arg_present pathB || { set_error "MISSING_ARGUMENT" "Required argument is missing: pathB."; return 1; } ;;
   esac
   case "$_required" in
     *" output "*) request_arg_present output || { set_error "MISSING_ARGUMENT" "Required argument is missing: output."; return 1; } ;;
@@ -336,6 +356,8 @@ load_request_file() {
   REQUEST_COMMAND=""
   REQUEST_ARG_NAMES=""
   REQUEST_ARG_path=""
+  REQUEST_ARG_pathA=""
+  REQUEST_ARG_pathB=""
   REQUEST_ARG_target=""
   REQUEST_ARG_label=""
   REQUEST_ARG_runId=""
@@ -613,6 +635,8 @@ operation_names() {
     search.candidate \
     image.inspect \
     image.derivative \
+    image.stats \
+    image.compare \
     storage.preflight \
     volume.inspect \
     temp.create \
@@ -626,7 +650,7 @@ operation_names() {
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -675,6 +699,9 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
+    image.stats|image.compare)
+      cap_available python3 && cap_available sips && cap_available awk
+      ;;
     storage.preflight)
       cap_available df && cap_available awk && cap_available uname
       ;;
@@ -714,6 +741,7 @@ operation_cost() {
     asset.manifest|asset.verify) printf 'MODE_DEPENDENT' ;;
     search.candidate) printf 'INDEX_DEPENDENT' ;;
     image.derivative) printf 'IO_BOUND' ;;
+    image.stats|image.compare) printf 'SIZE_DEPENDENT' ;;
     media.inspect) printf 'PATH_DEPENDENT' ;;
     media.timing) printf 'BOUNDED_MEDIA_PROBE' ;;
     media.frame) printf 'FRAME_DECODE' ;;
@@ -743,6 +771,7 @@ operation_authority() {
     asset.manifest|asset.verify) printf 'ASSET_IDENTITY' ;;
     search.candidate) printf 'ADVISORY_INDEX' ;;
     image.inspect) printf 'AUTHORITATIVE_IMAGE_STRUCTURE' ;;
+    image.stats|image.compare) printf 'DERIVED_IMAGE_SIGNATURE' ;;
     image.derivative|temp.create|temp.clean|package.create) printf 'AUTHORITATIVE_OPERATION' ;;
     media.inspect) printf 'ADVISORY_METADATA' ;;
     media.timing) printf 'NORMALIZED_NATIVE_MEDIA' ;;
@@ -761,7 +790,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -779,6 +808,7 @@ operation_required_all() {
     search.candidate) printf '%s\n' mdfind mktemp rm ;;
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
+    image.stats|image.compare) printf '%s\n' python3 sips awk ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
     temp.clean) printf '%s\n' sed rm pwd ;;
@@ -1329,6 +1359,227 @@ standard_library_imagekit_available() {
   cap_available sips && cap_available awk
 }
 
+# --- src/lib/image_stats.zsh ---
+# MJ Standard Library — ImageStats (SL-M3)
+# Deterministic, bounded image signatures for loop-seam ranking.
+# Uses only Python 3 stdlib (zlib, struct, json). No new dependencies.
+#
+# image.stats: 4x4x4 RGB histogram (64 bins) + 8x8 grid averages (64 cells)
+# image.compare: histogram intersection + grid similarity → 0.0-1.0 score
+
+image_stats_available() {
+  cap_available python3 && cap_available sips && cap_available awk
+}
+
+image_stats_compute() {
+  local _path="$1"
+  local _json=""
+
+  cap_available python3 || return 1
+  [ -f "$_path" ] && [ -r "$_path" ] || return 1
+
+  _json=$(MJ_IMAGE_STATS_PATH="$_path" \
+    /usr/bin/python3 - <<'PY_IMAGE_STATS' 2>/dev/null
+import json
+import os
+import struct
+import sys
+import zlib
+
+def error_json(code, message):
+    return json.dumps({"ok": False, "code": code, "message": message})
+
+def decode_png(path):
+    """Minimal PNG decoder using only stdlib. Returns (w, h, pixels)."""
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+    except Exception as e:
+        raise ValueError("READ_FAILED: " + str(e))
+    if len(data) < 8 or data[:8] != b'\x89PNG\r\n\x1a\n':
+        raise ValueError("NOT_PNG")
+    pos = 8
+    width = height = None
+    bit_depth = color_type = None
+    idat_data = b''
+    while pos < len(data):
+        if pos + 8 > len(data):
+            raise ValueError("TRUNCATED")
+        length = struct.unpack('>I', data[pos:pos+4])[0]
+        chunk_type = data[pos+4:pos+8]
+        if pos + 12 + length > len(data):
+            raise ValueError("TRUNCATED")
+        chunk_data = data[pos+8:pos+8+length]
+        pos += 12 + length
+        if chunk_type == b'IHDR':
+            width, height, bit_depth, color_type, comp, filt, interlace = struct.unpack('>IIBBBBB', chunk_data)
+            if bit_depth != 8:
+                raise ValueError("UNSUPPORTED_BIT_DEPTH")
+            if color_type not in (2, 6):
+                raise ValueError("UNSUPPORTED_COLOR_TYPE")
+            if interlace != 0:
+                raise ValueError("INTERLACED_NOT_SUPPORTED")
+        elif chunk_type == b'IDAT':
+            idat_data += chunk_data
+        elif chunk_type == b'IEND':
+            break
+    if width is None:
+        raise ValueError("MISSING_IHDR")
+    try:
+        raw = zlib.decompress(idat_data)
+    except Exception:
+        raise ValueError("DECOMPRESS_FAILED")
+    channels = 3 if color_type == 2 else 4
+    stride = width * channels
+    pixels = []
+    prev = bytearray(stride)
+    pos = 0
+    for y in range(height):
+        if pos >= len(raw):
+            raise ValueError("TRUNCATED_SCANLINES")
+        filt = raw[pos]; pos += 1
+        if pos + stride > len(raw):
+            raise ValueError("TRUNCATED_SCANLINES")
+        cur = bytearray(raw[pos:pos+stride]); pos += stride
+        if filt == 1:
+            for i in range(channels, stride):
+                cur[i] = (cur[i] + cur[i-channels]) & 0xff
+        elif filt == 2:
+            for i in range(stride):
+                cur[i] = (cur[i] + prev[i]) & 0xff
+        elif filt == 3:
+            for i in range(stride):
+                a = cur[i-channels] if i >= channels else 0
+                cur[i] = (cur[i] + ((a + prev[i]) >> 1)) & 0xff
+        elif filt == 4:
+            for i in range(stride):
+                a = cur[i-channels] if i >= channels else 0
+                b = prev[i]
+                c = prev[i-channels] if i >= channels else 0
+                p = a + b - c
+                pa, pb, pc = abs(p-a), abs(p-b), abs(p-c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                cur[i] = (cur[i] + pr) & 0xff
+        elif filt != 0:
+            raise ValueError("UNKNOWN_FILTER")
+        for x in range(width):
+            pixels.append((cur[x*channels], cur[x*channels+1], cur[x*channels+2]))
+        prev = cur
+    return width, height, pixels
+
+def compute_histogram(pixels, bins_per_channel=4):
+    bins = [0] * (bins_per_channel ** 3)
+    scale = 256 // bins_per_channel
+    for r, g, b in pixels:
+        ri = min(r // scale, bins_per_channel - 1)
+        gi = min(g // scale, bins_per_channel - 1)
+        bi = min(b // scale, bins_per_channel - 1)
+        idx = (ri * bins_per_channel + gi) * bins_per_channel + bi
+        bins[idx] += 1
+    return bins
+
+def compute_grid_averages(pixels, width, height, grid_size=8):
+    sums = [[[0, 0, 0, 0] for _ in range(grid_size)] for _ in range(grid_size)]
+    for y in range(height):
+        for x in range(width):
+            r, g, b = pixels[y * width + x]
+            gx = min(x * grid_size // width, grid_size - 1)
+            gy = min(y * grid_size // height, grid_size - 1)
+            sums[gy][gx][0] += r
+            sums[gy][gx][1] += g
+            sums[gy][gx][2] += b
+            sums[gy][gx][3] += 1
+    result = []
+    for gy in range(grid_size):
+        for gx in range(grid_size):
+            rs, gs, bs, cnt = sums[gy][gx]
+            if cnt > 0:
+                result.append([rs // cnt, gs // cnt, bs // cnt])
+            else:
+                result.append([0, 0, 0])
+    return result
+
+def main():
+    path = os.environ.get("MJ_IMAGE_STATS_PATH", "")
+    if not path:
+        print(error_json("INVALID_PATH", "No path provided"))
+        return
+    try:
+        width, height, pixels = decode_png(path)
+    except ValueError as e:
+        print(error_json("DECODE_FAILED", str(e)))
+        return
+    except Exception as e:
+        print(error_json("DECODE_FAILED", "Unexpected: " + str(e)))
+        return
+    hist = compute_histogram(pixels)
+    grid = compute_grid_averages(pixels, width, height)
+    print(json.dumps({
+        "ok": True,
+        "width": width,
+        "height": height,
+        "pixelCount": len(pixels),
+        "histogramBins": 64,
+        "histogram": hist,
+        "gridSize": 8,
+        "gridAverages": grid,
+    }))
+
+main()
+PY_IMAGE_STATS
+) || return 1
+
+  printf '%s' "$_json"
+}
+
+image_stats_compare() {
+  local _hist1="$1"
+  local _grid1="$2"
+  local _hist2="$3"
+  local _grid2="$4"
+
+  MJ_IMAGE_COMPARE_H1="$_hist1" \
+  MJ_IMAGE_COMPARE_G1="$_grid1" \
+  MJ_IMAGE_COMPARE_H2="$_hist2" \
+  MJ_IMAGE_COMPARE_G2="$_grid2" \
+  /usr/bin/python3 - <<'PY_IMAGE_COMPARE' 2>/dev/null
+import json
+import os
+
+def histogram_similarity(h1, h2):
+    total = sum(h1)
+    if total == 0:
+        return 1.0 if sum(h2) == 0 else 0.0
+    return sum(min(a, b) for a, b in zip(h1, h2)) / total
+
+def grid_similarity(g1, g2):
+    if not g1 or not g2 or len(g1) != len(g2):
+        return 0.0
+    total_diff = 0
+    for (r1, x1, b1), (r2, x2, b2) in zip(g1, g2):
+        total_diff += abs(r1 - r2) + abs(x1 - x2) + abs(b1 - b2)
+    max_diff = len(g1) * 255 * 3
+    return 1.0 - (total_diff / max_diff) if max_diff > 0 else 1.0
+
+try:
+    h1 = json.loads(os.environ["MJ_IMAGE_COMPARE_H1"])
+    g1 = json.loads(os.environ["MJ_IMAGE_COMPARE_G1"])
+    h2 = json.loads(os.environ["MJ_IMAGE_COMPARE_H2"])
+    g2 = json.loads(os.environ["MJ_IMAGE_COMPARE_G2"])
+    hs = histogram_similarity(h1, h2)
+    gs = grid_similarity(g1, g2)
+    score = (hs + gs) / 2.0
+    print(json.dumps({
+        "ok": True,
+        "score": round(score, 4),
+        "histogramSimilarity": round(hs, 4),
+        "gridSimilarity": round(gs, 4),
+    }))
+except Exception as e:
+    print(json.dumps({"ok": False, "code": "COMPARE_FAILED", "message": str(e)}))
+PY_IMAGE_COMPARE
+}
+
 # --- src/lib/frame_kit.zsh ---
 # MJ Standard Library 1.0 — FrameKit
 # Narrow local-only AVFoundation frame derivative adapter.
@@ -1679,6 +1930,7 @@ emit_standard_library_descriptor() {
   local _db_version=""
   local _media=false
   local _image=false
+  local _imagestats=false
   local _frame=false
   standard_library_localfs_available && _localfs=true
   if standard_library_nativedb_available; then
@@ -1689,6 +1941,7 @@ emit_standard_library_descriptor() {
   fi
   standard_library_mediaprobe_available && _media=true
   standard_library_imagekit_available && _image=true
+  image_stats_available && _imagestats=true
   standard_library_framekit_available && _frame=true
 
   printf '{"version":'; json_quote "$MOGRAPHJAILED_STANDARD_LIBRARY_VERSION"
@@ -1698,6 +1951,7 @@ emit_standard_library_descriptor() {
   printf ',"NativeDB":{"available":'; $_db && printf 'true' || printf 'false'; printf ',"state":'; if $_db; then json_quote 'AVAILABLE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"LOCAL_STRUCTURED_STORAGE","publicSql":false,"version":'; [ -n "$_db_version" ] && json_quote "$_db_version" || printf 'null'; printf ',"features":{"json":'; $_db_json && printf 'true' || printf 'false'; printf ',"fts5":'; $_db_fts5 && printf 'true' || printf 'false'; printf '}}'
   printf ',"MediaProbe":{"available":'; $_media && printf 'true' || printf 'false'; printf ',"state":'; if $_media; then json_quote 'AVAILABLE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"NORMALIZED_NATIVE_MEDIA"}'
   printf ',"ImageKit":{"available":'; $_image && printf 'true' || printf 'false'; printf ',"state":'; if $_image; then json_quote 'AVAILABLE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"NATIVE_IMAGE"}'
+  printf ',"ImageStats":{"available":'; $_imagestats && printf 'true' || printf 'false'; printf ',"state":'; if $_imagestats; then json_quote 'AVAILABLE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"DERIVED_IMAGE_SIGNATURE","executionScope":"LOCAL_ONLY","deterministic":true,"bounded":true}'
   printf ',"FrameKit":{"available":'; $_frame && printf 'true' || printf 'false'; printf ',"state":'; if $_frame; then json_quote 'AVAILABLE_CANDIDATE'; else json_quote 'UNAVAILABLE'; fi; printf ',"authority":"NATIVE_FRAME_DERIVATIVE","executionScope":"LOCAL_ONLY","exactRequest":true,"trackTransform":true,"publicGenericJXA":false,"targetMacQualificationRequired":true}'
   printf '}}'
 }
@@ -2719,6 +2973,97 @@ handle_image_derivative() {
   emit_success_end
 }
 
+handle_image_stats() {
+  local _path=""
+  local _stats_json=""
+  local _width=""
+  local _height=""
+  local _histogram=""
+  local _grid=""
+
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path="$MJ_REQUIRED_ARG_VALUE"
+  is_absolute_path "$_path" || { set_error "INVALID_PATH" "Path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  [ -f "$_path" ] || { set_error "INVALID_TARGET" "Image stats target must be a regular file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Image is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
+  image_stats_available || { set_error "UNSUPPORTED" "Image stats requires stock macOS python3/sips/awk capabilities."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
+  image_positive_identification "$_path" || { set_error "INVALID_TARGET" "sips did not positively identify the target as a raster image."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+
+  _stats_json=$(image_stats_compute "$_path") || { set_error "STATS_FAILED" "Image stats computation failed (PNG decode or histogram)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  # Validate the Python output is ok
+  case "$_stats_json" in
+    *'"ok": true'*|*'"ok":true'*) ;;
+    *) set_error "STATS_FAILED" "Image stats engine returned an error."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74 ;;
+  esac
+
+  _width=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['width'])")
+  _height=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['height'])")
+  _histogram=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
+  _grid=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
+
+  emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+  printf '{"schema":"MJ_IMAGE_STATS_1","path":'; json_quote "$_path"
+  printf ',"pixelWidth":%s,"pixelHeight":%s' "$_width" "$_height"
+  printf ',"histogramBins":64,"histogram":%s' "$_histogram"
+  printf ',"gridSize":8,"gridAverages":%s' "$_grid"
+  printf ',"sourceUnchanged":true}'
+  emit_success_end
+}
+
+handle_image_compare() {
+  local _path_a=""
+  local _path_b=""
+  local _stats_a=""
+  local _stats_b=""
+  local _hist_a=""
+  local _grid_a=""
+  local _hist_b=""
+  local _grid_b=""
+  local _compare_json=""
+  local _score=""
+  local _hist_sim=""
+  local _grid_sim=""
+
+  require_arg pathA || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path_a="$MJ_REQUIRED_ARG_VALUE"
+  require_arg pathB || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path_b="$MJ_REQUIRED_ARG_VALUE"
+
+  for _p in "$_path_a" "$_path_b"; do
+    is_absolute_path "$_p" || { set_error "INVALID_PATH" "Paths must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+    [ -f "$_p" ] || { set_error "INVALID_TARGET" "Image compare targets must be regular files."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+    [ -r "$_p" ] || { set_error "PERMISSION_DENIED" "Image is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
+    image_positive_identification "$_p" || { set_error "INVALID_TARGET" "sips did not positively identify the target as a raster image."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  done
+
+  image_stats_available || { set_error "UNSUPPORTED" "Image compare requires stock macOS python3/sips/awk capabilities."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
+
+  _stats_a=$(image_stats_compute "$_path_a") || { set_error "STATS_FAILED" "Image stats computation failed for first image."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  _stats_b=$(image_stats_compute "$_path_b") || { set_error "STATS_FAILED" "Image stats computation failed for second image."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+
+  _hist_a=$(printf '%s' "$_stats_a" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
+  _grid_a=$(printf '%s' "$_stats_a" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
+  _hist_b=$(printf '%s' "$_stats_b" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
+  _grid_b=$(printf '%s' "$_stats_b" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
+
+  _compare_json=$(image_stats_compare "$_hist_a" "$_grid_a" "$_hist_b" "$_grid_b") || { set_error "COMPARE_FAILED" "Image similarity computation failed."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  case "$_compare_json" in
+    *'"ok": true'*|*'"ok":true'*) ;;
+    *) set_error "COMPARE_FAILED" "Image compare engine returned an error."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74 ;;
+  esac
+
+  _score=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['score'])")
+  _hist_sim=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['histogramSimilarity'])")
+  _grid_sim=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['gridSimilarity'])")
+
+  emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+  printf '{"schema":"MJ_IMAGE_COMPARE_1","pathA":'; json_quote "$_path_a"
+  printf ',"pathB":'; json_quote "$_path_b"
+  printf ',"score":%s,"histogramSimilarity":%s,"gridSimilarity":%s' "$_score" "$_hist_sim" "$_grid_sim"
+  printf ',"sourceUnchanged":true}'
+  emit_success_end
+}
+
 # --- src/modules/storage.zsh ---
 storage_is_uint() {
   case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac
@@ -2957,6 +3302,8 @@ main() {
     search.candidate) handle_search_candidate ;;
     image.inspect) handle_image_inspect ;;
     image.derivative) handle_image_derivative ;;
+    image.stats) handle_image_stats ;;
+    image.compare) handle_image_compare ;;
     storage.preflight) handle_storage_preflight ;;
     volume.inspect) handle_volume_inspect ;;
     temp.create) handle_temp_create ;;
