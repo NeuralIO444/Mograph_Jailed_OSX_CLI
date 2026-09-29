@@ -190,6 +190,11 @@ media_probe_analyzed_ok() {
   MJ_MEDIA_PROBE_INPUT="$_text" /usr/bin/awk 'BEGIN {
     text=ENVIRON["MJ_MEDIA_PROBE_INPUT"];
     if (text ~ /Movie analyzed with 0 error\./) exit 0;
+    # Target-Mac Gate A (2026-09-29): avmediainfo --brief on audio-only input
+    # prints "Error analysis is not supported for format ..." instead of the
+    # 0-error sentinel. The container read succeeded; track parsing below
+    # still decides NO_VIDEO_TRACK vs timing, so this is not a probe failure.
+    if (text ~ /Error analysis is not supported for format /) exit 0;
     exit 1;
   }'
 }

@@ -98,6 +98,24 @@ else
   pass=$((pass+1))
 fi
 
+# Target-Mac Gate A regression (2026-09-29): avmediainfo --brief on audio-only
+# input prints "Error analysis is not supported for format ..." instead of the
+# 0-error sentinel. That is a successful container read, not a probe failure,
+# so analyzed_ok must accept it; garbage must still fail closed.
+AIFF_BRIEF=$(printf '%s\n' \
+  'Asset: /System/Library/Sounds/Glass.aiff' \
+  'Duration: 1.650 seconds (79204/48000)' \
+  'Track count: 1' \
+  "Track 1: Sound, Enabled, Format: Linear PCM, 0 bytes, 1.650 seconds" \
+  'Error analysis is not supported for format public.aiff-audio.')
+check media_probe_analyzed_ok "$AIFF_BRIEF"
+if media_probe_analyzed_ok "not a movie"; then
+  echo "FAIL: garbage MediaProbe brief unexpectedly analyzed-ok" >&2
+  fail=$((fail+1))
+else
+  pass=$((pass+1))
+fi
+
 cat > "$TMP/describe.req" <<'REQ'
 MOGRAPHJAILED_REQUEST 1
 requestId=stdlib-describe
