@@ -1214,6 +1214,59 @@ standard_library_mediaprobe_available() {
   cap_available avmediainfo && cap_available awk && standard_library_localfs_available
 }
 
+# Exact frame-floor lookup from the avmediainfo sample table (text on stdin).
+# Prints the presentation timestamp (track-timescale ticks) of the video
+# frame displayed at time t: the largest sample presentation timestamp <= t.
+#
+# Never trusts nominal frame-rate metadata. Target-Mac Gate A (2026-09-29)
+# proved a 29.97fps-nominal track uses non-uniform integer presentation
+# times in a 600-timescale (..., 561, 581, 601, ...), so frameIndex * fps
+# arithmetic cannot name real frames; only the sample table can.
+# Fails closed on any shape drift, timescale mismatch, or empty table.
+media_probe_sample_floor_ticks_from_text() {
+  local _time="$1" _timescale="$2"
+  case "$_timescale" in ''|*[!0-9]*) return 1 ;; esac
+  MJ_PROBE_FLOOR_TIME="$_time" MJ_PROBE_FLOOR_TS="$_timescale" /usr/bin/awk '
+    BEGIN {
+      t = ENVIRON["MJ_PROBE_FLOOR_TIME"] + 0;
+      ts = ENVIRON["MJ_PROBE_FLOOR_TS"] + 0;
+      if (!(t >= 0) || !(ts >= 1)) exit 3;
+      req = int(t * ts + 0.000001);
+      in_table = 0; best = -1; best_hms = ""; seen = 0;
+    }
+    !in_table && /Sample Index/ && /Presentation Time/ { in_table = 1; next; }
+    in_table && (/^Track / || (/Sample Index/ && /Presentation Time/)) { in_table = 0; next; }
+    in_table {
+      line = $0; sub(/^[ \t]+/, "", line);
+      nf = split(line, f, /[ \t]+/);
+      # f[1]=index f[2]=decodeTicks f[3]=decodeHMS f[4]=presentTicks f[5]=presentHMS ...
+      if (nf >= 5 && f[1] ~ /^[0-9]+$/ && f[4] ~ /^[0-9]+$/) {
+        seen = 1;
+        pts = f[4] + 0;
+        if (pts <= req && pts > best) { best = pts; best_hms = f[5]; }
+      }
+      next;
+    }
+    END {
+      if (!seen || best < 0) exit 4;
+      # Timescale consistency: the floor tick count expressed in the probe
+      # timescale must agree with the table human-readable timestamp.
+      nh = split(best_hms, hp, ":");
+      if (nh != 3) exit 5;
+      hms = hp[1]*3600 + hp[2]*60 + hp[3];
+      diff = best/ts - hms;
+      if (diff > 0.002 || diff < -0.002) exit 5;
+      printf "%d", best;
+    }'
+}
+
+# Production wrapper: reads the sample table from the media file itself.
+media_probe_sample_floor_ticks() {
+  local _path="$1" _time="$2" _timescale="$3"
+  cap_available avmediainfo && cap_available awk || return 1
+  /usr/bin/avmediainfo "$_path" --samples --mediatype video 2>/dev/null | media_probe_sample_floor_ticks_from_text "$_time" "$_timescale"
+}
+
 # --- src/lib/image_kit.zsh ---
 # MJ Standard Library 1.0 — ImageKit foundation
 # Reusable stock-sips inspection primitives. Mutation policy remains in public
@@ -1295,14 +1348,18 @@ standard_library_imagekit_available() {
 # fixed; request data enters only through environment variables.
 #
 # Frame-grid note: with zero tolerance, AVAssetImageGenerator returns nil
-# unless the requested time is exactly a sample presentation time. A raw
-# request like 1.0s in 29.97fps media names no real frame, so the adapter
-# snaps the request down to the containing frame's exact presentation time
-# using integer math on the video track's natural timescale, then extracts
-# with zero tolerance. requestedSeconds echoes the caller's time;
-# actualSeconds/value/timescale name the extracted frame. Consumers must use
-# actualTime for verification (the media.frame contract already provides it
-# alongside deltaSeconds).
+# unless the requested time is exactly a sample presentation time. Nominal
+# frame-rate metadata cannot be trusted to compute one: target-Mac Gate A
+# (2026-09-29) proved a 29.97fps-nominal track uses non-uniform integer
+# presentation times in a 600-timescale (..., 561, 581, 601, ...), so
+# frameIndex * fps arithmetic names phantom times. The caller
+# (media.frame) therefore reads the exact presentation timestamp of the
+# frame displayed at the requested time from the avmediainfo sample table
+# (media_probe_sample_floor_ticks) and passes it in; the adapter requests
+# that CMTime with zero tolerance. requestedSeconds echoes the caller's
+# time; actualSeconds/value/timescale name the extracted frame. Consumers
+# must use actualTime for verification (the media.frame contract already
+# provides it alongside deltaSeconds).
 
 MJ_FRAMEKIT_RESULT_JSON=""
 MJ_FRAMEKIT_REQUESTED_SECONDS=""
@@ -1348,13 +1405,20 @@ frame_kit_time_before_duration() {
 
 # Executes a fixed embedded AppleScriptObjC adapter. Request data is supplied
 # only through environment variables; no request value is interpreted as
-# AppleScript source. The adapter extracts the full-resolution frame; the
-# caller (media.frame) bounds dimensions afterwards with sips so the adapter
-# stays narrow and every bridge call is an object call or a proven C function.
+# AppleScript source. The caller passes the exact frame presentation time
+# (value/timescale) read from the avmediainfo sample table -- the adapter
+# never computes frame times from nominal frame-rate metadata, because
+# target-Mac Gate A (2026-09-29) proved nominal rates can disagree with the
+# true non-uniform sample grid. The adapter extracts the full-resolution
+# frame; the caller (media.frame) bounds dimensions afterwards with sips so
+# the adapter stays narrow and every bridge call is an object call or a
+# proven C function.
 frame_kit_extract_png() {
   local _source="$1"
   local _output="$2"
   local _seconds="$3"
+  local _floor_value="$4"
+  local _floor_timescale="$5"
   local _json=""
 
   frame_kit_reset
@@ -1363,6 +1427,8 @@ frame_kit_extract_png() {
   _json=$(MJ_FRAMEKIT_SOURCE="$_source" \
     MJ_FRAMEKIT_OUTPUT="$_output" \
     MJ_FRAMEKIT_SECONDS="$_seconds" \
+    MJ_FRAMEKIT_FLOOR_VALUE="$_floor_value" \
+    MJ_FRAMEKIT_FLOOR_TIMESCALE="$_floor_timescale" \
     /usr/bin/osascript - <<'ASOBJC_FRAMEKIT' 2>/dev/null
 use framework "AVFoundation"
 use framework "Foundation"
@@ -1377,11 +1443,18 @@ try
   set srcPath to system attribute "MJ_FRAMEKIT_SOURCE"
   set outPath to system attribute "MJ_FRAMEKIT_OUTPUT"
   set secsText to system attribute "MJ_FRAMEKIT_SECONDS"
+  set floorText to system attribute "MJ_FRAMEKIT_FLOOR_VALUE"
+  set floorTsText to system attribute "MJ_FRAMEKIT_FLOOR_TIMESCALE"
   if srcPath is missing value or srcPath is "" then return my errorJSON("INVALID_SOURCE", "Missing source path.")
   if outPath is missing value or outPath is "" then return my errorJSON("INVALID_OUTPUT", "Missing output path.")
   if secsText is missing value or secsText is "" then return my errorJSON("INVALID_TIME", "Missing requested time.")
+  if floorText is missing value or floorText is "" then return my errorJSON("INVALID_FLOOR_TIME", "Missing frame presentation time.")
+  if floorTsText is missing value or floorTsText is "" then return my errorJSON("INVALID_FLOOR_TIME", "Missing frame presentation timescale.")
   set tSecs to secsText as real
   if tSecs < 0 then return my errorJSON("INVALID_TIME", "Requested time is negative.")
+  set floorVal to floorText as integer
+  set floorTs to floorTsText as integer
+  if floorVal < 0 or floorTs < 1 then return my errorJSON("INVALID_FLOOR_TIME", "Frame presentation time is invalid.")
 
   set theURL to current application's NSURL's fileURLWithPath:srcPath
   if theURL is missing value then return my errorJSON("ASSET_OPEN_FAILED", "Could not form a file URL for the source.")
@@ -1390,30 +1463,20 @@ try
 
   set vTracks to theAsset's tracksWithMediaType:(current application's AVMediaTypeVideo)
   if (count of vTracks) < 1 then return my errorJSON("NO_VIDEO_TRACK_ADAPTER", "The asset has no video track.")
-  set vTrack to item 1 of vTracks
-  try
-    set fps to (vTrack's nominalFrameRate) as real
-    set nts to (vTrack's naturalTimeScale) as integer
-  on error e
-    return my errorJSON("FRAME_GRID_UNREADABLE", "Could not read the video track frame grid: " & (e as text))
-  end try
-  if fps <= 0 or nts <= 0 then return my errorJSON("FRAME_GRID_UNAVAILABLE", "The video track has no usable frame grid; variable frame rate media is not supported.")
-  set ticksPerFrame to round (nts / fps)
-  if ticksPerFrame < 1 then return my errorJSON("FRAME_GRID_UNAVAILABLE", "The video track frame grid is not usable.")
 
-  set frameIndex to (tSecs * fps) div 1
-  set frameValue to frameIndex * ticksPerFrame
-  set requestedTime to current application's CMTimeMake(frameValue, nts)
-  set actualSeconds to frameValue / nts
+  -- The requested CMTime is an exact sample presentation timestamp from the
+  -- media sample table, so zero tolerance names a real frame by construction.
+  set requestedTime to current application's CMTimeMake(floorVal, floorTs)
+  set actualSeconds to floorVal / floorTs
 
   set gen to current application's AVAssetImageGenerator's assetImageGeneratorWithAsset:theAsset
   if gen is missing value then return my errorJSON("GENERATOR_FAILED", "AVAssetImageGenerator could not be created.")
   gen's setAppliesPreferredTrackTransform:true
-  gen's setRequestedTimeToleranceBefore:(current application's CMTimeMake(0, nts))
-  gen's setRequestedTimeToleranceAfter:(current application's CMTimeMake(0, nts))
+  gen's setRequestedTimeToleranceBefore:(current application's CMTimeMake(0, floorTs))
+  gen's setRequestedTimeToleranceAfter:(current application's CMTimeMake(0, floorTs))
 
   set cgImage to gen's copyCGImageAtTime:requestedTime actualTime:(missing value) |error|:(missing value)
-  if cgImage is missing value then return my errorJSON("FRAME_GENERATION_FAILED", "AVFoundation did not return an image for the snapped frame time.")
+  if cgImage is missing value then return my errorJSON("FRAME_GENERATION_FAILED", "AVFoundation did not return an image for frame presentation time " & (floorText as text) & "/" & (floorTsText as text) & ".")
 
   set rep to current application's NSBitmapImageRep's alloc()'s initWithCGImage:cgImage
   if rep is missing value then return my errorJSON("PNG_ENCODE_FAILED", "NSBitmapImageRep could not wrap the generated image.")
@@ -1426,7 +1489,7 @@ try
   set h to rep's pixelsHigh()
   if w < 1 or h < 1 then return my errorJSON("FRAME_RESULT_INVALID", "AVFoundation returned invalid frame dimensions.")
 
-  return "{\"ok\":true,\"requestedSeconds\":" & (tSecs as text) & ",\"actualSeconds\":" & (actualSeconds as text) & ",\"actualValue\":" & (frameValue as text) & ",\"actualTimescale\":" & (nts as text) & ",\"pixelWidth\":" & (w as text) & ",\"pixelHeight\":" & (h as text) & ",\"transformApplied\":true,\"toleranceBeforeSeconds\":0,\"toleranceAfterSeconds\":0,\"adapter\":\"ASOBJC_AVAssetImageGenerator\"}"
+  return "{\"ok\":true,\"requestedSeconds\":" & (tSecs as text) & ",\"actualSeconds\":" & (actualSeconds as text) & ",\"actualValue\":" & (floorVal as text) & ",\"actualTimescale\":" & (floorTs as text) & ",\"pixelWidth\":" & (w as text) & ",\"pixelHeight\":" & (h as text) & ",\"transformApplied\":true,\"toleranceBeforeSeconds\":0,\"toleranceAfterSeconds\":0,\"adapter\":\"ASOBJC_AVAssetImageGenerator\"}"
 on error e
   return my errorJSON("ASOBJC_EXCEPTION", "AppleScriptObjC adapter failed: " & (e as text))
 end try
@@ -2131,12 +2194,17 @@ handle_media_frame() {
   [ "$MJ_MEDIA_VIDEO_DECODE_SUPPORTED" != "false" ] || { set_error "DECODE_UNSUPPORTED" "macOS reports that the selected video track is not decodable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
   frame_kit_time_before_duration "$_time" "$MJ_MEDIA_DURATION_SECONDS" || { set_error "TIME_OUT_OF_RANGE" "Requested frame time must be within the media duration."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
 
+  # Resolve the exact sample presentation timestamp of the frame displayed
+  # at the requested time from the sample table. The adapter requests this
+  # CMTime with zero tolerance; nominal fps arithmetic is never used.
+  _floor_ticks=$(media_probe_sample_floor_ticks "$_path" "$_time" "$MJ_MEDIA_VIDEO_TIMESCALE" 2>/dev/null) || { set_error "FRAME_EXTRACTION_FAILED" "Could not determine the exact video frame presentation time for the requested time."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+
   _before=$(file_hash_identity "$_path") || { set_error "SOURCE_STATE_UNAVAILABLE" "Could not establish media source identity before frame extraction."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   create_mj_stage_dir "$_parent_real" "$_stage_prefix" || { set_error "TEMP_CREATE_FAILED" "Could not create and bind FrameKit staging directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
   _stage="$MJ_STAGE_DIR"
   _stage_file="$_stage/frame.png"
 
-  if ! frame_kit_extract_png "$_path" "$_stage_file" "$_time"; then
+  if ! frame_kit_extract_png "$_path" "$_stage_file" "$_time" "$_floor_ticks" "$MJ_MEDIA_VIDEO_TIMESCALE"; then
     cleanup_mj_stage_dir "$_stage" "$_parent_real" "$_stage_prefix" || { set_error "STAGE_CLEANUP_REFUSED" "Frame extraction failed and staging cleanup could not be proven safe."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
     if [ -n "$MJ_FRAMEKIT_ERROR_MESSAGE" ]; then
       set_error "FRAME_EXTRACTION_FAILED" "$MJ_FRAMEKIT_ERROR_MESSAGE"

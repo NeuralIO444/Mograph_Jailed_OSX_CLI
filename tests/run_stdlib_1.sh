@@ -116,6 +116,51 @@ else
   pass=$((pass+1))
 fi
 
+# Target-Mac Gate A regression (2026-09-29): exact frame times come from the
+# avmediainfo sample table, never from nominal fps arithmetic. Fixture rows
+# are real --samples output: a 29.97fps-nominal track with non-uniform
+# integer presentation timestamps in a 600-timescale.
+cat > "$TMP/avmediainfo-samples.txt" <<'FIXTURE'
+	Sample Information
+	Synchronization Info: Sample is a Full Sync sample (=S), Partial Sync sample (= P), Droppable sample (=D)
+	Dependency Info: Sample has redundant coding (=R), is depended on by other samples (=B), is dependent on other samples (=O)
+	Sample Index            Decode Time(stamp)      Presentation Time(stamp)                      Duration        Offset  Size(bytes) Attributes
+	           1               0  00:00:00.000               0  00:00:00.000              20  00:00:00.033          0x30        25361          S
+	           2              20  00:00:00.033              40  00:00:00.067              20  00:00:00.033        0x6341          222
+	           3              40  00:00:00.067              20  00:00:00.033              20  00:00:00.033        0x641f           96          D
+	          10             180  00:00:00.300             201  00:00:00.335              20  00:00:00.033        0x67e7         2959
+	          11             201  00:00:00.335             180  00:00:00.300              21  00:00:00.035        0x7376           97          D
+	          28             541  00:00:00.902             561  00:00:00.935              20  00:00:00.033       0x13903         7604
+	          29             561  00:00:00.935             541  00:00:00.902              20  00:00:00.033       0x156b7         2029          D
+	          30             581  00:00:00.968             601  00:00:01.002              20  00:00:00.033       0x15ea4        15523
+	          31             601  00:00:01.002             581  00:00:00.968              20  00:00:00.033       0x19b47          115          D
+	          34             661  00:00:01.102             681  00:00:01.135              20  00:00:00.033       0x1a278          394
+	          35             681  00:00:01.135             661  00:00:01.102              20  00:00:00.033       0x1a402          148          D
+	          36             701  00:00:01.168             721  00:00:01.202              20  00:00:00.033       0x1a496          294
+FIXTURE
+SAMPLES_TEXT=$(cat "$TMP/avmediainfo-samples.txt")
+# t=1.0s in a 600-timescale: largest PTS <= 600 is 581 (frame 29). Nominal
+# fps arithmetic would have produced 580, which names no real frame.
+check test "$(printf '%s' "$SAMPLES_TEXT" | media_probe_sample_floor_ticks_from_text 1.0 600)" = "581"
+check test "$(printf '%s' "$SAMPLES_TEXT" | media_probe_sample_floor_ticks_from_text 0 600)" = "0"
+check test "$(printf '%s' "$SAMPLES_TEXT" | media_probe_sample_floor_ticks_from_text 0.05 600)" = "20"
+check test "$(printf '%s' "$SAMPLES_TEXT" | media_probe_sample_floor_ticks_from_text 1.21 600)" = "721"
+# Timescale mismatch must fail closed: the table is 600-based, not 30000-based.
+if printf '%s' "$SAMPLES_TEXT" | media_probe_sample_floor_ticks_from_text 1.0 30000 >/dev/null; then
+  echo "FAIL: sample-table timescale mismatch unexpectedly accepted" >&2
+  fail=$((fail+1))
+else
+  pass=$((pass+1))
+fi
+# Empty or malformed tables fail closed.
+if printf '%s' "no table here" | media_probe_sample_floor_ticks_from_text 1.0 600 >/dev/null; then
+  echo "FAIL: malformed sample table unexpectedly parsed" >&2
+  fail=$((fail+1))
+else
+  pass=$((pass+1))
+fi
+check grep -q '^media_probe_sample_floor_ticks_from_text()' "$ROOT/src/lib/media_probe.zsh"
+
 cat > "$TMP/describe.req" <<'REQ'
 MOGRAPHJAILED_REQUEST 1
 requestId=stdlib-describe

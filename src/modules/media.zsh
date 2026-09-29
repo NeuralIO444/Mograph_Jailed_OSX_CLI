@@ -202,12 +202,17 @@ handle_media_frame() {
   [ "$MJ_MEDIA_VIDEO_DECODE_SUPPORTED" != "false" ] || { set_error "DECODE_UNSUPPORTED" "macOS reports that the selected video track is not decodable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
   frame_kit_time_before_duration "$_time" "$MJ_MEDIA_DURATION_SECONDS" || { set_error "TIME_OUT_OF_RANGE" "Requested frame time must be within the media duration."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
 
+  # Resolve the exact sample presentation timestamp of the frame displayed
+  # at the requested time from the sample table. The adapter requests this
+  # CMTime with zero tolerance; nominal fps arithmetic is never used.
+  _floor_ticks=$(media_probe_sample_floor_ticks "$_path" "$_time" "$MJ_MEDIA_VIDEO_TIMESCALE" 2>/dev/null) || { set_error "FRAME_EXTRACTION_FAILED" "Could not determine the exact video frame presentation time for the requested time."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+
   _before=$(file_hash_identity "$_path") || { set_error "SOURCE_STATE_UNAVAILABLE" "Could not establish media source identity before frame extraction."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   create_mj_stage_dir "$_parent_real" "$_stage_prefix" || { set_error "TEMP_CREATE_FAILED" "Could not create and bind FrameKit staging directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
   _stage="$MJ_STAGE_DIR"
   _stage_file="$_stage/frame.png"
 
-  if ! frame_kit_extract_png "$_path" "$_stage_file" "$_time"; then
+  if ! frame_kit_extract_png "$_path" "$_stage_file" "$_time" "$_floor_ticks" "$MJ_MEDIA_VIDEO_TIMESCALE"; then
     cleanup_mj_stage_dir "$_stage" "$_parent_real" "$_stage_prefix" || { set_error "STAGE_CLEANUP_REFUSED" "Frame extraction failed and staging cleanup could not be proven safe."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
     if [ -n "$MJ_FRAMEKIT_ERROR_MESSAGE" ]; then
       set_error "FRAME_EXTRACTION_FAILED" "$MJ_FRAMEKIT_ERROR_MESSAGE"

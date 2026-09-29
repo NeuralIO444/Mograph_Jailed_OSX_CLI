@@ -229,3 +229,56 @@ media_probe_read_timing() {
 standard_library_mediaprobe_available() {
   cap_available avmediainfo && cap_available awk && standard_library_localfs_available
 }
+
+# Exact frame-floor lookup from the avmediainfo sample table (text on stdin).
+# Prints the presentation timestamp (track-timescale ticks) of the video
+# frame displayed at time t: the largest sample presentation timestamp <= t.
+#
+# Never trusts nominal frame-rate metadata. Target-Mac Gate A (2026-09-29)
+# proved a 29.97fps-nominal track uses non-uniform integer presentation
+# times in a 600-timescale (..., 561, 581, 601, ...), so frameIndex * fps
+# arithmetic cannot name real frames; only the sample table can.
+# Fails closed on any shape drift, timescale mismatch, or empty table.
+media_probe_sample_floor_ticks_from_text() {
+  local _time="$1" _timescale="$2"
+  case "$_timescale" in ''|*[!0-9]*) return 1 ;; esac
+  MJ_PROBE_FLOOR_TIME="$_time" MJ_PROBE_FLOOR_TS="$_timescale" /usr/bin/awk '
+    BEGIN {
+      t = ENVIRON["MJ_PROBE_FLOOR_TIME"] + 0;
+      ts = ENVIRON["MJ_PROBE_FLOOR_TS"] + 0;
+      if (!(t >= 0) || !(ts >= 1)) exit 3;
+      req = int(t * ts + 0.000001);
+      in_table = 0; best = -1; best_hms = ""; seen = 0;
+    }
+    !in_table && /Sample Index/ && /Presentation Time/ { in_table = 1; next; }
+    in_table && (/^Track / || (/Sample Index/ && /Presentation Time/)) { in_table = 0; next; }
+    in_table {
+      line = $0; sub(/^[ \t]+/, "", line);
+      nf = split(line, f, /[ \t]+/);
+      # f[1]=index f[2]=decodeTicks f[3]=decodeHMS f[4]=presentTicks f[5]=presentHMS ...
+      if (nf >= 5 && f[1] ~ /^[0-9]+$/ && f[4] ~ /^[0-9]+$/) {
+        seen = 1;
+        pts = f[4] + 0;
+        if (pts <= req && pts > best) { best = pts; best_hms = f[5]; }
+      }
+      next;
+    }
+    END {
+      if (!seen || best < 0) exit 4;
+      # Timescale consistency: the floor tick count expressed in the probe
+      # timescale must agree with the table human-readable timestamp.
+      nh = split(best_hms, hp, ":");
+      if (nh != 3) exit 5;
+      hms = hp[1]*3600 + hp[2]*60 + hp[3];
+      diff = best/ts - hms;
+      if (diff > 0.002 || diff < -0.002) exit 5;
+      printf "%d", best;
+    }'
+}
+
+# Production wrapper: reads the sample table from the media file itself.
+media_probe_sample_floor_ticks() {
+  local _path="$1" _time="$2" _timescale="$3"
+  cap_available avmediainfo && cap_available awk || return 1
+  /usr/bin/avmediainfo "$_path" --samples --mediatype video 2>/dev/null | media_probe_sample_floor_ticks_from_text "$_time" "$_timescale"
+}

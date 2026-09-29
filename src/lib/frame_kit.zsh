@@ -18,14 +18,18 @@
 # fixed; request data enters only through environment variables.
 #
 # Frame-grid note: with zero tolerance, AVAssetImageGenerator returns nil
-# unless the requested time is exactly a sample presentation time. A raw
-# request like 1.0s in 29.97fps media names no real frame, so the adapter
-# snaps the request down to the containing frame's exact presentation time
-# using integer math on the video track's natural timescale, then extracts
-# with zero tolerance. requestedSeconds echoes the caller's time;
-# actualSeconds/value/timescale name the extracted frame. Consumers must use
-# actualTime for verification (the media.frame contract already provides it
-# alongside deltaSeconds).
+# unless the requested time is exactly a sample presentation time. Nominal
+# frame-rate metadata cannot be trusted to compute one: target-Mac Gate A
+# (2026-09-29) proved a 29.97fps-nominal track uses non-uniform integer
+# presentation times in a 600-timescale (..., 561, 581, 601, ...), so
+# frameIndex * fps arithmetic names phantom times. The caller
+# (media.frame) therefore reads the exact presentation timestamp of the
+# frame displayed at the requested time from the avmediainfo sample table
+# (media_probe_sample_floor_ticks) and passes it in; the adapter requests
+# that CMTime with zero tolerance. requestedSeconds echoes the caller's
+# time; actualSeconds/value/timescale name the extracted frame. Consumers
+# must use actualTime for verification (the media.frame contract already
+# provides it alongside deltaSeconds).
 
 MJ_FRAMEKIT_RESULT_JSON=""
 MJ_FRAMEKIT_REQUESTED_SECONDS=""
@@ -71,13 +75,20 @@ frame_kit_time_before_duration() {
 
 # Executes a fixed embedded AppleScriptObjC adapter. Request data is supplied
 # only through environment variables; no request value is interpreted as
-# AppleScript source. The adapter extracts the full-resolution frame; the
-# caller (media.frame) bounds dimensions afterwards with sips so the adapter
-# stays narrow and every bridge call is an object call or a proven C function.
+# AppleScript source. The caller passes the exact frame presentation time
+# (value/timescale) read from the avmediainfo sample table -- the adapter
+# never computes frame times from nominal frame-rate metadata, because
+# target-Mac Gate A (2026-09-29) proved nominal rates can disagree with the
+# true non-uniform sample grid. The adapter extracts the full-resolution
+# frame; the caller (media.frame) bounds dimensions afterwards with sips so
+# the adapter stays narrow and every bridge call is an object call or a
+# proven C function.
 frame_kit_extract_png() {
   local _source="$1"
   local _output="$2"
   local _seconds="$3"
+  local _floor_value="$4"
+  local _floor_timescale="$5"
   local _json=""
 
   frame_kit_reset
@@ -86,6 +97,8 @@ frame_kit_extract_png() {
   _json=$(MJ_FRAMEKIT_SOURCE="$_source" \
     MJ_FRAMEKIT_OUTPUT="$_output" \
     MJ_FRAMEKIT_SECONDS="$_seconds" \
+    MJ_FRAMEKIT_FLOOR_VALUE="$_floor_value" \
+    MJ_FRAMEKIT_FLOOR_TIMESCALE="$_floor_timescale" \
     /usr/bin/osascript - <<'ASOBJC_FRAMEKIT' 2>/dev/null
 use framework "AVFoundation"
 use framework "Foundation"
@@ -100,11 +113,18 @@ try
   set srcPath to system attribute "MJ_FRAMEKIT_SOURCE"
   set outPath to system attribute "MJ_FRAMEKIT_OUTPUT"
   set secsText to system attribute "MJ_FRAMEKIT_SECONDS"
+  set floorText to system attribute "MJ_FRAMEKIT_FLOOR_VALUE"
+  set floorTsText to system attribute "MJ_FRAMEKIT_FLOOR_TIMESCALE"
   if srcPath is missing value or srcPath is "" then return my errorJSON("INVALID_SOURCE", "Missing source path.")
   if outPath is missing value or outPath is "" then return my errorJSON("INVALID_OUTPUT", "Missing output path.")
   if secsText is missing value or secsText is "" then return my errorJSON("INVALID_TIME", "Missing requested time.")
+  if floorText is missing value or floorText is "" then return my errorJSON("INVALID_FLOOR_TIME", "Missing frame presentation time.")
+  if floorTsText is missing value or floorTsText is "" then return my errorJSON("INVALID_FLOOR_TIME", "Missing frame presentation timescale.")
   set tSecs to secsText as real
   if tSecs < 0 then return my errorJSON("INVALID_TIME", "Requested time is negative.")
+  set floorVal to floorText as integer
+  set floorTs to floorTsText as integer
+  if floorVal < 0 or floorTs < 1 then return my errorJSON("INVALID_FLOOR_TIME", "Frame presentation time is invalid.")
 
   set theURL to current application's NSURL's fileURLWithPath:srcPath
   if theURL is missing value then return my errorJSON("ASSET_OPEN_FAILED", "Could not form a file URL for the source.")
@@ -113,30 +133,20 @@ try
 
   set vTracks to theAsset's tracksWithMediaType:(current application's AVMediaTypeVideo)
   if (count of vTracks) < 1 then return my errorJSON("NO_VIDEO_TRACK_ADAPTER", "The asset has no video track.")
-  set vTrack to item 1 of vTracks
-  try
-    set fps to (vTrack's nominalFrameRate) as real
-    set nts to (vTrack's naturalTimeScale) as integer
-  on error e
-    return my errorJSON("FRAME_GRID_UNREADABLE", "Could not read the video track frame grid: " & (e as text))
-  end try
-  if fps <= 0 or nts <= 0 then return my errorJSON("FRAME_GRID_UNAVAILABLE", "The video track has no usable frame grid; variable frame rate media is not supported.")
-  set ticksPerFrame to round (nts / fps)
-  if ticksPerFrame < 1 then return my errorJSON("FRAME_GRID_UNAVAILABLE", "The video track frame grid is not usable.")
 
-  set frameIndex to (tSecs * fps) div 1
-  set frameValue to frameIndex * ticksPerFrame
-  set requestedTime to current application's CMTimeMake(frameValue, nts)
-  set actualSeconds to frameValue / nts
+  -- The requested CMTime is an exact sample presentation timestamp from the
+  -- media sample table, so zero tolerance names a real frame by construction.
+  set requestedTime to current application's CMTimeMake(floorVal, floorTs)
+  set actualSeconds to floorVal / floorTs
 
   set gen to current application's AVAssetImageGenerator's assetImageGeneratorWithAsset:theAsset
   if gen is missing value then return my errorJSON("GENERATOR_FAILED", "AVAssetImageGenerator could not be created.")
   gen's setAppliesPreferredTrackTransform:true
-  gen's setRequestedTimeToleranceBefore:(current application's CMTimeMake(0, nts))
-  gen's setRequestedTimeToleranceAfter:(current application's CMTimeMake(0, nts))
+  gen's setRequestedTimeToleranceBefore:(current application's CMTimeMake(0, floorTs))
+  gen's setRequestedTimeToleranceAfter:(current application's CMTimeMake(0, floorTs))
 
   set cgImage to gen's copyCGImageAtTime:requestedTime actualTime:(missing value) |error|:(missing value)
-  if cgImage is missing value then return my errorJSON("FRAME_GENERATION_FAILED", "AVFoundation did not return an image for the snapped frame time.")
+  if cgImage is missing value then return my errorJSON("FRAME_GENERATION_FAILED", "AVFoundation did not return an image for frame presentation time " & (floorText as text) & "/" & (floorTsText as text) & ".")
 
   set rep to current application's NSBitmapImageRep's alloc()'s initWithCGImage:cgImage
   if rep is missing value then return my errorJSON("PNG_ENCODE_FAILED", "NSBitmapImageRep could not wrap the generated image.")
@@ -149,7 +159,7 @@ try
   set h to rep's pixelsHigh()
   if w < 1 or h < 1 then return my errorJSON("FRAME_RESULT_INVALID", "AVFoundation returned invalid frame dimensions.")
 
-  return "{\"ok\":true,\"requestedSeconds\":" & (tSecs as text) & ",\"actualSeconds\":" & (actualSeconds as text) & ",\"actualValue\":" & (frameValue as text) & ",\"actualTimescale\":" & (nts as text) & ",\"pixelWidth\":" & (w as text) & ",\"pixelHeight\":" & (h as text) & ",\"transformApplied\":true,\"toleranceBeforeSeconds\":0,\"toleranceAfterSeconds\":0,\"adapter\":\"ASOBJC_AVAssetImageGenerator\"}"
+  return "{\"ok\":true,\"requestedSeconds\":" & (tSecs as text) & ",\"actualSeconds\":" & (actualSeconds as text) & ",\"actualValue\":" & (floorVal as text) & ",\"actualTimescale\":" & (floorTs as text) & ",\"pixelWidth\":" & (w as text) & ",\"pixelHeight\":" & (h as text) & ",\"transformApplied\":true,\"toleranceBeforeSeconds\":0,\"toleranceAfterSeconds\":0,\"adapter\":\"ASOBJC_AVAssetImageGenerator\"}"
 on error e
   return my errorJSON("ASOBJC_EXCEPTION", "AppleScriptObjC adapter failed: " & (e as text))
 end try
