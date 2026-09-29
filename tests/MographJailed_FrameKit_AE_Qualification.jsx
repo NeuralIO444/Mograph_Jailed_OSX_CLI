@@ -57,7 +57,7 @@
 
     try { if (output.exists) { output.remove(); } } catch (ignoreRemove) {}
     lines.push("SUMMARY|pass=" + pass + "|fail=" + fail + "|skip=0");
-    lines.push("POLICY|networkReads=0|networkWrites=0|sudo=0|python=0|xcodeTools=0");
+    lines.push("POLICY|networkReads=0|networkWrites=0|sudo=0|python=system_stdlib|xcodeTools=0");
 
     receipt.encoding = "UTF-8";
     receipt.lineFeed = "Unix";

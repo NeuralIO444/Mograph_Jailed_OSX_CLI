@@ -167,6 +167,6 @@ else skip_test audio_guard system_audio_fixture_missing; fi
 # broader media authoring surface. VFR remains an explicit follow-up fixture gate.
 skip_test vfr no_qualified_local_vfr_fixture
 
-print -r -- 'POLICY|networkReads=0|networkWrites=0|sudo=0|python=0|xcodeTools=0'
+print -r -- 'POLICY|networkReads=0|networkWrites=0|sudo=0|python=system_stdlib|xcodeTools=0'
 print -r -- "SUMMARY|pass=$pass|fail=$fail|skip=$skip"
 (( fail == 0 ))
