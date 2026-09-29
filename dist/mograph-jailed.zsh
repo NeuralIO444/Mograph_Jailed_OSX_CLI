@@ -1392,8 +1392,12 @@ try
   set vTracks to theAsset's tracksWithMediaType:(current application's AVMediaTypeVideo)
   if (count of vTracks) < 1 then return my errorJSON("NO_VIDEO_TRACK_ADAPTER", "The asset has no video track.")
   set vTrack to item 1 of vTracks
-  set fps to vTrack's nominalFrameRate
-  set nts to vTrack's naturalTimeScale
+  try
+    set fps to (vTrack's nominalFrameRate) as real
+    set nts to (vTrack's naturalTimeScale) as integer
+  on error e
+    return my errorJSON("FRAME_GRID_UNREADABLE", "Could not read the video track frame grid: " & (e as text))
+  end try
   if fps <= 0 or nts <= 0 then return my errorJSON("FRAME_GRID_UNAVAILABLE", "The video track has no usable frame grid; variable frame rate media is not supported.")
   set ticksPerFrame to round (nts / fps)
   if ticksPerFrame < 1 then return my errorJSON("FRAME_GRID_UNAVAILABLE", "The video track frame grid is not usable.")
