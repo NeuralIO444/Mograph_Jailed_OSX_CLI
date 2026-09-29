@@ -783,7 +783,7 @@ operation_required_all() {
     temp.clean) printf '%s\n' sed rm pwd ;;
     media.inspect) printf '%s\n' stat file uname ;;
     media.timing) printf '%s\n' avmediainfo awk df uname ;;
-    media.frame) printf '%s\n' avmediainfo osascript jq sips awk df mktemp mv rm stat uname ;;
+    media.frame) printf '%s\n' avmediainfo python3 jq sips awk df mktemp mv rm stat uname ;;
     package.create) printf '%s\n' ditto mktemp rm mv stat uname ;;
   esac
 }
@@ -1727,7 +1727,7 @@ emit_probe_data() {
   printf '"osBuild":'; json_quote "$(system_os_build)"; printf ','
   printf '"architecture":'; json_quote "$(system_architecture)"; printf ','
   printf '"capabilities":{'
-  for _cap in zsh sw_vers stat file df mktemp plutil sqlite3 jq sips ditto sha256 shasum mdls avmediainfo avconvert afinfo afconvert mdfind xattr osascript base64 awk uname sed rm mv pwd; do
+  for _cap in zsh sw_vers stat file df mktemp plutil sqlite3 jq sips ditto sha256 shasum mdls avmediainfo avconvert afinfo afconvert mdfind xattr osascript python3 base64 awk uname sed rm mv pwd; do
     [ "$_first" -eq 1 ] || printf ','
     _first=0
     json_quote "$_cap"; printf ':'; emit_capability_object "$_cap"
@@ -2834,7 +2834,7 @@ handle_report_tech() {
   printf ',"policy":{"zeroInstall":true,"localOnly":true,"rawShellAPI":false,"sourceMutationCommands":false,"jxaProductionAdapter":true,"frameKitTargetMacQualificationRequired":true}'
   printf ',"standardLibrary":'; emit_standard_library_descriptor
   printf ',"capabilities":{'
-  for _cap in zsh sw_vers stat file df mktemp plutil sqlite3 jq sips ditto sha256 shasum mdls avmediainfo avconvert afinfo afconvert mdfind xattr osascript base64 awk uname sed rm mv pwd; do
+  for _cap in zsh sw_vers stat file df mktemp plutil sqlite3 jq sips ditto sha256 shasum mdls avmediainfo avconvert afinfo afconvert mdfind xattr osascript python3 base64 awk uname sed rm mv pwd; do
     [ "$_first" -eq 1 ] || printf ','; _first=0
     json_quote "$_cap"; printf ':'; emit_capability_object "$_cap"
   done
