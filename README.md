@@ -4,7 +4,17 @@ Zero-install native macOS capability and evidence layer for MJ applications.
 
 Development source is modular zsh. Deployment bundles deterministically to one `dist/mograph-jailed.zsh` runtime. Product code submits allowlisted structured requests; there is no public arbitrary-shell or arbitrary-SQL command.
 
-## Quickstart
+## Install — designers (easy)
+
+Don't use the terminal much? Run **one command**, answer a few plain-English questions, done:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/NeuralIO444/Mograph_Jailed_OSX_CLI/main/tools/install-designer.zsh | zsh
+```
+
+It downloads MographJailed into `~/Documents/MographJailed`, checks that it runs, and offers to add the help pages (`mj-man`) and the automatic project-version watcher. No git, no sudo, no admin password. Full walkthrough: [Designer Install](https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/wiki/Designer-Install).
+
+## Install — developers (quickstart)
 
 ```sh
 git clone https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI.git
