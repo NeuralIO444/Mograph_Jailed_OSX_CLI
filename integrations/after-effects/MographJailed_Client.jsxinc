@@ -1,0 +1,416 @@
+/* MographJailed After Effects client. ExtendScript / ES3-compatible syntax. */
+(function (global) {
+    function utf8Bytes(s) {
+        var out = [], i, c, next, cp;
+        for (i = 0; i < s.length; i++) {
+            c = s.charCodeAt(i);
+            if (c >= 0xD800 && c <= 0xDBFF && i + 1 < s.length) {
+                next = s.charCodeAt(i + 1);
+                if (next >= 0xDC00 && next <= 0xDFFF) {
+                    cp = 0x10000 + ((c - 0xD800) << 10) + (next - 0xDC00);
+                    out.push(0xF0 | (cp >> 18));
+                    out.push(0x80 | ((cp >> 12) & 0x3F));
+                    out.push(0x80 | ((cp >> 6) & 0x3F));
+                    out.push(0x80 | (cp & 0x3F));
+                    i++;
+                    continue;
+                }
+            }
+            if (c < 0x80) {
+                out.push(c);
+            } else if (c < 0x800) {
+                out.push(0xC0 | (c >> 6));
+                out.push(0x80 | (c & 0x3F));
+            } else {
+                out.push(0xE0 | (c >> 12));
+                out.push(0x80 | ((c >> 6) & 0x3F));
+                out.push(0x80 | (c & 0x3F));
+            }
+        }
+        return out;
+    }
+
+    function base64Utf8(s) {
+        var bytes = utf8Bytes(s), chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        var out = "", i, a, b, c, triple;
+        for (i = 0; i < bytes.length; i += 3) {
+            a = bytes[i];
+            b = (i + 1 < bytes.length) ? bytes[i + 1] : 0;
+            c = (i + 2 < bytes.length) ? bytes[i + 2] : 0;
+            triple = (a << 16) | (b << 8) | c;
+            out += chars.charAt((triple >> 18) & 63);
+            out += chars.charAt((triple >> 12) & 63);
+            out += (i + 1 < bytes.length) ? chars.charAt((triple >> 6) & 63) : "=";
+            out += (i + 2 < bytes.length) ? chars.charAt(triple & 63) : "=";
+        }
+        return out;
+    }
+
+    function shellQuote(s) {
+        // Single audited shell boundary. Values never become command syntax.
+        return "'" + String(s).replace(/'/g, "'\\''") + "'";
+    }
+
+
+    function isAllowedCommand(command) {
+        var allowed = [
+            "system.probe", "system.doctor", "system.describe", "runtime.verify", "file.inspect", "file.hash", "file.provenance",
+            "asset.manifest", "asset.verify", "search.candidate", "image.inspect", "image.derivative", "storage.preflight",
+            "volume.inspect", "temp.create", "temp.clean", "media.inspect",
+            "media.timing", "media.frame", "package.create", "report.tech"
+        ];
+        var i;
+        for (i = 0; i < allowed.length; i++) {
+            if (command === allowed[i]) { return true; }
+        }
+        return false;
+    }
+
+    function hasProtocolControl(s) {
+        var i, c;
+        s = String(s);
+        for (i = 0; i < s.length; i++) {
+            c = s.charCodeAt(i);
+            if (c < 32 || c === 127) { return true; }
+        }
+        return false;
+    }
+
+    function writeRequestLine(f, line) {
+        if (!f.writeln(line)) {
+            throw new Error("MOGRAPHJAILED_REQUEST_WRITE_FAILED: " + f.error);
+        }
+    }
+
+    function safeJsonParse(text) {
+        var i = 0, len = text.length;
+        function fail(msg) { throw new Error("MOGRAPHJAILED_JSON_PARSE: " + msg + " at " + i); }
+        function ws() { while (i < len && /[\t\n\r ]/.test(text.charAt(i))) { i++; } }
+        function parseString() {
+            var out = "", ch, esc, hex, code;
+            if (text.charAt(i) !== '"') { fail("Expected string"); }
+            i++;
+            while (i < len) {
+                ch = text.charAt(i++);
+                if (ch === '"') { return out; }
+                if (ch === "\\") {
+                    if (i >= len) { fail("Bad escape"); }
+                    esc = text.charAt(i++);
+                    if (esc === '"' || esc === "\\" || esc === "/") { out += esc; }
+                    else if (esc === "b") { out += "\b"; }
+                    else if (esc === "f") { out += "\f"; }
+                    else if (esc === "n") { out += "\n"; }
+                    else if (esc === "r") { out += "\r"; }
+                    else if (esc === "t") { out += "\t"; }
+                    else if (esc === "u") {
+                        hex = text.substr(i, 4);
+                        if (!/^[0-9a-fA-F]{4}$/.test(hex)) { fail("Bad unicode escape"); }
+                        code = parseInt(hex, 16);
+                        out += String.fromCharCode(code);
+                        i += 4;
+                    } else { fail("Unsupported escape"); }
+                } else {
+                    if (ch.charCodeAt(0) < 32) { fail("Control character in string"); }
+                    out += ch;
+                }
+            }
+            fail("Unterminated string");
+        }
+        function parseNumber() {
+            var start = i, token;
+            if (text.charAt(i) === "-") { i++; }
+            if (text.charAt(i) === "0") { i++; }
+            else {
+                if (!/[1-9]/.test(text.charAt(i))) { fail("Bad number"); }
+                while (/[0-9]/.test(text.charAt(i))) { i++; }
+            }
+            if (text.charAt(i) === ".") {
+                i++;
+                if (!/[0-9]/.test(text.charAt(i))) { fail("Bad fraction"); }
+                while (/[0-9]/.test(text.charAt(i))) { i++; }
+            }
+            if (text.charAt(i) === "e" || text.charAt(i) === "E") {
+                i++;
+                if (text.charAt(i) === "+" || text.charAt(i) === "-") { i++; }
+                if (!/[0-9]/.test(text.charAt(i))) { fail("Bad exponent"); }
+                while (/[0-9]/.test(text.charAt(i))) { i++; }
+            }
+            token = text.substring(start, i);
+            return Number(token);
+        }
+        function parseArray() {
+            var a = [];
+            i++; ws();
+            if (text.charAt(i) === "]") { i++; return a; }
+            while (i < len) {
+                a.push(parseValue()); ws();
+                if (text.charAt(i) === "]") { i++; return a; }
+                if (text.charAt(i) !== ",") { fail("Expected comma in array"); }
+                i++; ws();
+            }
+            fail("Unterminated array");
+        }
+        function parseObject() {
+            var o = {}, key;
+            i++; ws();
+            if (text.charAt(i) === "}") { i++; return o; }
+            while (i < len) {
+                key = parseString(); ws();
+                if (text.charAt(i) !== ":") { fail("Expected colon"); }
+                i++; ws();
+                o[key] = parseValue(); ws();
+                if (text.charAt(i) === "}") { i++; return o; }
+                if (text.charAt(i) !== ",") { fail("Expected comma in object"); }
+                i++; ws();
+            }
+            fail("Unterminated object");
+        }
+        function parseValue() {
+            ws();
+            var ch = text.charAt(i);
+            if (ch === '"') { return parseString(); }
+            if (ch === "{") { return parseObject(); }
+            if (ch === "[") { return parseArray(); }
+            if (ch === "-" || /[0-9]/.test(ch)) { return parseNumber(); }
+            if (text.substr(i, 4) === "true") { i += 4; return true; }
+            if (text.substr(i, 5) === "false") { i += 5; return false; }
+            if (text.substr(i, 4) === "null") { i += 4; return null; }
+            fail("Unexpected token");
+        }
+        ws();
+        var value = parseValue();
+        ws();
+        if (i !== len) { fail("Trailing data"); }
+        return value;
+    }
+
+    function parseResponse(text) {
+        var obj = safeJsonParse(text);
+        if (!obj || obj.protocol !== "MOGRAPHJAILED" || obj.protocolVersion !== 1 || typeof obj.ok !== "boolean") {
+            throw new Error("MOGRAPHJAILED_BAD_RESPONSE: Invalid response envelope.");
+        }
+        return obj;
+    }
+
+    function defaultCliFile() {
+        var here = new File($.fileName);
+        var root = here.parent.parent.parent;
+        return new File(root.fsName + "/dist/mograph-jailed.zsh");
+    }
+
+    function makeRequestFile(command, args) {
+        var requestId, f, allowed, i, key, value;
+        if (!isAllowedCommand(command) || hasProtocolControl(command)) {
+            throw new Error("MOGRAPHJAILED_UNSUPPORTED_COMMAND: Command is not allowlisted.");
+        }
+        requestId = "ae-" + (new Date().getTime()) + "-" + Math.floor(Math.random() * 1000000);
+        f = new File(Folder.temp.fsName + "/MographJailed_Request_" + requestId + ".txt");
+        f.encoding = "UTF-8";
+        f.lineFeed = "Unix";
+        if (!f.open("w")) {
+            throw new Error("MOGRAPHJAILED_REQUEST_WRITE_FAILED: " + f.error);
+        }
+        try {
+            writeRequestLine(f, "MOGRAPHJAILED_REQUEST 1");
+            writeRequestLine(f, "requestId=" + requestId);
+            writeRequestLine(f, "command=" + command);
+            if (args) {
+                allowed = ["path", "target", "label", "runId", "output", "input", "format", "expectedCliVersion", "expectedProtocolVersion", "expectedFilename", "expectedSha256", "expectedSizeBytes", "expectedModifiedEpoch", "requiredBytes", "maxResults", "timeSeconds", "maxPixels"];
+                for (i = 0; i < allowed.length; i++) {
+                    key = allowed[i];
+                    if (typeof args[key] !== "undefined" && args[key] !== null) {
+                        value = String(args[key]);
+                        if (hasProtocolControl(value)) {
+                            throw new Error("MOGRAPHJAILED_INVALID_ARGUMENT: ASCII control characters are not supported.");
+                        }
+                        if (value.length > 16384) {
+                            throw new Error("MOGRAPHJAILED_INVALID_ARGUMENT: Argument exceeds the protocol limit.");
+                        }
+                        writeRequestLine(f, "arg." + key + "=" + base64Utf8(value));
+                    }
+                }
+            }
+            f.close();
+        } catch (e) {
+            try { f.close(); } catch (ignoreClose) {}
+            try { if (f.exists) { f.remove(); } } catch (ignoreRemove) {}
+            throw e;
+        }
+        return { file: f, requestId: requestId };
+    }
+
+    function Client(cliFile) {
+        this.cliFile = cliFile || defaultCliFile();
+        this._descriptionCache = null;
+    }
+
+    Client.prototype.call = function (command, args) {
+        if (!this.cliFile.exists) {
+            throw new Error("MOGRAPHJAILED_CLI_NOT_FOUND: " + this.cliFile.fsName);
+        }
+        var req = makeRequestFile(command, args || {});
+        var commandLine = "/bin/zsh -f " + shellQuote(this.cliFile.fsName) + " --request " + shellQuote(req.file.fsName);
+        var output;
+        try {
+            output = system.callSystem(commandLine);
+        } finally {
+            if (req.file.exists) {
+                req.file.remove();
+            }
+        }
+        var response = parseResponse(output);
+        if (response.requestId !== req.requestId) {
+            throw new Error("MOGRAPHJAILED_REQUEST_MISMATCH: Response requestId does not match request.");
+        }
+        return response;
+    };
+
+    Client.prototype.probe = function () {
+        return this.call("system.probe", {});
+    };
+
+    Client.prototype.doctor = function () {
+        return this.call("system.doctor", {});
+    };
+
+    Client.prototype.describe = function (forceRefresh) {
+        if (!forceRefresh && this._descriptionCache) {
+            return this._descriptionCache;
+        }
+        var response = this.call("system.describe", {});
+        if (response.ok) {
+            this._descriptionCache = response;
+        }
+        return response;
+    };
+
+    Client.prototype.verifyRuntime = function (options) {
+        options = options || {};
+        return this.call("runtime.verify", {
+            expectedCliVersion: options.expectedCliVersion || "0.3.0-dev.2",
+            expectedProtocolVersion: String(typeof options.expectedProtocolVersion === "undefined" ? 1 : options.expectedProtocolVersion),
+            expectedFilename: options.expectedFilename || "mograph-jailed.zsh",
+            expectedSha256: options.expectedSha256 || null
+        });
+    };
+
+    Client.prototype.can = function (command) {
+        var response = this.describe(false);
+        var op;
+        if (!response.ok || !response.data || !response.data.operations) { return false; }
+        op = response.data.operations[command];
+        return !!(op && op.available === true);
+    };
+
+    Client.prototype.isInteractiveSafe = function (command) {
+        var response = this.describe(false);
+        var op;
+        if (!response.ok || !response.data || !response.data.operations) { return false; }
+        op = response.data.operations[command];
+        return !!(op && op.available === true && op.interactiveSafe === true);
+    };
+
+    Client.prototype.standardLibrary = function () {
+        var response = this.describe(false);
+        if (!response.ok || !response.data) { return null; }
+        return response.data.standardLibrary || null;
+    };
+
+    Client.prototype.mediaTiming = function (path) {
+        return this.call("media.timing", { path: path });
+    };
+
+    Client.prototype.mediaFrame = function (path, output, timeSeconds, maxPixels) {
+        return this.call("media.frame", {
+            path: path,
+            output: output,
+            timeSeconds: String(timeSeconds),
+            maxPixels: (typeof maxPixels === "undefined" ? "2048" : String(maxPixels))
+        });
+    };
+
+
+    Client.prototype.assetManifest = function (path, mode) {
+        return this.call("asset.manifest", { path: path, format: mode || "fast" });
+    };
+
+    Client.prototype.assetVerify = function (path, expected) {
+        expected = expected || {};
+        return this.call("asset.verify", {
+            path: path,
+            expectedFilename: expected.filename || null,
+            expectedSizeBytes: (typeof expected.sizeBytes === "undefined" ? null : String(expected.sizeBytes)),
+            expectedModifiedEpoch: (typeof expected.modifiedEpoch === "undefined" ? null : String(expected.modifiedEpoch)),
+            expectedSha256: expected.sha256 || null
+        });
+    };
+
+    Client.prototype.searchCandidate = function (rootPath, filename, maxResults) {
+        return this.call("search.candidate", { path: rootPath, target: filename, maxResults: String(maxResults || 20) });
+    };
+
+    Client.prototype.fileProvenance = function (path) {
+        return this.call("file.provenance", { path: path });
+    };
+
+    Client.prototype.inspectImage = function (path) {
+        return this.call("image.inspect", { path: path });
+    };
+
+    Client.prototype.createImageDerivative = function (input, output, maxPixels) {
+        return this.call("image.derivative", { input: input, output: output, target: String(maxPixels) });
+    };
+
+    Client.prototype.storagePreflight = function (path, requiredBytes) {
+        return this.call("storage.preflight", { path: path, requiredBytes: (typeof requiredBytes === "undefined" ? null : String(requiredBytes)) });
+    };
+
+    Client.prototype.inspectMediaReadOnly = function (path) {
+        var before = this.call("file.inspect", { path: path });
+        if (!before.ok) { return { ok: false, stage: "inspectBefore", response: before }; }
+        var inspect = this.call("media.inspect", { path: path });
+        if (!inspect.ok) { return { ok: false, stage: "mediaInspect", response: inspect }; }
+        var after = this.call("file.inspect", { path: path });
+        if (!after.ok) { return { ok: false, stage: "inspectAfter", response: after }; }
+        var same = before.data.sizeBytes === after.data.sizeBytes && before.data.modifiedEpoch === after.data.modifiedEpoch;
+        return {
+            ok: same,
+            unchanged: same,
+            verification: "size+mtime",
+            before: before.data,
+            after: after.data,
+            inspect: inspect
+        };
+    };
+
+    // Explicit forensic check. This reads the entire source twice and can be slow,
+    // especially on large or network-hosted media. Do not use as the default UI path.
+    Client.prototype.inspectMediaImmutable = function (path) {
+        var before = this.call("file.hash", { path: path });
+        if (!before.ok) { return { ok: false, stage: "hashBefore", response: before }; }
+        var inspect = this.call("media.inspect", { path: path });
+        if (!inspect.ok) { return { ok: false, stage: "inspect", response: inspect }; }
+        var after = this.call("file.hash", { path: path });
+        if (!after.ok) { return { ok: false, stage: "hashAfter", response: after }; }
+        var same = before.data.hash === after.data.hash;
+        return {
+            ok: same,
+            immutable: same,
+            verification: "sha256-before-after",
+            beforeHash: before.data.hash,
+            afterHash: after.data.hash,
+            inspect: inspect
+        };
+    };
+
+    global.MJNativeClient = Client;
+    global.MJNativeInternals = {
+        utf8Bytes: utf8Bytes,
+        base64Utf8: base64Utf8,
+        shellQuote: shellQuote,
+        parseResponse: parseResponse,
+        safeJsonParse: safeJsonParse,
+        isAllowedCommand: isAllowedCommand,
+        hasProtocolControl: hasProtocolControl
+    };
+}(this));
