@@ -30,6 +30,12 @@ jobs:
         run: |
           sh scripts/build.zsh
           bash scripts/build-linux-test.sh
+      - name: linux-test bundle must target zsh and parse
+        run: |
+          head -1 dist/mograph-jailed-linux-test.sh | grep -qx '#!/usr/bin/env zsh'
+          sudo apt-get update && sudo apt-get install -y zsh
+          zsh -n dist/mograph-jailed-linux-test.sh
+          zsh -n dist/mograph-jailed.zsh
       - name: dist must match committed bundle
         run: git diff --exit-code -- dist/
 
