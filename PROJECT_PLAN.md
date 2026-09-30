@@ -4,7 +4,7 @@
 **Project:** MographJailed  
 **CLI identity:** `mograph-jailed`  
 **Role:** Zero-install native macOS capability layer for MJ applications.  
-**Status:** `0.3.0-dev.2` is the SL-M2 FrameKit qualification candidate. The target-Mac-qualified `0.3.0-dev.1` install remains the baseline while `media.frame` is tested on the managed Mac and from an After Effects child process.  
+**Status:** the current development line carries 27 Protocol v1 operations: the `0.3.0-dev.2` SL-M2 FrameKit candidate, plus SL-M3 ImageStats (`image.stats`, `image.compare`; portable-complete, see `docs/releases/0.3.0-dev.3/QA_REPORT_SL_M3.md`) and the Tier 0 Observer (`project.ingest`, `expression.lint`, `plugin.audit`, `project.snapshot`; see `docs/TIER0_OBSERVER.md`). The target-Mac-qualified `0.3.0-dev.1` install remains the baseline until the `media.frame` target-Mac and After Effects child-process gates pass.
 
 ---
 

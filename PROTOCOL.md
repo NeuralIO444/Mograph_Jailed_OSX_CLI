@@ -98,3 +98,43 @@ arg.maxPixels=<Base64 integer 64..4096>   # optional; default 2048
 `path`, `output`, and `timeSeconds` are required. The operation is `LOCAL_ONLY`, refuses overwrite, and returns schema `MJ_MEDIA_FRAME_1` with requested time, actual generated time, delta, dimensions, output facts, transform/tolerance evidence, source-stability evidence, and adapter identity.
 
 The operation does not accept JavaScript, Objective-C selectors, shell commands, SQL, codec settings, or arbitrary AVFoundation options.
+
+## 0.3.0-dev.3 / SL-M3 ImageStats additive contract
+
+Protocol v1 additionally allowlists `image.stats` and `image.compare`, growing the public surface from 21 to 23 operations. No existing command schema is reinterpreted.
+
+Request schemas:
+
+```text
+command=image.stats
+arg.path=<Base64 absolute image path>
+
+command=image.compare
+arg.pathA=<Base64 absolute image path>
+arg.pathB=<Base64 absolute image path>
+```
+
+Both are `SIZE_DEPENDENT`, `NONE` mutation, `DERIVED_IMAGE_SIGNATURE` authority, and `EXPLICIT_PATH_OR_NONE` execution scope. `image.stats` returns schema `MJ_IMAGE_STATS_1` (bounded deterministic signatures); `image.compare` returns schema `MJ_IMAGE_COMPARE_1` (interpretable 0.0–1.0 similarity score). Both require `python3`, `sips`, and `awk`; both are read-only and never mutate the source image.
+
+## Tier 0 Observer additive contract
+
+Protocol v1 additionally allowlists four project-observation operations, growing the public surface from 23 to 27 operations. No existing command schema is reinterpreted.
+
+Request schemas:
+
+```text
+command=project.ingest
+arg.path=<Base64 absolute MJ_PROJECT_SCRAPE_1 JSON path>
+
+command=expression.lint
+arg.path=<Base64 absolute MJ_PROJECT_SCRAPE_1 JSON path>
+
+command=plugin.audit
+arg.path=<Base64 absolute plug-ins directory path>
+
+command=project.snapshot
+arg.path=<Base64 absolute .aep path>
+arg.output=<Base64 absolute versions directory path>
+```
+
+All four are `LOCAL_ONLY`: network and unknown filesystem classes fail closed before any work runs. `project.ingest` returns schema `MJ_PROJECT_SUMMARY_1`; `expression.lint` returns `MJ_EXPRESSION_LINT_1`; `plugin.audit` returns `MJ_PLUGIN_AUDIT_1`; `project.snapshot` returns `MJ_PROJECT_SNAPSHOT_1`. Only `project.snapshot` mutates (`DERIVATIVE_CREATE`: a new hash-suffixed copy that never overwrites; unchanged sources are skipped, not re-copied). The other three are read-only, and only `project.snapshot` is excluded from interactive-safe paths.
