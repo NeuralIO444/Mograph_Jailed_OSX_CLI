@@ -12,8 +12,13 @@ run_req(){ local name=$1; set +e; "$CLI" --request "$TMP/$name.req" > "$TMP/$nam
 
 ASSET="$TMP/asset.txt"
 printf 'MJ NG-M2 asset\n' > "$ASSET"
-SIZE=$(stat -c %s "$ASSET")
-MTIME=$(stat -c %Y "$ASSET")
+if [ "$(uname)" = "Darwin" ]; then
+  SIZE=$(stat -f %z "$ASSET")
+  MTIME=$(stat -f %m "$ASSET")
+else
+  SIZE=$(stat -c %s "$ASSET")
+  MTIME=$(stat -c %Y "$ASSET")
+fi
 SHA=$(sha256sum "$ASSET" | awk '{print $1}')
 
 # Single-asset fast manifest.

@@ -25,7 +25,8 @@ check grep -qx "$STAGE" "$STAGE/.mj_native_stage"
 
 # Marker tampering must refuse recursive cleanup and leave the directory intact.
 cp "$STAGE/.mj_native_stage" "$TMP/marker.good"
-sed -i '2s/.*/other-request/' "$STAGE/.mj_native_stage"
+sed -i.bak '2s/.*/other-request/' "$STAGE/.mj_native_stage"
+rm -f "$STAGE/.mj_native_stage.bak"
 set +e
 cleanup_mj_stage_dir "$STAGE" "$TMP/out" "MographJailed_QA"
 RC=$?

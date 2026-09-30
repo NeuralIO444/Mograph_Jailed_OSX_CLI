@@ -100,7 +100,7 @@ LINK="$TMP/tmp-link"; ln -s "$REAL_A" "$LINK"
 run_temp_create rc3-temp-link "$LINK" "$TMP/temp-link.json"
 check test "$RC" -eq 0
 TDIR=$(jq -r '.data.path' "$TMP/temp-link.json")
-check /bin/bash -c 'case "$1" in "$2"/MographJailed.*) exit 0;; *) exit 1;; esac' bash "$TDIR" "$REAL_A"
+check /bin/bash -c 'case "$1" in "$2"/MographJailed.*) exit 0;; *) exit 1;; esac' bash "$TDIR" "$(cd "$REAL_A" && pwd -P)"
 rm "$LINK"; ln -s "$REAL_B" "$LINK"
 run_temp_clean rc3-temp-retarget "$LINK" "$TDIR" "$TMP/temp-retarget.json"
 check test "$RC" -ne 0
@@ -113,7 +113,8 @@ check test ! -e "$TDIR"
 # Ownership binding tamper: path/euid changes invalidate cleanup authorization.
 run_temp_create rc3-marker-path "$REAL_A" "$TMP/marker-path-create.json"
 MPATH=$(jq -r '.data.path' "$TMP/marker-path-create.json")
-sed -i '3s|.*|/tmp/not-the-bound-path|' "$MPATH/.mj_native_owned"
+sed -i.bak '3s|.*|/tmp/not-the-bound-path|' "$MPATH/.mj_native_owned"
+rm -f "$MPATH/.mj_native_owned.bak"
 run_temp_clean rc3-marker-path-clean "$REAL_A" "$MPATH" "$TMP/marker-path-clean.json"
 check test "$RC" -ne 0
 check jq -e '.error.code=="TEMP_REFUSED"' "$TMP/marker-path-clean.json"
@@ -121,7 +122,8 @@ rm -rf "$MPATH"
 
 run_temp_create rc3-marker-euid "$REAL_A" "$TMP/marker-euid-create.json"
 EPATH=$(jq -r '.data.path' "$TMP/marker-euid-create.json")
-sed -i '4s/.*/99999999/' "$EPATH/.mj_native_owned"
+sed -i.bak '4s/.*/99999999/' "$EPATH/.mj_native_owned"
+rm -f "$EPATH/.mj_native_owned.bak"
 run_temp_clean rc3-marker-euid-clean "$REAL_A" "$EPATH" "$TMP/marker-euid-clean.json"
 check test "$RC" -ne 0
 check jq -e '.error.code=="TEMP_REFUSED"' "$TMP/marker-euid-clean.json"
