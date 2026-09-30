@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 OUT="$ROOT/dist/mograph-jailed-linux-test.sh"
 : > "$OUT"
-printf '%s\n' '#!/usr/bin/env bash' 'set -u' >> "$OUT"
+printf '%s\n' '#!/usr/bin/env zsh' 'set -u' >> "$OUT"
 for f in \
   src/core/constants.zsh \
   src/core/json.zsh \
