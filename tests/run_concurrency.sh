@@ -18,7 +18,7 @@ MOGRAPHJAILED_REQUEST 1
 requestId=concurrent-create-$i
 command=temp.create
 REQ
-  (TMPDIR="$TMP/root" /bin/bash "$CLI" --request "$TMP/create-$i.req" > "$TMP/create-$i.json") &
+  (TMPDIR="$TMP/root" /bin/zsh -f "$CLI" --request "$TMP/create-$i.req" > "$TMP/create-$i.json") &
 done
 wait
 paths="$TMP/paths.txt"; : > "$paths"
@@ -39,7 +39,7 @@ requestId=concurrent-clean-$i
 command=temp.clean
 arg.path=$(b64 "$p")
 REQ
-  (TMPDIR="$TMP/root" /bin/bash "$CLI" --request "$TMP/clean-$i.req" > "$TMP/clean-$i.json") &
+  (TMPDIR="$TMP/root" /bin/zsh -f "$CLI" --request "$TMP/clean-$i.req" > "$TMP/clean-$i.json") &
 done < "$paths"
 wait
 for i in $(seq 1 12); do check jq -e '.ok==true and .data.removed==true' "$TMP/clean-$i.json"; done
@@ -55,7 +55,7 @@ requestId=concurrent-hash-$i
 command=file.hash
 arg.path=$(b64 "$TARGET")
 REQ
-  (/bin/bash "$CLI" --request "$TMP/hash-$i.req" > "$TMP/hash-$i.json") &
+  (/bin/zsh -f "$CLI" --request "$TMP/hash-$i.req" > "$TMP/hash-$i.json") &
 done
 wait
 for i in $(seq 1 12); do check jq -e --arg h "$EXPECTED" '.ok==true and .data.hash==$h' "$TMP/hash-$i.json"; done

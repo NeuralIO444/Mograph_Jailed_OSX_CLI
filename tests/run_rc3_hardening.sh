@@ -17,7 +17,7 @@ command=file.hash
 arg.path=$(b64 "$path")
 REQ
   set +e
-  /bin/bash "$CLI" --request "$TMP/$id.req" > "$out"
+  /bin/zsh -f "$CLI" --request "$TMP/$id.req" > "$out"
   RC=$?
   set -e
 }
@@ -29,7 +29,7 @@ requestId=$id
 command=temp.create
 REQ
   set +e
-  TMPDIR="$tmpdir" /bin/bash "$CLI" --request "$TMP/$id.req" > "$out"
+  TMPDIR="$tmpdir" /bin/zsh -f "$CLI" --request "$TMP/$id.req" > "$out"
   RC=$?
   set -e
 }
@@ -42,7 +42,7 @@ command=temp.clean
 arg.path=$(b64 "$path")
 REQ
   set +e
-  TMPDIR="$tmpdir" /bin/bash "$CLI" --request "$TMP/$id.req" > "$out"
+  TMPDIR="$tmpdir" /bin/zsh -f "$CLI" --request "$TMP/$id.req" > "$out"
   RC=$?
   set -e
 }
@@ -68,7 +68,7 @@ command=file.hash
 arg.path=$(b64 "$TARGET")
 REQ
 set +e
-PATH="$FAKEBIN" PERL5OPT='-MMographJailed_Must_Not_Load' SYSTEM_VERSION_COMPAT=1 COMMAND_MODE=legacy DITTO_TEST_OPTIONS='unexpected' /bin/bash "$CLI" --request "$TMP/env-hash.req" > "$TMP/env-hash.json"
+PATH="$FAKEBIN" PERL5OPT='-MMographJailed_Must_Not_Load' SYSTEM_VERSION_COMPAT=1 COMMAND_MODE=legacy DITTO_TEST_OPTIONS='unexpected' /bin/zsh -f "$CLI" --request "$TMP/env-hash.req" > "$TMP/env-hash.json"
 ENV_RC=$?
 set -e
 check test "$ENV_RC" -eq 0
