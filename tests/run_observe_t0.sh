@@ -201,7 +201,7 @@ bad = [l for l in sys.argv[1].splitlines() if w(l) > 100]
 sys.exit(1 if bad else 0)
 PY_ALIGN
 # dashboard must not modify the versions dir (read-only Tier 0)
-check test "$(ls "$DASH_TMP/versions" | wc -l)" = "2"
+check test "$(ls "$DASH_TMP/versions" | wc -l | tr -d ' ')" = "2"
 rm -rf "$DASH_TMP"
 
 printf 'Tier 0 observer tests: %d passed, %d failed\n' "$pass" "$fail"
