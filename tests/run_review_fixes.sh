@@ -155,7 +155,7 @@ cat "$TMP/in.req" | "$CLI" --request - > "$TMP/si_pipe.json" 2>/dev/null || true
 check cmp -s "$TMP/si_file.json" "$TMP/si_pipe.json"
 printf '' | "$CLI" --request - > "$TMP/si_empty.json" 2>/dev/null || rc=$?
 check jq -e '.ok==false' "$TMP/si_empty.json"
-head -c 400000 /dev/zero | tr '\0' 'a' | "$CLI" --request - > "$TMP/si_big.json" 2>/dev/null || true
+head -c 400000 /dev/zero | tr '\0' 'a' 2>/dev/null | "$CLI" --request - > "$TMP/si_big.json" 2>/dev/null || true
 check jq -e '.error.code=="REQUEST_TOO_LARGE"' "$TMP/si_big.json"
 check bash -c "ls '${TMPDIR:-/tmp}' 2>/dev/null | grep -c 'mj-stdin-request' | grep -qx 0"      # no temp file left behind
 "$CLI" --request - extra < "$TMP/in.req" > "$TMP/si_bad.json" 2>/dev/null || rc=$?
@@ -164,17 +164,20 @@ check jq -e '.error.code=="USAGE"' "$TMP/si_bad.json"
 # ---- #23: system.doctor explains what is missing and what it blocks ----
 printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=doc\ncommand=system.doctor\n' > "$TMP/doc.req"
 "$CLI" --request "$TMP/doc.req" > "$TMP/dr0.json" 2>/dev/null
-check jq -e '.ok==true and .data.guidance==[] and .data.operations.unavailable==0 and .data.operations.total>=44' "$TMP/dr0.json"
+# The baseline depends on the machine (a Linux runner genuinely lacks sips, xattr, ...), so test relations, not absolutes.
+check jq -e '.ok==true and .data.operations.total>=44 and (.data.guidance|type)=="array"' "$TMP/dr0.json"
+check jq -e '(.data.operations.unavailable==0) == (.data.guidance==[])' "$TMP/dr0.json"      # unavailable operations <=> guidance entries
+check jq -e '[.data.guidance[] | (.unlocks|length)>0 and (.hint|length)>40] | all' "$TMP/dr0.json"
 MJ_TEST_MISSING_CAPS="python3 sips" "$CLI" --request "$TMP/doc.req" > "$TMP/dr1.json" 2>/dev/null
-check jq -e '[.data.guidance[].capability]|sort==["python3","sips"]' "$TMP/dr1.json"
+check jq -e '[.data.guidance[].capability] | (index("python3")!=null) and (index("sips")!=null)' "$TMP/dr1.json"
 check jq -e '(.data.guidance[]|select(.capability=="python3")|.unlocks) | index("project.ingest")!=null and index("loop.seams")!=null and index("ae.render")!=null' "$TMP/dr1.json"
 check jq -e '(.data.guidance[]|select(.capability=="sips")|.unlocks) | index("image.inspect")!=null' "$TMP/dr1.json"
 check jq -e '[.data.guidance[] | (.hint|length)>40] | all' "$TMP/dr1.json"
-check jq -e '.data.operations.unavailable>=20 and .data.operations.unavailable<.data.operations.total' "$TMP/dr1.json"
+check jq -e '.data.operations.unavailable>=20 and .data.operations.unavailable<.data.operations.total and .data.operations.unavailable>'"$(jq '.data.operations.unavailable' "$TMP/dr0.json")"'' "$TMP/dr1.json"
 MJ_TEST_MISSING_CAPS="shasum sha256" "$CLI" --request "$TMP/doc.req" > "$TMP/dr2.json" 2>/dev/null
 check jq -e '[.data.guidance[].capability]|index("sha256 or shasum")!=null' "$TMP/dr2.json"
 MJ_TEST_MISSING_CAPS="sha256" "$CLI" --request "$TMP/doc.req" > "$TMP/dr3.json" 2>/dev/null     # one hasher is enough
-check jq -e '.data.guidance==[]' "$TMP/dr3.json"
+check jq -e '[.data.guidance[].capability] | index("sha256 or shasum")==null' "$TMP/dr3.json"
 # the doctor itself needs nothing optional: it still answers when python3 is "missing"
 check jq -e '.ok==true and .data.ready!=null' "$TMP/dr1.json"
 # #11, now dynamic: a missing df is refused, not reported as available
