@@ -23,7 +23,12 @@ requestId=test-002
 command=system.doctor
 REQ
 "$CLI" --request "$TMP/doctor.req" > "$TMP/doctor.json"
-check jq -e '.ok==true and .data.ready==false and .data.isMacOS==false' "$TMP/doctor.json"
+# Portable bundle: not "ready" off-macOS; on macOS isMacOS must be true.
+if [ "$(uname -s)" = Darwin ]; then
+  check jq -e '.ok==true and .data.isMacOS==true' "$TMP/doctor.json"
+else
+  check jq -e '.ok==true and .data.ready==false and .data.isMacOS==false' "$TMP/doctor.json"
+fi
 
 cat > "$TMP/bad-command.req" <<'REQ'
 MOGRAPHJAILED_REQUEST 1

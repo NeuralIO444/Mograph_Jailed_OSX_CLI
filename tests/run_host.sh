@@ -128,7 +128,8 @@ run "$TMP/busy.json" c4d.render "path=$TMP/proj/logo.c4d" "output=$TMP/renders" 
 check jq -e '.error.code=="RENDER_BUSY"' "$TMP/busy.json"
 wait $SLOW
 check jq -e '.error.code=="RENDER_TIMEOUT"' "$TMP/slow.json"
-check bash -c "! pgrep -f '$TMP/apps' >/dev/null"
+# [a]pps: the pattern must not match this check's own command line
+check bash -c "! pgrep -f '$TMP/[a]pps' >/dev/null"
 check test ! -e "$TMP/store/locks/render.lock"
 # a lock left by a dead process is reclaimed
 mkdir -p "$TMP/store/locks/render.lock"; echo 999999 > "$TMP/store/locks/render.lock/pid"
