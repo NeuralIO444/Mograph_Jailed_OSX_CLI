@@ -12,6 +12,14 @@
 # An older `mj` alias (cd to the install folder) would shadow this function.
 unalias mj 2>/dev/null
 
+_MJ_CLI_DIR=${${(%):-%x}:A:h}
+
+_mj_ui() {
+    local ui="${MJ_UI:-$_MJ_CLI_DIR/../terminal/mj_ui.py}"
+    [ -r "$ui" ] || { print -u2 "mj: terminal UI not found: $ui"; return 66; }
+    MJ_CLI="$(_mj_cli_path)" /usr/bin/python3 "$ui" "$@"
+}
+
 _mj_cli_path() {
     printf '%s\n' "${MJ_CLI:-${MOGRAPHJAILED_ROOT:-$HOME/Documents/MographJailed}/dist/mograph-jailed.zsh}"
 }
@@ -109,14 +117,22 @@ _mj_recipe() {
 
 mj() {
     case "${1:-}" in
-        "")
-            # Bare `mj` keeps its original meaning: go to the install folder.
+        ""|home)
+            _mj_ui home
+            return ;;
+        ui)
+            shift
+            _mj_ui ui "$@"
+            return ;;
+        cd)
             local root="${MOGRAPHJAILED_ROOT:-$HOME/Documents/MographJailed}"
-            if [ -d "$root" ]; then cd "$root"; else print -u2 "mj: $root not found (try: mj help)"; return 66; fi
+            if [ -d "$root" ]; then cd "$root"; else print -u2 "mj: $root not found"; return 66; fi
             return ;;
         -h|--help|help)
             /bin/cat <<'USAGE'
-mj                                 go to the MographJailed folder
+mj                                 launch screen: status of hosts, library, audit log, renders
+mj ui [--tab renders|library|audit]  live dashboard (q quits, 1-4 or Tab switches)
+mj cd                              go to the MographJailed folder
 mj <operation> [name=value ...]    run one allowlisted operation
 mj ops                             list operations and their arguments
 mj recipe <file> [name=value ...]  run a recipe file, stopping at the first failure
@@ -163,7 +179,7 @@ _mj_complete() {
     local json
     json=$(_mj_describe) || return 1
     if (( CURRENT == 2 )); then
-        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe last open-last)
+        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe last open-last ui home cd)
         compadd -a items
     elif [[ "${words[2]}" == recipe ]]; then
         _files

@@ -139,6 +139,10 @@ check jq -e '.data.argv[-2:]==["-take","Hero Take"] and .data.frames.first=="log
 run "$TMP/c2.json" c4d.render "path=$TMP/proj/lic.c4d" "output=$TMP/renders" "label=lic4d"
 check jq -e '.error.code=="LICENCE_NOT_CONFIGURED"' "$TMP/c2.json"
 
+# --- render history for the dashboard ---
+check test "$(wc -l < "$TMP/store/renders.jsonl" | tr -d ' ')" -ge 8
+check jq -se '[.[] | select(.host=="cinema4d" and .status=="complete")] | .[0] | .frames==3 and .expected==3 and (.label|startswith("logo."))' "$TMP/store/renders.jsonl"
+
 # --- mj last: newest render receipt ---
 check bash -c "MJ_CLI='$CLI' zsh -f -c \"source '$ROOT/scripts/shell/mj-cli.zsh'; mj last\" | jq -e '.host==\"cinema4d\" and .schema==\"MJ_RENDER_1\"' >/dev/null"
 

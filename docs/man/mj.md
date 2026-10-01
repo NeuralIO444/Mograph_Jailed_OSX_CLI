@@ -3,7 +3,9 @@
 `mj` is the command-line front end for every MographJailed operation. It builds the request file, runs the runtime, and prints the JSON response.
 
 ```text
-mj                                  go to the MographJailed folder
+mj                                  launch screen (status of hosts, library, audit log, renders)
+mj ui                               live dashboard (see mj-man terminal)
+mj cd                               go to the MographJailed folder
 mj ops                              list operations; required arguments are marked *
 mj <operation> name=value ...       run one operation
 mj recipe <file> name=value ...     run a recipe

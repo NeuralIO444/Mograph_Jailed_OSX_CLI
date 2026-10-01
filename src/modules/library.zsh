@@ -336,6 +336,7 @@ print(json.dumps({"ok": True, "data": {
     "sqliteIntegrity": integrity, "ftsIntegrity": fts_ok,
     "schemaVersion": db.execute("PRAGMA user_version").fetchone()[0],
     "docs": count("SELECT count(*) FROM docs"), "entries": count("SELECT count(*) FROM entries"),
+    "projects": count("SELECT count(*) FROM projects"),
     "presetVersions": count("SELECT count(*) FROM presets"), "presetBlobs": len(blobs),
     "staleDocs": stale[:100], "corruptPresetBlobs": corrupt,
 }}))

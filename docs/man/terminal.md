@@ -45,6 +45,30 @@ Shows project snapshot counts and sizes with sparklines, project vitals from the
 
 Strictly read-only: the dashboard only invokes `project.ingest` and `expression.lint`, and never modifies After Effects projects or snapshot history.
 
+## Launch screen and live dashboard
+
+Run `mj` with no arguments for the launch screen: an animated wordmark, then a checklist of what is on this Mac that fills in live as each check finishes — the runtime, After Effects, Cinema 4D (Redshift, `c4dpy`), the GPU, your local library, the audit log, and the last render. Each row shows a spinner while it loads, then a check mark, circle (not set up yet, with the command to fix it) or cross. The result stays in your scrollback.
+
+`mj ui` opens the full-screen dashboard:
+
+| Key | Action |
+|---|---|
+| `1` `2` `3` `4` | Overview, Renders, Library, Audit |
+| `Tab` / `Left` / `Right` | next / previous tab |
+| `r` | refresh now (it also refreshes the library and audit log every 10 s) |
+| `q`, `Ctrl-C` | quit; the terminal is always restored |
+
+- **Overview:** hosts, library health, audit chain, last render with a duration sparkline, and a few tips. A running render shows a pulsing `RENDERING` marker.
+- **Renders:** history of every `ae.render` / `c4d.render` (time, host, status, frames against expected, seconds).
+- **Library:** index health and the top effects by number of projects.
+- **Audit:** the hash-chain status (a tampered log shows `CHAIN BROKEN at line N`) and the most recent requests.
+
+Options: `mj ui --tab renders`, `mj ui --once` (print one frame and exit, used when output is piped), `--plain`, `--width N`.
+
+Looks degrade gracefully: truecolor gradient when `COLORTERM=truecolor`, 256 colors otherwise, no color with `NO_COLOR=1` or `MJ_PLAIN=1`, ASCII borders with `MJ_ASCII=1` (also used automatically when output is piped), and no animation with `MJ_NO_ANIM=1`. The dashboard is strictly read-only: it asks the runtime for facts and reads the render history and audit log; it writes nothing.
+
+`mj cd` goes to the MographJailed folder (what a bare `mj` used to do).
+
 ## Presentation fallback
 
 - modern: ANSI color + Unicode box drawing

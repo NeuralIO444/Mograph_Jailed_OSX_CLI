@@ -20,9 +20,11 @@ check jq -e --arg p "$TMP/my frames/a file.txt" '.ok==true and .data.path==$p' "
 set +e; mjz "mj file.inspect path=relative" > "$TMP/o2.json"; rc=$?; set -e
 check test "$rc" -ne 0
 check jq -e '.error.code=="INVALID_PATH"' "$TMP/o2.json"
-# bare `mj` keeps its legacy meaning; an old alias does not shadow the function
+# `mj cd` keeps the legacy go-to-folder meaning; an old alias does not shadow the function
 mkdir -p "$TMP/root"
-check test "$(MOGRAPHJAILED_ROOT="$TMP/root" mjz "alias mj='echo OLD'; source '$ROOT/scripts/shell/mj-cli.zsh'; mj; pwd -P")" = "$(cd "$TMP/root" && pwd -P)"
+check test "$(MOGRAPHJAILED_ROOT="$TMP/root" mjz "alias mj='echo OLD'; source '$ROOT/scripts/shell/mj-cli.zsh'; mj cd; pwd -P")" = "$(cd "$TMP/root" && pwd -P)"
+# bare `mj` is the launch screen (static when not on a terminal)
+check bash -c "MJ_STORE_DIR='$TMP/nostore' MJ_AUDIT_DIR='$TMP/noaudit' MJ_CLI='$ROOT/dist/mograph-jailed-linux-test.sh' zsh -f -c \"source '$ROOT/scripts/shell/mj-cli.zsh'; mj\" | grep -q 'M O G R A P H'"
 # argument syntax checked locally
 set +e; mjz "mj file.inspect noequals" 2>"$TMP/e1"; rc=$?; set -e
 check test "$rc" = 64

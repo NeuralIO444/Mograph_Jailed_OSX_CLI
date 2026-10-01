@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Terminal experience
+
+- `mj` (bare) is now a launch screen: animated gradient wordmark and a live boot checklist (runtime, After Effects, Cinema 4D/Redshift, GPU, library, audit log, last render). `mj ui` is a full-screen dashboard with Overview / Renders / Library / Audit tabs. `mj cd` replaces the old bare-`mj` go-to-folder behavior.
+- `scripts/terminal/mj_ui.py`: read-only, stdlib-only; truecolor → 256-color → plain/ASCII fallbacks (`NO_COLOR`, `MJ_PLAIN`, `MJ_ASCII`, `MJ_NO_ANIM`), terminal always restored on exit, `--once`/`--plain`/`--width` for scripting.
+- Runtime: `<store>/renders.jsonl` render history; `index.verify` now reports `projects`.
+- Added `tests/run_ui.sh` (41 checks, including real pseudo-terminal sessions).
+
 ## Unreleased — Project audit queries (Modules 1–3 fold-in)
 
 - Added `trace.asset` and `audit.plugins` (operations 43–44) over new normalized store tables (schema v2: projects, compositions, layers, assets, fonts, plugins) with in-place v1 migration.

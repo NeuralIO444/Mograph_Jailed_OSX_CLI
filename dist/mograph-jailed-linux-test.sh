@@ -5106,6 +5106,7 @@ print(json.dumps({"ok": True, "data": {
     "sqliteIntegrity": integrity, "ftsIntegrity": fts_ok,
     "schemaVersion": db.execute("PRAGMA user_version").fetchone()[0],
     "docs": count("SELECT count(*) FROM docs"), "entries": count("SELECT count(*) FROM entries"),
+    "projects": count("SELECT count(*) FROM projects"),
     "presetVersions": count("SELECT count(*) FROM presets"), "presetBlobs": len(blobs),
     "staleDocs": stale[:100], "corruptPresetBlobs": corrupt,
 }}))
@@ -5528,6 +5529,12 @@ def write_last_render(store, receipt):
         json.dump({"receiptPath": receipt["receiptPath"], "outputDir": receipt["outputDir"],
                    "status": receipt["status"], "host": receipt["host"], "endedAt": receipt["endedAt"]}, f)
     os.replace(tmp, os.path.join(store, "last-render.json"))
+    # Append-only history for the dashboard (one short JSON object per line).
+    with open(os.path.join(store, "renders.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"endedAt": receipt["endedAt"], "host": receipt["host"], "status": receipt["status"],
+                            "label": os.path.basename(receipt["outputDir"]), "frames": receipt["frames"]["count"],
+                            "expected": receipt["frames"]["expected"], "seconds": receipt["seconds"],
+                            "receiptPath": receipt["receiptPath"]}, sort_keys=True) + "\n")
 
 def finish_render(receipt, job, rng, status, code, tail, source_path, sha_before):
     sha_after = sha256_file(source_path)

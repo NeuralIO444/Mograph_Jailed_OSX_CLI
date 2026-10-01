@@ -67,6 +67,8 @@ A local, zero-daemon toolkit for motion-design pipelines on managed Macs. It loo
 ## Quick tour
 
 ```sh
+mj                                                 # launch screen: hosts, library, audit log, renders
+mj ui                                              # live dashboard (q quits, 1-4 switch tabs)
 mj ops                                             # every operation; required args marked *
 mj host.detect                                     # what is installed, ready to render
 mj ae.render path=/work/hero.aep target="Main" output=/work/renders label=hero range=0-119
@@ -79,7 +81,7 @@ mj audit.plugins target=S_Glow                     # which projects use this eff
 mj recipe recipes/render-qa.mjrecipe frames=... golden=...
 ```
 
-`mj` has tab completion and is installed by `scripts/shell/install-terminal-ux.sh`. Local help: `mj-man` (topics: `mj`, `render`, `frames`, `audit`, `library`, `commands`, `protocol`, `safety`). Live dashboard: `tools/mj-observe-dash.zsh`.
+`mj` has tab completion and is installed by `scripts/shell/install-terminal-ux.sh`. Local help: `mj-man` (topics: `mj`, `render`, `frames`, `audit`, `library`, `commands`, `protocol`, `safety`). Terminal UI: `mj` (launch screen) and `mj ui` (dashboard); the Tier 0 observer view is `tools/mj-observe-dash.zsh`.
 
 ## Trust model
 
