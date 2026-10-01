@@ -35,6 +35,9 @@ index.search
 index.verify
 preset.add
 preset.get
+host.detect
+ae.render
+c4d.render
 report.tech
 runtime.verify
 search.candidate
@@ -49,19 +52,19 @@ CMDS
 sort -u "$TMP/expected" -o "$TMP/expected"
 
 awk '/^is_safe_command_name\(\)/,/^}/' "$ROOT/src/core/protocol.zsh" \
-  | grep -E '^[[:space:]]+[a-z]+\.[a-z]+(\|[a-z]+\.[a-z]+)+\)' \
+  | grep -E '^[[:space:]]+[a-z0-9]+\.[a-z0-9]+(\|[a-z0-9]+\.[a-z0-9]+)+\)' \
   | sed -E 's/^[[:space:]]+//; s/\).*//; s/\|/\n/g' \
   | sort -u > "$TMP/protocol"
 
 sed -n '/case "\$REQUEST_COMMAND" in/,/esac/p' "$ROOT/src/cli/entry.zsh" \
-  | sed -nE 's/^[[:space:]]+([a-z]+\.[a-z]+)\).*/\1/p' \
+  | sed -nE 's/^[[:space:]]+([a-z0-9]+\.[a-z0-9]+)\).*/\1/p' \
   | sort -u > "$TMP/router"
 
 awk '/var allowed = \[/,/\];/' "$ROOT/integrations/after-effects/MographJailed_Client.jsxinc" \
-  | grep -oE '"[a-z]+\.[a-z]+"' | tr -d '"' | sort -u > "$TMP/ae"
+  | grep -oE '"[a-z0-9]+\.[a-z0-9]+"' | tr -d '"' | sort -u > "$TMP/ae"
 
 sed -n '/^operation_names()/,/^}/p' "$ROOT/src/core/operations.zsh" \
-  | grep -E '^[[:space:]]+[a-z]+\.[a-z]+( \\)?$' \
+  | grep -E '^[[:space:]]+[a-z0-9]+\.[a-z0-9]+( \\)?$' \
   | sed -E 's/^[[:space:]]+//; s/[[:space:]]+\\$//' \
   | sort -u > "$TMP/registry"
 

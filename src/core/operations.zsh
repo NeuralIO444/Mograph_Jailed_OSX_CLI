@@ -37,13 +37,16 @@ operation_names() {
     index.verify \
     preset.add \
     preset.get \
+    host.detect \
+    ae.render \
+    c4d.render \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -92,7 +95,7 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify)
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render)
       cap_available python3
       ;;
     project.restore|handoff.package|preset.add|preset.get)
@@ -159,6 +162,8 @@ operation_cost() {
     index.add) printf 'PATH_DEPENDENT' ;;
     index.search) printf 'INDEX_DEPENDENT' ;;
     index.verify) printf 'SIZE_DEPENDENT' ;;
+    host.detect) printf 'BOUNDED_PROBE' ;;
+    ae.render|c4d.render) printf 'RENDER_BOUND' ;;
     plugin.audit) printf 'PATH_DEPENDENT' ;;
     project.snapshot) printf 'IO_BOUND' ;;
     package.create) printf 'IO_BOUND' ;;
@@ -171,7 +176,7 @@ operation_mutation() {
     temp.create) printf 'TEMP_CREATE' ;;
     temp.clean) printf 'TEMP_DELETE' ;;
     search.candidate|loop.seams|golden.check) printf 'INTERNAL_TEMP' ;;
-    image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get) printf 'DERIVATIVE_CREATE' ;;
+    image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get|ae.render|c4d.render) printf 'DERIVATIVE_CREATE' ;;
     index.add|preset.add) printf 'STORE_WRITE' ;;
     *) printf 'NONE' ;;
   esac
@@ -204,21 +209,22 @@ operation_authority() {
     index.add|preset.add) printf 'MJ_OWNED_STORE' ;;
     index.search) printf 'ADVISORY_INDEX' ;;
     index.verify) printf 'AUTHORITATIVE_STORE_INTEGRITY' ;;
-    preset.get) printf 'AUTHORITATIVE_OPERATION' ;;
+    preset.get|ae.render|c4d.render) printf 'AUTHORITATIVE_OPERATION' ;;
+    host.detect) printf 'AUTHORITATIVE_ENVIRONMENT' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
 
 operation_interactive_safe() {
   case "$1" in
-    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check|project.restore|handoff.package|index.add|preset.add|preset.get) return 1 ;;
+    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check|project.restore|handoff.package|index.add|preset.add|preset.get|ae.render|c4d.render) return 1 ;;
     *) return 0 ;;
   esac
 }
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -237,7 +243,7 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify) printf '%s\n' python3 ;;
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render) printf '%s\n' python3 ;;
     project.restore|handoff.package|preset.add|preset.get) printf '%s\n' python3 cp ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
@@ -291,7 +297,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"

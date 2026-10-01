@@ -57,6 +57,9 @@ dispatch_request() {
     index.verify) handle_index_verify ;;
     preset.add) handle_preset_add ;;
     preset.get) handle_preset_get ;;
+    host.detect) handle_host_detect ;;
+    ae.render) handle_ae_render ;;
+    c4d.render) handle_c4d_render ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

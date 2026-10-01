@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Power CLI Phases 0–1 (hosts and rendering)
+
+- Added `host.detect`, `ae.render`, `c4d.render` (operations 40–42) and argument names `range`, `timeoutSeconds`.
+- Guarded host runner: closed stdin, own process group, streamed log, hard timeout, licence-prompt detection, single-render lock with stale-lock reclaim.
+- Python environment hardening: `PYTHONPATH`/`PYTHONHOME`/`PYTHONSTARTUP` cleared, user site and bytecode disabled for every embedded script.
+- `mj last`, `mj open-last`; test bundle only: `MJ_TEST_APPS_DIR` points host discovery at a stub `/Applications`.
+- Added `tests/run_host.sh` (31 checks, stub hosts). Contract audit now accepts digits in operation names (`c4d.render`).
+- Observed on the target Mac: `c4dpy` blocks on an interactive licence prompt until C4D licensing is configured once by hand.
+
 ## Unreleased — Power CLI Phase 9 (search and recall)
 
 - Added `index.add`, `index.search`, `index.verify`, `preset.add`, `preset.get` (operations 35–39) and argument name `version`.

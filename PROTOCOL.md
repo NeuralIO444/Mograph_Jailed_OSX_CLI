@@ -247,3 +247,32 @@ The store is `~/Library/Application Support/MographJailed` (`MJ_STORE_DIR` overr
 - `preset.get` (`DERIVATIVE_CREATE`) re-hashes the blob (`PRESET_CORRUPT` on mismatch) and writes the original filename, or `<stem>-v<N><ext>` if that exists; `OUTPUT_EXISTS` if both exist. Returns `MJ_PRESET_GET_1`.
 
 `index.search` and `index.verify` fail with `STORE_EMPTY` and create nothing when the store does not exist yet.
+
+## Host-application additive contract (After Effects, Cinema 4D)
+
+Protocol v1 additionally allowlists three operations, growing the public surface from 39 to 42, and adds the argument names `range` and `timeoutSeconds`. No existing command schema is reinterpreted.
+
+```text
+command=host.detect
+
+command=ae.render
+arg.path=<Base64 absolute .aep>
+arg.target=<Base64 comp name>
+arg.output=<Base64 absolute existing parent directory>
+arg.label=<Base64 label: letters, digits, dot, dash, underscore; max 64>
+arg.range=<optional Base64 "START-END" frames, inclusive>
+arg.timeoutSeconds=<optional Base64 integer 10-86400; default 3600>
+arg.version=<optional Base64 host year >= 2024; default newest installed>
+
+command=c4d.render
+arg.path=<Base64 absolute .c4d>
+arg.target=<optional Base64 take name>
+(output, label, range, timeoutSeconds, version as for ae.render)
+```
+
+Hosts are discovered only as `/Applications/Adobe After Effects <year>/` (needs the `.app` and `aerender`) and `/Applications/Maxon Cinema 4D <year>/` (needs `Cinema 4D.app` and `Commandline.app`); years before 2024 are reported but unsupported. No host path is ever taken from a request. `PYTHONPATH`, `PYTHONHOME` and related variables are cleared for every embedded Python script.
+
+- `host.detect` (`NONE`, `AUTHORITATIVE_ENVIRONMENT`) returns `MJ_HOST_DETECT_1`: macOS version/arch, GPU and Metal support, console-session ownership, every AE/C4D install with version, CLI paths, Redshift presence and `supported`, and a `ready` summary. Licensing is reported `unverified`; it is only observed when a host runs.
+- `ae.render` / `c4d.render` (`DERIVATIVE_CREATE`, `RENDER_BOUND`) render to a new PNG sequence in `<output>/<label>.<UTC>/` (a suffix is added on collision) and write `render.json` (`MJ_RENDER_1`) and `render.log` there. `ae.render` forces `-outputSettings "Format: PNG Sequence"`, never uses `-reuse`, and never saves the project. `c4d.render` uses the scene's own render settings (Redshift or Physical) and overrides only image path and format. The receipt records host year/version, exact `argv`, frame count against expected, SHA-256 of the first and last frame, and the source file's hash before and after (`source.unchanged`).
+- Status is `complete`, or the operation fails with `RENDER_FAILED`, `RENDER_INCOMPLETE` (frames missing), `RENDER_TIMEOUT`, or `LICENCE_NOT_CONFIGURED`. Every host process runs with stdin closed, in its own process group (killed whole on timeout), and a licence-choice prompt in its output stops it immediately. Receipts are written for failures too.
+- One render at a time per machine (`RENDER_BUSY`), enforced with a lock under the store whose owner pid is checked so a crashed run's lock is reclaimed. The newest receipt is recorded in `<store>/last-render.json` for `mj last` and `mj open-last`.

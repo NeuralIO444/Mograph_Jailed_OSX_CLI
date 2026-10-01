@@ -111,6 +111,8 @@ mj() {
 mj <operation> [name=value ...]    run one allowlisted operation
 mj ops                             list operations and their arguments
 mj recipe <file> [name=value ...]  run a recipe file, stopping at the first failure
+mj last                            show the newest render receipt
+mj open-last                       open the newest render folder in Finder
 USAGE
             return 0 ;;
         ops)
@@ -118,6 +120,17 @@ USAGE
             _mj_describe | /usr/bin/jq -r '.data.operations | to_entries[] | .value.args as $g
                 | "\(.key)\t\(.value.state)\t\($g.allowed | map(. as $a | if ($g.required | index($a)) != null then $a + "*" else $a end) | join(" "))"' 2>/dev/null \
             || { print -u2 "mj: cannot read the operation registry"; return 69; }
+            return ;;
+        last|open-last)
+            local store="${MJ_STORE_DIR:-$HOME/Library/Application Support/MographJailed}" dir
+            [ -r "$store/last-render.json" ] || { print -u2 "mj: no render yet"; return 66; }
+            if [ "$1" = last ]; then
+                /bin/cat "$(/usr/bin/jq -r .receiptPath "$store/last-render.json")" | _mj_print
+            else
+                dir=$(/usr/bin/jq -r .outputDir "$store/last-render.json")
+                [ -d "$dir" ] || { print -u2 "mj: render folder is gone: $dir"; return 66; }
+                /usr/bin/open "$dir"
+            fi
             return ;;
         recipe)
             shift
@@ -141,7 +154,7 @@ _mj_complete() {
     local json
     json=$(_mj_describe) || return 1
     if (( CURRENT == 2 )); then
-        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe)
+        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe last open-last)
         compadd -a items
     elif [[ "${words[2]}" == recipe ]]; then
         _files

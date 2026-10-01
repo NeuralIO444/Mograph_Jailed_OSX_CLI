@@ -29,6 +29,17 @@ unset DITTOABORT DITTONORSRC DITTOKEEPBINARIESPATTERN DITTOKEEPBINARIESDIR DITTO
 unset COPYFILE_DISABLE COPYFILE_PACK COPYFILE_UNPACK 2>/dev/null || true
 unset PERL5OPT PERL5LIB PERLLIB PERL_LOCAL_LIB_ROOT PERL_MB_OPT PERL_MM_OPT 2>/dev/null || true
 unset SQLITE_HISTORY SQLITE_TMPDIR 2>/dev/null || true
+# Python reads these before running any code; PYTHONPATH/PYTHONHOME would let
+# the caller's environment inject modules into every embedded python3 script.
+unset PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONUSERBASE PYTHONINSPECT PYTHONEXECUTABLE PYTHONWARNINGS 2>/dev/null || true
+PYTHONNOUSERSITE=1
+PYTHONDONTWRITEBYTECODE=1
+export PYTHONNOUSERSITE PYTHONDONTWRITEBYTECODE
+
+# Host applications (After Effects, Cinema 4D) are only ever discovered here.
+MJ_HOST_APPS_DIR="/Applications"
+MJ_HOST_MIN_YEAR=2024
+MJ_HOST_APPS_DIR="${MJ_TEST_APPS_DIR:-/Applications}"
 
 # --- src/core/json.zsh ---
 json_quote() {
@@ -123,14 +134,14 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 is_safe_arg_name() {
   case "$1" in
-    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels|minFrames|threshold|version) return 0 ;;
+    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels|minFrames|threshold|version|range|timeoutSeconds) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -157,6 +168,8 @@ REQUEST_ARG_maxPixels=""
 REQUEST_ARG_minFrames=""
 REQUEST_ARG_threshold=""
 REQUEST_ARG_version=""
+REQUEST_ARG_range=""
+REQUEST_ARG_timeoutSeconds=""
 
 request_arg_present() {
   local _name="$1"
@@ -191,6 +204,8 @@ request_arg_set() {
     minFrames) REQUEST_ARG_minFrames="$_value" ;;
     threshold) REQUEST_ARG_threshold="$_value" ;;
     version) REQUEST_ARG_version="$_value" ;;
+    range) REQUEST_ARG_range="$_value" ;;
+    timeoutSeconds) REQUEST_ARG_timeoutSeconds="$_value" ;;
     *) return 1 ;;
   esac
 }
@@ -221,6 +236,8 @@ request_arg_get() {
     minFrames) printf '%s' "$REQUEST_ARG_minFrames" ;;
     threshold) printf '%s' "$REQUEST_ARG_threshold" ;;
     version) printf '%s' "$REQUEST_ARG_version" ;;
+    range) printf '%s' "$REQUEST_ARG_range" ;;
+    timeoutSeconds) printf '%s' "$REQUEST_ARG_timeoutSeconds" ;;
     *) return 1 ;;
   esac
 }
@@ -255,7 +272,7 @@ request_schema_for() {
   MJ_SCHEMA_ALLOWED=""
   MJ_SCHEMA_REQUIRED=""
   case "$1" in
-    system.probe|system.doctor|system.describe|temp.create|report.tech|index.verify)
+    system.probe|system.doctor|system.describe|temp.create|report.tech|index.verify|host.detect)
       MJ_SCHEMA_ALLOWED=""
       MJ_SCHEMA_REQUIRED=""
       ;;
@@ -351,6 +368,14 @@ request_schema_for() {
       MJ_SCHEMA_ALLOWED=" label output version "
       MJ_SCHEMA_REQUIRED=" label output "
       ;;
+    ae.render)
+      MJ_SCHEMA_ALLOWED=" path target output label range timeoutSeconds version "
+      MJ_SCHEMA_REQUIRED=" path target output label "
+      ;;
+    c4d.render)
+      MJ_SCHEMA_ALLOWED=" path target output label range timeoutSeconds version "
+      MJ_SCHEMA_REQUIRED=" path output label "
+      ;;
     *) return 1 ;;
   esac
 }
@@ -366,7 +391,7 @@ validate_request_schema() {
   _allowed="$MJ_SCHEMA_ALLOWED"
   _required="$MJ_SCHEMA_REQUIRED"
 
-  for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels minFrames threshold version; do
+  for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels minFrames threshold version range timeoutSeconds; do
     if request_arg_present "$_arg"; then
       case "$_allowed" in *" $_arg "*) ;; *)
         set_error "UNEXPECTED_ARGUMENT" "Argument is not valid for command: $_arg."
@@ -443,6 +468,8 @@ load_request_file() {
   REQUEST_ARG_minFrames=""
   REQUEST_ARG_threshold=""
   REQUEST_ARG_version=""
+  REQUEST_ARG_range=""
+  REQUEST_ARG_timeoutSeconds=""
 
   if [ -z "$_file" ] || [ ! -f "$_file" ]; then
     set_error "REQUEST_NOT_FOUND" "Request file does not exist."
@@ -731,13 +758,16 @@ operation_names() {
     index.verify \
     preset.add \
     preset.get \
+    host.detect \
+    ae.render \
+    c4d.render \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -786,7 +816,7 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify)
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render)
       cap_available python3
       ;;
     project.restore|handoff.package|preset.add|preset.get)
@@ -853,6 +883,8 @@ operation_cost() {
     index.add) printf 'PATH_DEPENDENT' ;;
     index.search) printf 'INDEX_DEPENDENT' ;;
     index.verify) printf 'SIZE_DEPENDENT' ;;
+    host.detect) printf 'BOUNDED_PROBE' ;;
+    ae.render|c4d.render) printf 'RENDER_BOUND' ;;
     plugin.audit) printf 'PATH_DEPENDENT' ;;
     project.snapshot) printf 'IO_BOUND' ;;
     package.create) printf 'IO_BOUND' ;;
@@ -865,7 +897,7 @@ operation_mutation() {
     temp.create) printf 'TEMP_CREATE' ;;
     temp.clean) printf 'TEMP_DELETE' ;;
     search.candidate|loop.seams|golden.check) printf 'INTERNAL_TEMP' ;;
-    image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get) printf 'DERIVATIVE_CREATE' ;;
+    image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get|ae.render|c4d.render) printf 'DERIVATIVE_CREATE' ;;
     index.add|preset.add) printf 'STORE_WRITE' ;;
     *) printf 'NONE' ;;
   esac
@@ -898,21 +930,22 @@ operation_authority() {
     index.add|preset.add) printf 'MJ_OWNED_STORE' ;;
     index.search) printf 'ADVISORY_INDEX' ;;
     index.verify) printf 'AUTHORITATIVE_STORE_INTEGRITY' ;;
-    preset.get) printf 'AUTHORITATIVE_OPERATION' ;;
+    preset.get|ae.render|c4d.render) printf 'AUTHORITATIVE_OPERATION' ;;
+    host.detect) printf 'AUTHORITATIVE_ENVIRONMENT' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
 
 operation_interactive_safe() {
   case "$1" in
-    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check|project.restore|handoff.package|index.add|preset.add|preset.get) return 1 ;;
+    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check|project.restore|handoff.package|index.add|preset.add|preset.get|ae.render|c4d.render) return 1 ;;
     *) return 0 ;;
   esac
 }
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -931,7 +964,7 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify) printf '%s\n' python3 ;;
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render) printf '%s\n' python3 ;;
     project.restore|handoff.package|preset.add|preset.get) printf '%s\n' python3 cp ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
@@ -985,7 +1018,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"
@@ -5095,6 +5128,344 @@ PY_PRESET_GET
   frames_emit_python_result "$_out"
 }
 
+# --- src/modules/host.zsh ---
+# Host applications — After Effects and Cinema 4D (Power CLI Phases 0-1).
+#
+# host.detect — installed AE / C4D (2024+), their CLIs, Redshift, macOS, GPU; read-only
+# ae.render   — aerender one comp to a new PNG-sequence folder with a receipt
+# c4d.render  — C4D Commandline render to a new PNG-sequence folder with a receipt
+#
+# Hosts are discovered only under MJ_HOST_APPS_DIR (/Applications); no host path
+# is ever taken from a request. Renders run one at a time (one GPU, one licence),
+# with stdin closed, a hard timeout, process-group kill, and licence-prompt
+# detection so an unlicensed host fails fast instead of hanging.
+
+IFS= read -r -d '' MJ_PY_HOST_LIB <<'PY_HOST_LIB' || true
+import plistlib, selectors, signal
+
+AE_RE = re.compile(r"^Adobe After Effects (\d{4})$")
+C4D_RE = re.compile(r"^Maxon Cinema 4D (\d{4})$")
+LICENCE_MARKERS = ("Enter the license method", "Please select:", "No valid license", "license could not be")
+
+def plist_version(app):
+    try:
+        with open(os.path.join(app, "Contents", "Info.plist"), "rb") as f:
+            return str(plistlib.load(f).get("CFBundleShortVersionString") or "")
+    except Exception:
+        return ""
+
+def is_exec(p):
+    return os.path.isfile(p) and os.access(p, os.X_OK)
+
+def discover(apps_dir, min_year):
+    ae, c4d = [], []
+    try:
+        names = sorted(os.listdir(apps_dir))
+    except OSError:
+        names = []
+    for name in names:
+        root = os.path.join(apps_dir, name)
+        m = AE_RE.match(name)
+        if m and os.path.isdir(root):
+            year = int(m.group(1))
+            app = os.path.join(root, "%s.app" % name)
+            aerender = os.path.join(root, "aerender")
+            complete = os.path.isdir(app) and is_exec(aerender)
+            ae.append({"year": year, "path": root, "app": app if os.path.isdir(app) else None,
+                       "version": plist_version(app), "aerender": aerender if is_exec(aerender) else None,
+                       "complete": complete, "supported": complete and year >= min_year})
+        m = C4D_RE.match(name)
+        if m and os.path.isdir(root):
+            year = int(m.group(1))
+            app = os.path.join(root, "Cinema 4D.app")
+            c4dpy = os.path.join(root, "c4dpy.app", "Contents", "MacOS", "c4dpy")
+            cmdline = os.path.join(root, "Commandline.app", "Contents", "MacOS", "Commandline")
+            complete = os.path.isdir(app) and is_exec(cmdline)
+            c4d.append({"year": year, "path": root, "app": app if os.path.isdir(app) else None,
+                        "version": plist_version(app), "c4dpy": c4dpy if is_exec(c4dpy) else None,
+                        "commandline": cmdline if is_exec(cmdline) else None,
+                        "redshift": os.path.isfile(os.path.join(root, "corelibs", "redshift.xlib")),
+                        "complete": complete, "supported": complete and year >= min_year})
+    return ae, c4d
+
+def pick_host(hosts, year):
+    usable = [h for h in hosts if h["supported"]]
+    if year:
+        usable = [h for h in usable if h["year"] == year]
+    if not usable:
+        err("HOST_NOT_FOUND", "No supported installation found%s." % (" for %d" % year if year else ""))
+    return max(usable, key=lambda h: h["year"])
+
+def render_lock(store):
+    """One render at a time. A lock whose owner process is gone is reclaimed."""
+    lock = os.path.join(store, "locks", "render.lock")
+    os.makedirs(os.path.dirname(lock), mode=0o700, exist_ok=True)
+    for _ in range(2):
+        try:
+            os.mkdir(lock)
+            with open(os.path.join(lock, "pid"), "w") as f:
+                f.write(str(os.getpid()))
+            return lock
+        except FileExistsError:
+            try:
+                pid = int(open(os.path.join(lock, "pid")).read().strip())
+                os.kill(pid, 0)
+                err("RENDER_BUSY", "Another render is running (pid %d). Renders run one at a time." % pid)
+            except (ValueError, FileNotFoundError, ProcessLookupError):
+                shutil.rmtree(lock, ignore_errors=True)
+            except PermissionError:
+                err("RENDER_BUSY", "Another render is running. Renders run one at a time.")
+    err("RENDER_BUSY", "Could not take the render lock.")
+
+def reserve_job_dir(outdir, label):
+    base = os.path.join(outdir, "%s.%s" % (label, utc_stamp()))
+    for n in range(1, 100):
+        d = base if n == 1 else "%s-%d" % (base, n)
+        try:
+            os.mkdir(d)
+            return d
+        except FileExistsError:
+            continue
+    err("OUTPUT_EXISTS", "Could not reserve a new render folder.")
+
+def run_guarded(argv, log_path, timeout):
+    """Run a host CLI: no stdin, own process group, streamed log, hard timeout,
+    licence-prompt detection. Returns (status, exit_code, tail_lines)."""
+    started = time.time()
+    tail, window = [], ""
+    with open(log_path, "wb") as log:
+        p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, start_new_session=True)
+        sel = selectors.DefaultSelector()
+        sel.register(p.stdout, selectors.EVENT_READ)
+        status = None
+        while True:
+            left = timeout - (time.time() - started)
+            if left <= 0:
+                status = "timeout"; break
+            if not sel.select(timeout=min(left, 1.0)):
+                if p.poll() is not None:
+                    break
+                continue
+            chunk = os.read(p.stdout.fileno(), 65536)
+            if not chunk:
+                break
+            log.write(chunk); log.flush()
+            text = chunk.decode("utf-8", "replace")
+            window = (window + text)[-4096:]
+            tail = (tail + text.splitlines())[-25:]
+            if any(m in window for m in LICENCE_MARKERS):
+                status = "licence"; break
+        if status:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        p.wait()
+    return status or ("finished" if p.returncode == 0 else "failed"), p.returncode, tail
+
+def parse_range(text):
+    if not text:
+        return None
+    m = re.match(r"^(\d{1,7})-(\d{1,7})$", text)
+    if not m or int(m.group(1)) > int(m.group(2)):
+        err("INVALID_ARGUMENT", "range must look like START-END with START <= END.")
+    return int(m.group(1)), int(m.group(2))
+
+def frame_summary(job, rng):
+    frames = sorted(n for n in os.listdir(job) if n.lower().endswith(".png") and not n.startswith("."))
+    out = {"count": len(frames), "expected": (rng[1] - rng[0] + 1) if rng else None,
+           "first": frames[0] if frames else None, "last": frames[-1] if frames else None}
+    out["firstSha256"] = sha256_file(os.path.join(job, frames[0])) if frames else None
+    out["lastSha256"] = sha256_file(os.path.join(job, frames[-1])) if frames else None
+    return out
+
+def write_last_render(store, receipt):
+    """Pointer for `mj last` / `mj open-last`; replaced atomically, never a render output."""
+    tmp = os.path.join(store, ".last-render.json.%d" % os.getpid())
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"receiptPath": receipt["receiptPath"], "outputDir": receipt["outputDir"],
+                   "status": receipt["status"], "host": receipt["host"], "endedAt": receipt["endedAt"]}, f)
+    os.replace(tmp, os.path.join(store, "last-render.json"))
+
+def finish_render(receipt, job, rng, status, code, tail, source_path, sha_before):
+    sha_after = sha256_file(source_path)
+    frames = frame_summary(job, rng)
+    if status == "finished":
+        status = "complete" if frames["count"] and (frames["expected"] in (None, frames["count"])) else "incomplete"
+    receipt.update({
+        "endedAt": now_iso(), "status": status, "exitCode": code, "frames": frames, "errorTail": tail[-10:],
+        "source": {"path": source_path, "sha256Before": sha_before, "sha256After": sha_after,
+                   "unchanged": sha_before == sha_after},
+    })
+    receipt["seconds"] = round(time.time() - receipt.pop("_t0"), 1)
+    path = os.path.join(job, "render.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(receipt, f, indent=1, sort_keys=True); f.write("\n")
+    receipt["receiptPath"] = path
+    write_last_render(os.environ["MJ_STORE"], receipt)
+    codes = {"licence": ("LICENCE_NOT_CONFIGURED", "The host asked for a licence choice; run it once interactively to configure licensing."),
+             "timeout": ("RENDER_TIMEOUT", "Render exceeded its time limit and was stopped."),
+             "failed": ("RENDER_FAILED", "The host exited with an error."),
+             "incomplete": ("RENDER_INCOMPLETE", "The host finished but frames are missing.")}
+    if status in codes:
+        code_name, msg = codes[status]
+        err(code_name, "%s Receipt: %s" % (msg, path))
+    print(json.dumps({"ok": True, "data": receipt}))
+PY_HOST_LIB
+
+host_python() {
+  local _main=""
+  IFS= read -r -d '' _main || true
+  printf '%s\n%s\n%s\n%s' "$MJ_PY_PROTECT_LIB" "$MJ_PY_LIBRARY" "$MJ_PY_HOST_LIB" "$_main" | /usr/bin/python3 - 2>/dev/null
+}
+
+handle_host_detect() {
+  local _out=""
+  cap_available python3 || { set_error "UNSUPPORTED" "host.detect requires python3."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
+  _out=$(MJ_APPS="$MJ_HOST_APPS_DIR" MJ_MIN_YEAR="$MJ_HOST_MIN_YEAR" host_python <<'PY_HOST_DETECT'
+import platform
+min_year = int(os.environ["MJ_MIN_YEAR"])
+ae, c4d = discover(os.environ["MJ_APPS"], min_year)
+gpu, gui = [], None
+if sys.platform == "darwin":
+    try:
+        sp = subprocess.run(["/usr/sbin/system_profiler", "-json", "SPDisplaysDataType"],
+                            capture_output=True, text=True, timeout=20).stdout
+        for g in json.loads(sp).get("SPDisplaysDataType", []):
+            gpu.append({"name": g.get("sppci_model") or g.get("_name"),
+                        "metal": g.get("spdisplays_mtlgpufamilysupport"),
+                        "cores": g.get("sppci_cores")})
+    except Exception:
+        pass
+    try:
+        import pwd
+        gui = pwd.getpwuid(os.stat("/dev/console").st_uid).pw_name == pwd.getpwuid(os.getuid()).pw_name
+    except Exception:
+        gui = None
+osver = platform.mac_ver()[0] if sys.platform == "darwin" else ""
+print(json.dumps({"ok": True, "data": {
+    "schema": "MJ_HOST_DETECT_1",
+    "minimumYear": min_year,
+    "macOS": {"version": osver, "arch": platform.machine()},
+    "guiSession": gui,
+    "gpu": gpu,
+    "afterEffects": ae,
+    "cinema4d": c4d,
+    "ready": {"aeRender": any(h["supported"] for h in ae),
+              "c4dRender": any(h["supported"] for h in c4d),
+              "c4dHeadlessPython": any(h["supported"] and h["c4dpy"] for h in c4d)},
+    "licence": "unverified",
+    "notes": ["Licensing is only observed when a host runs; an unconfigured C4D licence surfaces as LICENCE_NOT_CONFIGURED.",
+              "AE scripting (not used by renders) may additionally require macOS Automation permission."],
+}}))
+PY_HOST_DETECT
+) || true
+  frames_emit_python_result "$_out"
+}
+
+# Shared request validation for both render operations. Sets MJ_RENDER_* globals.
+host_render_args() {
+  local _ext="$1" _rc=0
+  MJ_RENDER_SRC="" MJ_RENDER_OUT="" MJ_RENDER_LABEL="" MJ_RENDER_RANGE="" MJ_RENDER_TIMEOUT="" MJ_RENDER_YEAR=""
+  require_arg path || return 65
+  MJ_RENDER_SRC="$MJ_REQUIRED_ARG_VALUE"
+  require_arg output || return 65
+  MJ_RENDER_OUT="$MJ_REQUIRED_ARG_VALUE"
+  require_arg label || return 65
+  MJ_RENDER_LABEL="$MJ_REQUIRED_ARG_VALUE"
+  library_label_ok "$MJ_RENDER_LABEL" || return 65
+  is_absolute_path "$MJ_RENDER_SRC" || { set_error "INVALID_PATH" "Scene/project path must be absolute."; return 65; }
+  [ -f "$MJ_RENDER_SRC" ] && [ -r "$MJ_RENDER_SRC" ] || { set_error "INVALID_TARGET" "Scene/project must be a readable file."; return 65; }
+  case "${MJ_RENDER_SRC##*/}" in *."$_ext") ;; *) set_error "INVALID_TARGET" "Expected a .$_ext file."; return 65 ;; esac
+  mj_require_local_existing_path "$MJ_RENDER_SRC" || return 73
+  protect_require_output_dir "$MJ_RENDER_OUT" || return $?
+  MJ_RENDER_OUT=$(canonical_existing_dir "$MJ_RENDER_OUT")
+  request_arg_present range && MJ_RENDER_RANGE=$(request_arg_get range)
+  frames_uint_arg timeoutSeconds 3600 10 86400 || return 65
+  MJ_RENDER_TIMEOUT="$MJ_FRAMES_UINT"
+  frames_uint_arg version 0 2024 2100 || return 65
+  MJ_RENDER_YEAR="$MJ_FRAMES_UINT"
+  library_require_store create || return $?
+}
+
+handle_ae_render() {
+  local _rc=0 _comp="" _out=""
+  host_render_args aep || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  require_arg target || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _comp="$MJ_REQUIRED_ARG_VALUE"
+  [ ${#_comp} -le 255 ] || { set_error "INVALID_ARGUMENT" "Comp name is too long."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+
+  _out=$(MJ_APPS="$MJ_HOST_APPS_DIR" MJ_MIN_YEAR="$MJ_HOST_MIN_YEAR" MJ_STORE="$MJ_STORE" \
+    MJ_SRC="$MJ_RENDER_SRC" MJ_OUT="$MJ_RENDER_OUT" MJ_LABEL="$MJ_RENDER_LABEL" MJ_COMP="$_comp" \
+    MJ_RANGE="$MJ_RENDER_RANGE" MJ_TIMEOUT="$MJ_RENDER_TIMEOUT" MJ_YEAR="$MJ_RENDER_YEAR" host_python <<'PY_AE_RENDER'
+rng = parse_range(os.environ["MJ_RANGE"])
+ae, _ = discover(os.environ["MJ_APPS"], int(os.environ["MJ_MIN_YEAR"]))
+host = pick_host(ae, int(os.environ["MJ_YEAR"]))
+src, label = os.environ["MJ_SRC"], os.environ["MJ_LABEL"]
+lock = render_lock(os.environ["MJ_STORE"])
+try:
+    sha_before = sha256_file(src)
+    job = reserve_job_dir(os.environ["MJ_OUT"], label)
+    # Output format is forced to a PNG sequence via -outputSettings, so no
+    # install-specific output-module template name is needed. Never -reuse:
+    # a fresh AE instance is launched and quits; changes are never saved.
+    argv = [host["aerender"], "-project", src, "-comp", os.environ["MJ_COMP"],
+            "-output", os.path.join(job, label + "_[#####].png"),
+            "-outputSettings", "Format: PNG Sequence",
+            "-close", "DO_NOT_SAVE_CHANGES", "-v", "ERRORS_AND_PROGRESS", "-sound", "OFF"]
+    if rng:
+        argv += ["-s", str(rng[0]), "-e", str(rng[1])]
+    receipt = {"schema": "MJ_RENDER_1", "host": "afterEffects", "hostYear": host["year"],
+               "hostVersion": host["version"], "binary": host["aerender"], "target": os.environ["MJ_COMP"],
+               "range": list(rng) if rng else None, "outputDir": job, "argv": argv,
+               "startedAt": now_iso(), "_t0": time.time(), "logPath": os.path.join(job, "render.log")}
+    status, code, tail = run_guarded(argv, receipt["logPath"], int(os.environ["MJ_TIMEOUT"]))
+    finish_render(receipt, job, rng, status, code, tail, src, sha_before)
+finally:
+    shutil.rmtree(lock, ignore_errors=True)
+PY_AE_RENDER
+) || true
+  frames_emit_python_result "$_out"
+}
+
+handle_c4d_render() {
+  local _rc=0 _take="" _out=""
+  host_render_args c4d || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  request_arg_present target && _take=$(request_arg_get target)
+  [ ${#_take} -le 255 ] || { set_error "INVALID_ARGUMENT" "Take name is too long."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+
+  _out=$(MJ_APPS="$MJ_HOST_APPS_DIR" MJ_MIN_YEAR="$MJ_HOST_MIN_YEAR" MJ_STORE="$MJ_STORE" \
+    MJ_SRC="$MJ_RENDER_SRC" MJ_OUT="$MJ_RENDER_OUT" MJ_LABEL="$MJ_RENDER_LABEL" MJ_TAKE="$_take" \
+    MJ_RANGE="$MJ_RENDER_RANGE" MJ_TIMEOUT="$MJ_RENDER_TIMEOUT" MJ_YEAR="$MJ_RENDER_YEAR" host_python <<'PY_C4D_RENDER'
+rng = parse_range(os.environ["MJ_RANGE"])
+_, c4d = discover(os.environ["MJ_APPS"], int(os.environ["MJ_MIN_YEAR"]))
+host = pick_host(c4d, int(os.environ["MJ_YEAR"]))
+src, label = os.environ["MJ_SRC"], os.environ["MJ_LABEL"]
+lock = render_lock(os.environ["MJ_STORE"])
+try:
+    sha_before = sha256_file(src)
+    job = reserve_job_dir(os.environ["MJ_OUT"], label)
+    # Renders with the scene's own render settings (Redshift or Physical);
+    # only image path and format are overridden. C4D appends frame numbers.
+    argv = [host["commandline"], "-render", src, "-oimage", os.path.join(job, label + "_"), "-oformat", "PNG"]
+    if rng:
+        argv += ["-frame", str(rng[0]), str(rng[1])]
+    if os.environ["MJ_TAKE"]:
+        argv += ["-take", os.environ["MJ_TAKE"]]
+    receipt = {"schema": "MJ_RENDER_1", "host": "cinema4d", "hostYear": host["year"],
+               "hostVersion": host["version"], "binary": host["commandline"], "redshiftInstalled": host["redshift"],
+               "target": os.environ["MJ_TAKE"] or None, "range": list(rng) if rng else None, "outputDir": job,
+               "argv": argv, "startedAt": now_iso(), "_t0": time.time(), "logPath": os.path.join(job, "render.log")}
+    status, code, tail = run_guarded(argv, receipt["logPath"], int(os.environ["MJ_TIMEOUT"]))
+    finish_render(receipt, job, rng, status, code, tail, src, sha_before)
+finally:
+    shutil.rmtree(lock, ignore_errors=True)
+PY_C4D_RENDER
+) || true
+  frames_emit_python_result "$_out"
+}
+
 # --- src/cli/entry.zsh ---
 main() {
   local _rc=0
@@ -5155,6 +5526,9 @@ dispatch_request() {
     index.verify) handle_index_verify ;;
     preset.add) handle_preset_add ;;
     preset.get) handle_preset_get ;;
+    host.detect) handle_host_detect ;;
+    ae.render) handle_ae_render ;;
+    c4d.render) handle_c4d_render ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

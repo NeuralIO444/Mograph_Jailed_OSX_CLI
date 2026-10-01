@@ -38,8 +38,14 @@ for f in \
   src/modules/audit.zsh \
   src/modules/protect.zsh \
   src/modules/library.zsh \
+  src/modules/host.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$OUT"
   cat "$ROOT/$f" >> "$OUT"
+  # Test bundle only: host-app tests point discovery at a fake /Applications.
+  # The production bundle has no such hook.
+  if [ "$f" = "src/core/constants.zsh" ]; then
+    printf '%s\n' 'MJ_HOST_APPS_DIR="${MJ_TEST_APPS_DIR:-/Applications}"' >> "$OUT"
+  fi
 done
 chmod 755 "$OUT"

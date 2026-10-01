@@ -28,7 +28,7 @@ printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=hello\ncommand=system.probe\n' > /tmp
 zsh -f dist/mograph-jailed.zsh --request /tmp/mj-request.txt
 ```
 
-You get one JSON envelope on stdout. `system.describe` lists all 39 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
+You get one JSON envelope on stdout. `system.describe` lists all 42 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
 
 ## Production rules
 
@@ -73,6 +73,8 @@ Power tools (Phases 8 and 10):
 - **`project.restore`** — copy any snapshot back out as a new, hash-verified `.aep`; never overwrites.
 - **`deps.graph`** — every comp's footage, precomps and effects, what's missing, and which dependencies would break the most comps.
 - **`handoff.package`** — a delivery folder with the project, collected local footage (image sequences included), fonts/plug-in list, README and a SHA-256 manifest.
+
+Host applications (Phases 0–1): `host.detect` finds After Effects and Cinema 4D 2024+ (plus Redshift, Metal GPU); `ae.render` and `c4d.render` render a comp or scene to a new PNG-sequence folder with a receipt (frame count vs expected, first/last-frame hashes, source unchanged), one at a time, with a hard timeout and fail-fast when C4D's licence is not configured. `mj last` shows the newest receipt; `mj open-last` opens its folder. Rendered folders feed straight into `loop.seams` and `golden.check`.
 
 Search and recall (Phase 9) — a local SQLite/FTS5 store in `~/Library/Application Support/MographJailed`:
 

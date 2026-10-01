@@ -12,16 +12,15 @@ Status: draft, nothing implemented. Targets: AE 2024 (24.x), C4D 2024 (Redshift 
 
 ## Phases
 
-### Phase 0 - Host discovery
-- `host.detect`: AE/C4D versions and paths, `aerender`, `c4dpy`, `Commandline`, macOS version. Read-only.
-- `runtime.verify` additions: TCC Automation permission, GUI session, Metal/GPU, Redshift licence.
-- Gate: same report on the target Mac and a clean Mac.
+### Phase 0 - Host discovery — DONE
+- `host.detect` (`MJ_HOST_DETECT_1`): AE/C4D installs 2024+, CLIs, Redshift, Metal GPU, console session. Observed here: AE 2026 (26.5.0), C4D 2026.3 with Redshift, M2 Max, macOS 26.6.2.
+- Licensing reported `unverified`; the real signal is `LICENCE_NOT_CONFIGURED` when a host asks for a licence choice (observed with `c4dpy` on this Mac).
+- Deferred: TCC Automation permission probe (needed once AE scripting is used).
 
-### Phase 1 - Render control (T1)
-- `ae.render` (aerender; allowlisted comp/output module/template; frame ranges; never overwrites).
-- `c4d.render` (Commandline; renderer allowlist `redshift` | `physical`; take, range, output).
-- `render.queue`: serial jobs, JSON progress, timeout, kill switch, post-render verification (frame count, size, first/last frame hash).
-- Gate: matching 10-frame renders from both hosts with receipts.
+### Phase 1 - Render control — DONE (stubs qualified; real renders pending)
+- `ae.render`, `c4d.render` with receipts (`MJ_RENDER_1`), one-at-a-time lock, timeout, licence-prompt detection, source-unchanged proof, `mj last` / `mj open-last`.
+- Qualified against stub hosts (31 checks). Still to run on the workstation: a real AE render (needs a project and AE's own licence) and a real C4D render once C4D licensing is configured.
+- Deferred: `render.queue` of multiple jobs; progress streaming to a dashboard (Phase 7); render cost estimator.
 
 ### Phase 2 - C4D scene intelligence
 - `c4d.inspect` via `c4dpy`: scene graph, materials, textures, cameras, takes, render settings, Redshift nodes, fps.
