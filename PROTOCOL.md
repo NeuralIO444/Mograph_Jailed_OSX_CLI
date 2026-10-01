@@ -313,3 +313,9 @@ Store schema v2 adds normalized `projects`, `compositions`, `layers`, `assets`, 
 Every success response carries `"warnings": []`. When an operation completes but its result is incomplete or needs attention, the list holds `{ "code", "message" }` objects instead (for example `RESULTS_TRUNCATED`, `MISSING_FOOTAGE`, `FILE_TOO_LARGE_TO_HASH`). A warning never changes `ok` or the exit code. The codes are listed in `docs/man/errors.md`. Operations backed by a Python engine report warnings through a reserved `_warnings` list in their result, which the runtime lifts into this field; it never appears inside `data`.
 
 `plugin.audit` hashes files up to 2 GB each; larger files are listed with `sha256: null` and a `FILE_TOO_LARGE_TO_HASH` warning. `file.hash` has no size bound; on Apple Silicon SHA-256 runs at roughly 350 MB/s (about 3 seconds per GiB), so size your timeouts accordingly.
+
+## Standard input, doctor guidance, dashboard JSON
+
+- **`--request -`** reads the request from standard input (up to 256 KB; larger is `REQUEST_TOO_LARGE`). The runtime copies it to a private temporary file first, so parsing and the audit log behave exactly as for a file. The temporary file is removed on every exit path.
+- **`system.doctor`** now includes `guidance` (one entry per missing tool: `capability`, the `unlocks` list of operations it blocks, and a plain-language `hint`) and `operations: {total, unavailable}`. `ready` still means "core capabilities present"; it does not mean every operation is available. The doctor itself uses only core tools, so it answers even when `python3` is missing.
+- **`tools/mj-observe-dash.zsh --json`** prints the dashboard's data as one JSON document (`MJ_OBSERVE_DASH_1`) and exits. The receipt ingest is cached by the newest receipt's path, size and modification time.

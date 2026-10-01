@@ -24,7 +24,7 @@ mkdir -p "$VERSIONS_DIR" 2>/dev/null
 
 # Hygiene: drop stale staged requests (older than a day) so the stage dir
 # cannot grow without bound across triggers.
-find "$STAGE_DIR" -maxdepth 1 -name 'req-*.txt' -mtime +1 -delete 2>/dev/null
+find "$STAGE_DIR" -maxdepth 1 \( -name 'req-*.txt' -o -name 'req.*' \) -mtime +1 -delete 2>/dev/null
 
 epoch=$(date +%s)
 
@@ -34,23 +34,36 @@ if [[ ! -d "$WATCH_DIR" ]]; then
 fi
 
 n=0
-find "$WATCH_DIR" -maxdepth 2 -type f -name '*.aep' -print 2>/dev/null | while IFS= read -r aep; do
+# -iname: Windows-originated projects are often Foo.AEP.
+find "$WATCH_DIR" -maxdepth 2 -type f -iname '*.aep' -print 2>/dev/null | while IFS= read -r aep; do
     [[ -n "$aep" ]] || continue
     n=$((n + 1))
-    req="$STAGE_DIR/req-$epoch-$n.txt"
+    # mktemp gives every request its own file, so overlapping launchd runs cannot collide.
+    req=$(/usr/bin/mktemp "$STAGE_DIR/req.XXXXXX") || { print -r "$(date '+%F %T') snapshot FAILED (NO_STAGE_FILE) (continuing): $aep" >> "$LOG_FILE"; continue; }
     b64path=$(printf '%s' "$aep" | /usr/bin/base64 | tr -d '\n')
     b64out=$(printf '%s' "$VERSIONS_DIR" | /usr/bin/base64 | tr -d '\n')
     {
         print -r "MOGRAPHJAILED_REQUEST 1"
-        print -r "requestId=watcher-$epoch-$n"
+        print -r "requestId=watcher-$epoch-$$-$n"
         print -r "command=project.snapshot"
         print -r "arg.path=$b64path"
         print -r "arg.output=$b64out"
     } > "$req"
-    if "$CLI_PATH" --request "$req" >/dev/null 2>&1; then
+    out=$("$CLI_PATH" --request "$req" 2>&1)
+    rc=$?
+    # Read the receipt so the log says what actually happened, not just pass/fail.
+    code=$(print -r -- "$out" | /usr/bin/jq -r '.error.code // empty' 2>/dev/null)
+    created=$(print -r -- "$out" | /usr/bin/jq -r 'if .data.snapshotCreated == null then empty else (.data.snapshotCreated | tostring) end' 2>/dev/null)
+    if [[ "$rc" -eq 0 && "$created" == "false" ]]; then
+        print -r "$(date '+%F %T') unchanged, skipped: $aep" >> "$LOG_FILE"
+    elif [[ "$rc" -eq 0 ]]; then
         print -r "$(date '+%F %T') snapshot ok: $aep" >> "$LOG_FILE"
+    elif [[ "$code" == "OUTPUT_EXISTS" ]]; then
+        print -r "$(date '+%F %T') already saved by a concurrent run: $aep" >> "$LOG_FILE"
+    elif [[ "$code" == "SNAPSHOT_UNSTABLE" ]]; then
+        print -r "$(date '+%F %T') busy, project was changing (will retry on the next save): $aep" >> "$LOG_FILE"
     else
-        print -r "$(date '+%F %T') snapshot FAILED (continuing): $aep" >> "$LOG_FILE"
+        print -r "$(date '+%F %T') snapshot FAILED (${code:-exit $rc}) (continuing): $aep" >> "$LOG_FILE"
     fi
     /bin/rm -f "$req" 2>/dev/null
 done

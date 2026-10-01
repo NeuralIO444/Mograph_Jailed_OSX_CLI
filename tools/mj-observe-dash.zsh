@@ -7,9 +7,11 @@
 #
 # Usage:
 #   tools/mj-observe-dash.zsh --versions ~/AE_Versions [--receipts ~/AE_Receipts]
-#                             [--cli dist/mograph-jailed.zsh] [--interval 5] [--once]
+#                             [--cli dist/mograph-jailed.zsh] [--interval 5] [--once | --json]
 #
 # Keys: q quit · r refresh now. --once renders a single frame (scripting).
+# --json prints the same data as one JSON document (implies --once); --ticks N
+# (for tests) collects N times first, exercising the receipt cache.
 
 emulate -R zsh
 set -u
@@ -20,6 +22,8 @@ RECEIPTS_DIR=""
 CLI_PATH="$ROOT/dist/mograph-jailed.zsh"
 INTERVAL=5
 ONCE=0
+JSON=0
+TICKS=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,7 +32,9 @@ while [[ $# -gt 0 ]]; do
     --cli) CLI_PATH="$2"; shift 2 ;;
     --interval) INTERVAL="$2"; shift 2 ;;
     --once) ONCE=1; shift ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    --json) JSON=1; ONCE=1; shift ;;
+    --ticks) TICKS="$2"; shift 2 ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) print -u2 "unknown arg: $1"; exit 2 ;;
   esac
 done
@@ -47,6 +53,8 @@ export MJ_DASH_RECEIPTS="$RECEIPTS_DIR"
 export MJ_DASH_CLI="$CLI_PATH"
 export MJ_DASH_INTERVAL="$INTERVAL"
 export MJ_DASH_ONCE="$ONCE"
+export MJ_DASH_JSON="$JSON"
+export MJ_DASH_TICKS="$TICKS"
 
 /usr/bin/python3 - "$@" <<'PY_DASH'
 import json, os, sys, time, shutil, subprocess, tempfile, select, termios, tty
@@ -56,6 +64,13 @@ RECEIPTS = os.environ.get("MJ_DASH_RECEIPTS") or ""
 CLI = os.environ["MJ_DASH_CLI"]
 INTERVAL = int(os.environ.get("MJ_DASH_INTERVAL", "5"))
 ONCE = os.environ.get("MJ_DASH_ONCE") == "1"
+JSON_OUT = os.environ.get("MJ_DASH_JSON") == "1"
+TICKS = max(1, int(os.environ.get("MJ_DASH_TICKS", "1")))
+# Receipt ingest cache: re-run project.ingest / expression.lint only when the newest
+# receipt changes (path, size, mtime), including when it failed, so a bad receipt is not
+# re-parsed every refresh.
+_RECEIPT_CACHE = {"key": None, "summary": None, "lint": None, "error": None}
+INGEST_CALLS = 0
 
 # ---------- palette (btop-ish, dark) ----------
 ESC = "\x1b["
@@ -184,14 +199,30 @@ def collect():
                     best, best_mtime = p, m
         if best:
             data["receipt"] = os.path.basename(best)
-            r = cli_request("project.ingest", {"path": best})
-            if r.get("ok"):
-                data["summary"] = r["data"]
-            else:
-                data["receipt_error"] = (r.get("error") or {}).get("code", "INGEST_FAILED")
-            r = cli_request("expression.lint", {"path": best})
-            if r.get("ok"):
-                data["lint"] = r["data"]
+            try:
+                st = os.stat(best)
+                key = (best, st.st_size, st.st_mtime_ns)
+            except OSError:
+                key = None
+            if key is None or key != _RECEIPT_CACHE["key"]:
+                global INGEST_CALLS
+                INGEST_CALLS += 1
+                c = {"key": key, "summary": None, "lint": None, "error": None}
+                r = cli_request("project.ingest", {"path": best})
+                if r.get("ok"):
+                    c["summary"] = r["data"]
+                else:
+                    c["error"] = (r.get("error") or {}).get("code", "INGEST_FAILED")
+                r = cli_request("expression.lint", {"path": best})
+                if r.get("ok"):
+                    c["lint"] = r["data"]
+                _RECEIPT_CACHE.update(c)
+            if _RECEIPT_CACHE["summary"] is not None:
+                data["summary"] = _RECEIPT_CACHE["summary"]
+            if _RECEIPT_CACHE["error"]:
+                data["receipt_error"] = _RECEIPT_CACHE["error"]
+            if _RECEIPT_CACHE["lint"] is not None:
+                data["lint"] = _RECEIPT_CACHE["lint"]
     return data
 
 def human_bytes(n):
@@ -320,8 +351,16 @@ def main():
         sys.stderr.write("mj-observe-dash: versions dir not found: %s\n" % VERSIONS)
         sys.exit(2)
     if ONCE:
+        for _ in range(TICKS):
+            data = collect()
+        if JSON_OUT:
+            data["schema"] = "MJ_OBSERVE_DASH_1"
+            data["generatedAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            data["ingestCalls"] = INGEST_CALLS
+            sys.stdout.write(json.dumps(data, sort_keys=True, indent=1) + "\n")
+            return
         W, H = shutil.get_terminal_size((100, 30))
-        sys.stdout.write(render(collect(), W, H) + "\n")
+        sys.stdout.write(render(data, W, H) + "\n")
         return
     # interactive loop
     fd = sys.stdin.fileno()

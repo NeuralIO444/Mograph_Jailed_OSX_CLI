@@ -2,6 +2,7 @@ print_help() {
   local _op=""
   printf 'mograph-jailed %s (protocol %s)\n\n' "$MOGRAPHJAILED_CLI_VERSION" "$MOGRAPHJAILED_PROTOCOL_VERSION"
   printf 'Usage:\n  mograph-jailed.zsh --request <request-file>   run one request, print one JSON response\n'
+  printf '  mograph-jailed.zsh --request -               read the request from standard input\n'
   printf '  mograph-jailed.zsh --help | --version\n\n'
   printf 'For everyday use, the `mj` shell command builds requests for you (docs/man/mj.md).\n'
   printf 'Request format: PROTOCOL.md. Error codes: docs/man/errors.md.\n\n'
@@ -18,6 +19,22 @@ EOF_HELP_OPS
 
 main() {
   local _rc=0
+  local _stdin_req=""
+  # `--request -` reads the request from standard input. It is copied (bounded) to a private
+  # temp file first, so the parser sees an ordinary file and no special case leaks further.
+  if [ "$#" -eq 2 ] && [ "$1" = "--request" ] && [ "$2" = "-" ]; then
+    _stdin_req=$(/usr/bin/mktemp "$(mj_tmp_parent)/mj-stdin-request.XXXXXX" 2>/dev/null) || {
+      set_error "TEMP_UNAVAILABLE" "Could not create a private file for the request read from standard input."
+      emit_error_response "" ""; return 73
+    }
+    /usr/bin/head -c 262145 > "$_stdin_req" 2>/dev/null
+    if [ "$(file_stat_size "$_stdin_req" 2>/dev/null)" -gt 262144 ] 2>/dev/null; then
+      /bin/rm -f "$_stdin_req"
+      set_error "REQUEST_TOO_LARGE" "Request read from standard input is larger than 256 KB."
+      emit_error_response "" ""; return 65
+    fi
+    set -- --request "$_stdin_req"
+  fi
   case "${1:-}" in
     --help|-h) [ "$#" -eq 1 ] && { print_help; return 0; } ;;
     --version|-V) [ "$#" -eq 1 ] && { printf 'mograph-jailed %s (protocol %s)\n' "$MOGRAPHJAILED_CLI_VERSION" "$MOGRAPHJAILED_PROTOCOL_VERSION"; return 0; } ;;
@@ -31,12 +48,14 @@ main() {
   if ! load_request_file "$2"; then
     emit_error_response "${REQUEST_COMMAND:-}" "${REQUEST_ID:-}"
     audit_append 65
+    [ -z "$_stdin_req" ] || /bin/rm -f "$_stdin_req"
     return 65
   fi
 
   dispatch_request
   _rc=$?
   audit_append "$_rc"
+  [ -z "$_stdin_req" ] || /bin/rm -f "$_stdin_req"
   return "$_rc"
 }
 
