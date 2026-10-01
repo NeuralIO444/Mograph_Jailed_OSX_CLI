@@ -1,6 +1,17 @@
 # Changelog
 
-## Unreleased — Phase 7 (live progress, notifications, status)
+## 0.4.0-dev.1 — 2026-10-01
+
+Power CLI for After Effects and Cinema 4D. Protocol v1 preserved; the public surface grew additively from 27 to 44 operations. The sections below describe the pieces.
+
+### Fixes from the 2026-09-30 review
+
+- `project.snapshot` (#7, #8, #9): the copy is staged, its SHA-256 and the source's are re-checked, and a mismatch keeps nothing (`SNAPSHOT_UNSTABLE`); publish is by hard link so an existing snapshot is never overwritten; the project stem is case-insensitive so `.AEP` projects dedupe and name their latest pointer consistently. Receipts now record `copyVerified` and `sourceStableDuringCopy`.
+- `sourceUnchanged` (#20) is now measured (size and modification time before and after) in `image.stats`, `image.compare`, `project.ingest`, `expression.lint`, `plugin.audit`, `project.snapshot` and the newer frame, protect and library operations, instead of a literal `true`. `preset.get` no longer reports it (its source is the hash-verified store).
+- Dashboard (#10): the observer dashboard reads the unwrapped `*.latest.json` pointer, so project paths show.
+- Version (#12): the runtime and `VERSION` now report `0.4.0-dev.1`; `tests/run_contract_audit.sh` fails if the constant, `VERSION` and the newest changelog entry disagree.
+
+### Phase 7 (live progress, notifications, status)
 
 - Renders write `<store>/render-progress.json` (frames counted from finished PNGs, total from `range`, fps, ETA) about twice a second; removed when the render ends. The dashboard shows an animated bar and sets the Terminal title to `MJ · rendering N%`.
 - `mj notify on|off|test|status`: opt-in native notifications for renders, golden checks, recipes and operations running 10 s or more; text passed to osascript as arguments only.
@@ -8,21 +19,21 @@
 - Fixed: a successful `mj recipe` returned non-zero when notifications were off (caught by the new tests).
 - Tests: `run_host.sh` 39, `run_mj_cli.sh` 38, `run_ui.sh` 52.
 
-## Unreleased — Terminal experience
+### Terminal experience
 
 - `mj` (bare) is now a launch screen: animated gradient wordmark and a live boot checklist (runtime, After Effects, Cinema 4D/Redshift, GPU, library, audit log, last render). `mj ui` is a full-screen dashboard with Overview / Renders / Library / Audit tabs. `mj cd` replaces the old bare-`mj` go-to-folder behavior.
 - `scripts/terminal/mj_ui.py`: read-only, stdlib-only; truecolor → 256-color → plain/ASCII fallbacks (`NO_COLOR`, `MJ_PLAIN`, `MJ_ASCII`, `MJ_NO_ANIM`), terminal always restored on exit, `--once`/`--plain`/`--width` for scripting.
 - Runtime: `<store>/renders.jsonl` render history; `index.verify` now reports `projects`.
 - Added `tests/run_ui.sh` (41 checks, including real pseudo-terminal sessions).
 
-## Unreleased — Project audit queries (Modules 1–3 fold-in)
+### Project audit queries (Modules 1–3 fold-in)
 
 - Added `trace.asset` and `audit.plugins` (operations 43–44) over new normalized store tables (schema v2: projects, compositions, layers, assets, fonts, plugins) with in-place v1 migration.
 - Scraper (`MJ_PROJECT_SCRAPE_1`, additive optional fields): layer `sourceId`, text-layer `font`, footage `id`; read-only guard still passes.
 - Newest scrape per project path wins; older receipts never replace newer data.
 - AE client: `traceAsset()`, `auditPlugins()`. Added `tests/run_audit_queries.sh` (29 checks).
 
-## Unreleased — Power CLI Phases 0–1 (hosts and rendering)
+### Power CLI Phases 0–1 (hosts and rendering)
 
 - Added `host.detect`, `ae.render`, `c4d.render` (operations 40–42) and argument names `range`, `timeoutSeconds`.
 - Guarded host runner: closed stdin, own process group, streamed log, hard timeout, licence-prompt detection, single-render lock with stale-lock reclaim.
@@ -31,34 +42,42 @@
 - Added `tests/run_host.sh` (31 checks, stub hosts). Contract audit now accepts digits in operation names (`c4d.render`).
 - Observed on the target Mac: `c4dpy` blocks on an interactive licence prompt until C4D licensing is configured once by hand.
 
-## Unreleased — Power CLI Phase 9 (search and recall)
+### Power CLI Phase 9 (search and recall)
 
 - Added `index.add`, `index.search`, `index.verify`, `preset.add`, `preset.get` (operations 35–39) and argument name `version`.
 - MJ-owned store (SL-M4): fixed-schema SQLite + FTS5 via Python's stdlib `sqlite3` with bound parameters only; migrations by `user_version`; content-addressed preset blobs.
 - AE client: `indexAdd()`, `indexSearch()`, `indexVerify()`, `presetAdd()`, `presetGet()`.
 - Added `tests/run_library.sh` (31 checks).
 
-## Unreleased — Power CLI Phase 8 (protect work)
+### Power CLI Phase 8 (protect work)
 
 - Added `project.restore`, `deps.graph`, `handoff.package` (operations 32–34).
 - Footage from scrapes is classified local/network/unknown from the mount table; only local footage is ever stat'ed or copied.
 - AE client: `projectRestore()`, `depsGraph()`, `handoffPackage()`.
 - Added `tests/run_protect.sh` (31 checks).
 
-## Unreleased — Power CLI Phases 8 (audit) and 10 (shell)
+### Power CLI Phases 8 (audit) and 10 (shell)
 
 - Added opt-in hash-chained audit log (`~/Library/Logs/MographJailed/audit.jsonl` when the directory exists; `MJ_AUDIT_DIR` overrides) and `audit.verify` (operation 31).
 - `system.describe` operation descriptors now publish `args.allowed` / `args.required` from the validator's own schema table (`request_schema_for`).
 - Added `mj` front end (`scripts/shell/mj-cli.zsh`): single operations, `mj ops`, zsh completion, and validated data-only recipes (`recipes/render-qa.mjrecipe`).
 - Added `tests/run_audit.sh` (17 checks) and `tests/run_mj_cli.sh` (17 checks).
 
-## Unreleased — Power CLI Phases 5–6
+### Power CLI Phases 5–6
 
 - Added `loop.seams`, `golden.record`, `golden.check` (operations 28–30) and argument names `minFrames`, `threshold`. Protocol v1 preserved; no existing schema changed.
 - ImageStats signature engine moved into one shared Python block; PNG decoder now accepts 16-bit RGB/RGBA (common for C4D renders).
 - Frame operations downscale through `sips` when present (48 × 1080p frames in ~3 s) and fall back to direct decode otherwise; `python3` is the only hard requirement.
 - AE client: `loopSeams()`, `goldenRecord()`, `goldenCheck()`.
 - Added `tests/run_frames.sh` (29 checks).
+
+## 0.3.0 — qualified production baseline
+
+Tagged `0.3.0`. Note: the tagged build self-reports `0.3.0-dev.2` (the version constant was not bumped before tagging; fixed going forward by a version-sync test).
+
+## 0.3.0-dev.3
+
+SL-M3 ImageKit analysis: `image.stats` and `image.compare` (see `docs/releases/0.3.0-dev.3/QA_REPORT_SL_M3.md`).
 
 ## 0.3.0-dev.2 — 2026-09-22
 

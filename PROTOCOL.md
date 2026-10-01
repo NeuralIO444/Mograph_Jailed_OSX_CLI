@@ -301,3 +301,9 @@ Store schema v2 adds normalized `projects`, `compositions`, `layers`, `assets`, 
 - `audit.plugins` with a `target` returns `MJ_PLUGIN_USAGE_1`: the unique project paths that use that exact effect `matchName`, with layer-use and composition counts. Without a `target` it returns `MJ_PLUGIN_INVENTORY_1`: every `matchName` in the index with project and layer-use counts, most widely used first. Only each project's newest indexed scrape is counted.
 
 `MJ_PROJECT_SCRAPE_1` gains three optional fields (layer `sourceId`, text-layer `font`, footage `id`); consumers that do not know them are unaffected.
+
+## Verification semantics (0.4.0-dev.1)
+
+- **`project.snapshot`** stages the copy under a hidden name in the output directory, re-hashes the staged copy and the source, and publishes with a hard link. If either hash differs from the hash taken before copying, nothing is kept and the operation fails with `SNAPSHOT_UNSTABLE` (the project was being written; the watcher retries on the next save). An existing snapshot is never replaced (`OUTPUT_EXISTS`). The `.aep` extension is matched case-insensitively, so `Foo.AEP` and `Foo.aep` use the same `Foo.latest.json` pointer. Responses report `copyVerified`; the receipt records `copyVerified` and `sourceStableDuringCopy`.
+- **`sourceUnchanged`** is measured, not asserted: the source's size and modification time (or, for a directory of frames, its regular files' names, sizes and modification times) are compared before and after the operation. A `false` value means the source changed while the operation ran. `preset.get` does not report it (its source is the hash-verified store).
+- **Version**: `runtime.verify`, `system.describe` and `VERSION` report `0.4.0-dev.1`; `tests/run_contract_audit.sh` fails if the runtime constant, `VERSION` and the newest `CHANGELOG.md` heading disagree.

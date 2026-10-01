@@ -61,6 +61,12 @@ def err(code, message):
     sys.exit(0)
 
 path = os.environ.get("MJ_SCRAPE_PATH", "")
+def _ident(p):
+    try:
+        st = os.stat(p); return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+_id0 = _ident(path)
 max_bytes = int(os.environ.get("MJ_SCRAPE_MAX_BYTES", "8388608"))
 try:
     size = os.path.getsize(path)
@@ -140,7 +146,7 @@ data = {
     "layerTypes": layer_types,
     "compsTruncated": bool(doc.get("compsTruncated", False)),
     "footageTruncated": bool(doc.get("footageTruncated", False)),
-    "sourceUnchanged": True,
+    "sourceUnchanged": _ident(path) == _id0,
 }
 print(json.dumps({"ok": True, "data": data}))
 PY_PROJECT_INGEST
@@ -179,6 +185,12 @@ def err(code, message):
     sys.exit(0)
 
 path = os.environ.get("MJ_SCRAPE_PATH", "")
+def _ident(p):
+    try:
+        st = os.stat(p); return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+_id0 = _ident(path)
 max_bytes = int(os.environ.get("MJ_SCRAPE_MAX_BYTES", "8388608"))
 max_findings = int(os.environ.get("MJ_LINT_MAX_FINDINGS", "200"))
 try:
@@ -278,7 +290,7 @@ data = {
     "findings": findings,
     "findingsTruncated": truncated,
     "rules": ["E001", "E002", "W001", "W002", "W003", "I001"],
-    "sourceUnchanged": True,
+    "sourceUnchanged": _ident(path) == _id0,
 }
 print(json.dumps({"ok": True, "data": data}))
 PY_EXPRESSION_LINT
@@ -298,6 +310,7 @@ PY_EXPRESSION_LINT
 
 handle_plugin_audit() {
   local _dir=""
+  local _id0=""
   local _entry=""
   local _name=""
   local _kind=""
@@ -310,6 +323,7 @@ handle_plugin_audit() {
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _dir="$MJ_REQUIRED_ARG_VALUE"
+  _id0=$(source_identity "$_dir")
   is_absolute_path "$_dir" || { set_error "INVALID_PATH" "Plugin directory must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -d "$_dir" ] || { set_error "INVALID_TARGET" "Plugin audit target must be a directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -r "$_dir" ] && [ -x "$_dir" ] || { set_error "PERMISSION_DENIED" "Plugin directory is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
@@ -363,9 +377,13 @@ handle_plugin_audit() {
   if $_truncated; then printf '%s' "$PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES"; else printf '%s' "$_count"; fi
   if $_truncated; then printf ',"truncated":true'; else printf ',"truncated":false'; fi
   printf ',"entryBound":%s' "$PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES"
-  printf ',"sourceUnchanged":true}'
+  # Directory-level check: entries added or removed while the scan ran change this.
+  printf ',"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_dir")"
   emit_success_end
 }
+
+# Test bundle only redefines this to simulate a project being written mid-copy.
+snapshot_test_hook() { :; }
 
 handle_project_snapshot() {
   local _path=""
@@ -383,9 +401,12 @@ handle_project_snapshot() {
   local _receipt=""
   local _bytes=""
   local _clone_used=false
+  local _id0=""
+  local _partial=""
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
+  _id0=$(source_identity "$_path")
   require_arg output || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _outdir="$MJ_REQUIRED_ARG_VALUE"
   is_absolute_path "$_path" && is_absolute_path "$_outdir" || { set_error "INVALID_PATH" "Snapshot path and output directory must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
@@ -407,7 +428,7 @@ handle_project_snapshot() {
   [ -n "$_sha_value" ] || { set_error "UNSUPPORTED" "No approved native SHA-256 utility is available."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
 
   _base=${_path##*/}
-  _stem="${_base%.*}"
+  _stem="${_base%.[aA][eE][pP]}"
   [ -n "$_stem" ] && [ "$_stem" != "$_base" ] || _stem="project"
   _latest_file="$_outdir_real/$_stem.latest.json"
   if [ -f "$_latest_file" ]; then
@@ -417,7 +438,7 @@ handle_project_snapshot() {
       printf '{"schema":"MJ_PROJECT_SNAPSHOT_1","sourcePath":'; json_quote "$_path"
       printf ',"sha256":'; json_quote "$_sha_value"
       printf ',"hashSource":'; json_quote "$_sha_source"
-      printf ',"snapshotCreated":false,"reason":"unchanged","sourceUnchanged":true}'
+      printf ',"snapshotCreated":false,"reason":"unchanged","sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_path")"
       emit_success_end
       return 0
     fi
@@ -426,21 +447,49 @@ handle_project_snapshot() {
   _ts=$(/bin/date -u '+%Y%m%dT%H%M%SZ' 2>/dev/null || printf 'unknown')
   _short=${_sha_value:0:12}
   _dest="$_outdir_real/$_stem.$_ts.$_short.aep"
+  _partial="$_outdir_real/.$_stem.$_ts.$_short.partial.$$"
   [ ! -e "$_dest" ] && [ ! -L "$_dest" ] || { set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
   _bytes=$(file_stat_size "$_path" 2>/dev/null || printf '0')
 
-  # APFS clone first (instant, copy-on-write); fall back to a plain copy.
-  if /bin/cp -c "$_path" "$_dest" 2>/dev/null; then
+  # Stage the copy under a hidden name, prove it matches, then publish with a hard link.
+  # AE may still be writing the project when the watcher fires, so both the staged copy and
+  # the source are re-hashed; any mismatch means a torn snapshot and nothing is published.
+  # ln fails if the destination exists, so a concurrent snapshot can never be clobbered.
+  /bin/rm -f "$_partial" 2>/dev/null
+  if /bin/cp -c "$_path" "$_partial" 2>/dev/null; then
     _clone_used=true
   else
-    /bin/cp "$_path" "$_dest" 2>/dev/null || { set_error "SNAPSHOT_FAILED" "Could not copy the project to the versions directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+    /bin/cp "$_path" "$_partial" 2>/dev/null || { /bin/rm -f "$_partial" 2>/dev/null; set_error "SNAPSHOT_FAILED" "Could not copy the project to the versions directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   fi
+  snapshot_test_hook "$_path"
+  hash_sha256_file "$_partial" 2>/dev/null
+  if [ "$MJ_HASH_VALUE" != "$_sha_value" ]; then
+    /bin/rm -f "$_partial" 2>/dev/null
+    set_error "SNAPSHOT_UNSTABLE" "The project changed while it was being copied; no snapshot was kept. It will be retried on the next save."
+    emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74
+  fi
+  hash_sha256_file "$_path" 2>/dev/null
+  if [ "$MJ_HASH_VALUE" != "$_sha_value" ]; then
+    /bin/rm -f "$_partial" 2>/dev/null
+    set_error "SNAPSHOT_UNSTABLE" "The project changed while it was being copied; no snapshot was kept. It will be retried on the next save."
+    emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74
+  fi
+  if ! /bin/ln "$_partial" "$_dest" 2>/dev/null; then
+    /bin/rm -f "$_partial" 2>/dev/null
+    if [ -e "$_dest" ] || [ -L "$_dest" ]; then
+      set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."
+    else
+      set_error "SNAPSHOT_FAILED" "Could not publish the snapshot."
+    fi
+    emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73
+  fi
+  /bin/rm -f "$_partial" 2>/dev/null
   [ -f "$_dest" ] || { set_error "SNAPSHOT_FAILED" "Snapshot copy did not materialize."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   _receipt="$_dest.snapshot.json"
   MJ_SNAP_SHA="$_sha_value" MJ_SNAP_SRC="$_path" MJ_SNAP_DEST="$_dest" \
   MJ_SNAP_BYTES="$_bytes" MJ_SNAP_TS="$_ts" MJ_SNAP_CLONE="$_clone_used" \
-  MJ_SNAP_HASH_SRC="$_sha_source" \
+  MJ_SNAP_HASH_SRC="$_sha_source" MJ_SNAP_STEM="$_stem" \
   /usr/bin/python3 - <<'PY_SNAPSHOT_RECEIPT' 2>/dev/null
 import json, os
 receipt = {
@@ -452,7 +501,8 @@ receipt = {
     "createdAt": os.environ["MJ_SNAP_TS"],
     "bytesCopied": int(os.environ["MJ_SNAP_BYTES"] or 0),
     "cloneUsed": os.environ["MJ_SNAP_CLONE"] == "true",
-    "sourceUnchanged": True,
+    "copyVerified": True,
+    "sourceStableDuringCopy": True,
 }
 with open(os.environ["MJ_SNAP_DEST"] + ".snapshot.json", "w", encoding="utf-8") as f:
     json.dump(receipt, f, sort_keys=True, separators=(",", ":"))
@@ -464,9 +514,7 @@ latest = {
     "snapshotPath": os.environ["MJ_SNAP_DEST"],
     "createdAt": os.environ["MJ_SNAP_TS"],
 }
-stem = os.path.basename(os.environ["MJ_SNAP_SRC"])
-if stem.endswith(".aep"):
-    stem = stem[:-4]
+stem = os.environ["MJ_SNAP_STEM"]
 outdir = os.path.dirname(os.environ["MJ_SNAP_DEST"])
 with open(os.path.join(outdir, stem + ".latest.json"), "w", encoding="utf-8") as f:
     json.dump(latest, f, sort_keys=True, separators=(",", ":"))
@@ -482,6 +530,6 @@ PY_SNAPSHOT_RECEIPT
   printf ',"receiptPath":'; json_quote "$_receipt"
   printf ',"bytesCopied":%s' "${_bytes:-0}"
   printf ',"cloneUsed":'; $_clone_used && printf 'true' || printf 'false'
-  printf ',"sourceUnchanged":true}'
+  printf ',"copyVerified":true,"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_path")"
   emit_success_end
 }

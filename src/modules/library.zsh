@@ -240,6 +240,7 @@ else:
         candidates += [os.path.join(d, f) for f in sorted(files) if f.lower().endswith(".json") and not f.startswith(".")]
         if len(candidates) > MAX_FILES:
             err("TOO_MANY_FILES", "More than %d JSON files under this path; index a narrower folder." % MAX_FILES)
+ids0 = {p: tree_id(p) for p in candidates}
 db = open_db(os.environ["MJ_STORE"], create=True)
 counts = {"added": 0, "updated": 0, "unchanged": 0, "skipped": 0}
 by_schema, problems = {}, []
@@ -269,7 +270,7 @@ for p in candidates:
 print(json.dumps({"ok": True, "data": dict(counts, **{
     "schema": "MJ_INDEX_ADD_1", "path": root, "store": os.environ["MJ_STORE"],
     "filesExamined": len(candidates), "indexedBySchema": by_schema, "problems": problems,
-    "sourceUnchanged": True,
+    "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
 })}))
 PY_INDEX_ADD
 ) || true
@@ -360,6 +361,7 @@ handle_preset_add() {
 
   _out=$(MJ_PATH="$_path" MJ_LABEL="$_label" MJ_STORE="$MJ_STORE" library_python <<'PY_PRESET_ADD'
 src, label, store = os.environ["MJ_PATH"], os.environ["MJ_LABEL"], os.environ["MJ_STORE"]
+id0 = tree_id(src)
 size = os.path.getsize(src)
 if size > 536870912:
     err("PRESET_TOO_LARGE", "Presets are limited to 512 MB.")
@@ -370,7 +372,7 @@ db = open_db(store, create=True)
 latest = db.execute("SELECT version, sha256 FROM presets WHERE label = ? ORDER BY version DESC LIMIT 1", (label,)).fetchone()
 if latest and latest[1] == sha:
     print(json.dumps({"ok": True, "data": {"schema": "MJ_PRESET_1", "label": label, "version": latest[0],
-        "sha256": sha, "created": False, "reason": "unchanged", "sourceUnchanged": True}}))
+        "sha256": sha, "created": False, "reason": "unchanged", "sourceUnchanged": tree_id(src) == id0}}))
     sys.exit(0)
 blob = preset_blob(store, sha)
 os.makedirs(os.path.dirname(blob), mode=0o700, exist_ok=True)
@@ -394,7 +396,7 @@ except sqlite3.IntegrityError:
 put_doc(db, "preset:%s@v%d" % (label, version), sha, "MJ_PRESET_1", label,
         [("preset", label, "v%d %s %s" % (version, kind, name))])
 print(json.dumps({"ok": True, "data": {"schema": "MJ_PRESET_1", "label": label, "version": version,
-    "sha256": sha, "kind": kind, "originalName": name, "bytes": size, "created": True, "sourceUnchanged": True}}))
+    "sha256": sha, "kind": kind, "originalName": name, "bytes": size, "created": True, "sourceUnchanged": tree_id(src) == id0}}))
 PY_PRESET_ADD
 ) || true
   frames_emit_python_result "$_out"
@@ -443,7 +445,7 @@ for candidate in (name, "%s-v%d%s" % (stem, version, ext)):
 if not dest:
     err("OUTPUT_EXISTS", "Refusing to overwrite existing files in the output directory.")
 print(json.dumps({"ok": True, "data": {"schema": "MJ_PRESET_GET_1", "label": label, "version": version,
-    "sha256": sha, "outputPath": dest, "sourceUnchanged": True}}))
+    "sha256": sha, "outputPath": dest}}))
 PY_PRESET_GET
 ) || true
   frames_emit_python_result "$_out"

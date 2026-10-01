@@ -4,7 +4,7 @@ set -u
 # --- src/core/constants.zsh ---
 MOGRAPHJAILED_PROTOCOL="MOGRAPHJAILED"
 MOGRAPHJAILED_PROTOCOL_VERSION="1"
-MOGRAPHJAILED_CLI_VERSION="0.3.0-dev.2"
+MOGRAPHJAILED_CLI_VERSION="0.4.0-dev.1"
 MOGRAPHJAILED_STANDARD_LIBRARY_VERSION="1.0"
 MOGRAPHJAILED_REQUEST_MAGIC="MOGRAPHJAILED_REQUEST"
 MOGRAPHJAILED_REQUEST_VERSION="1"
@@ -1556,6 +1556,22 @@ import sys
 import tempfile
 import zlib
 
+def tree_id(path):
+    """Cheap identity (size, mtime) of a file, or of the regular files directly inside a directory.
+    Compared before and after an operation to report honestly whether its source changed."""
+    try:
+        if os.path.isdir(path):
+            out = []
+            for n in sorted(os.listdir(path)):
+                p = os.path.join(path, n)
+                if os.path.isfile(p):
+                    st = os.stat(p); out.append((n, st.st_size, st.st_mtime_ns))
+            return tuple(out)
+        st = os.stat(path)
+        return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
 def error_json(code, message):
     return json.dumps({"ok": False, "code": code, "message": message})
 
@@ -2271,6 +2287,10 @@ file_stat_size() {
     /usr/bin/stat -c '%s' "$_path" 2>/dev/null
   fi
 }
+
+# size:mtime identity, used to report honestly whether a source changed while an operation ran.
+source_identity() { printf '%s:%s' "$(file_stat_size "$1" 2>/dev/null)" "$(file_stat_mtime "$1" 2>/dev/null)"; }
+source_unchanged_json() { [ "$1" = "$(source_identity "$2")" ] && printf 'true' || printf 'false'; }
 
 file_stat_mtime() {
   local _path="$1"
@@ -3213,6 +3233,7 @@ handle_image_derivative() {
 
 handle_image_stats() {
   local _path=""
+  local _id0=""
   local _stats_json=""
   local _width=""
   local _height=""
@@ -3221,6 +3242,7 @@ handle_image_stats() {
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
+  _id0=$(source_identity "$_path")
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Image stats target must be a regular file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Image is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
@@ -3244,12 +3266,14 @@ handle_image_stats() {
   printf ',"pixelWidth":%s,"pixelHeight":%s' "$_width" "$_height"
   printf ',"histogramBins":64,"histogram":%s' "$_histogram"
   printf ',"gridSize":8,"gridAverages":%s' "$_grid"
-  printf ',"sourceUnchanged":true}'
+  printf ',"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_path")"
   emit_success_end
 }
 
 handle_image_compare() {
   local _path_a=""
+  local _id0a=""
+  local _id0b=""
   local _path_b=""
   local _stats_a=""
   local _stats_b=""
@@ -3266,6 +3290,7 @@ handle_image_compare() {
   _path_a="$MJ_REQUIRED_ARG_VALUE"
   require_arg pathB || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path_b="$MJ_REQUIRED_ARG_VALUE"
+  _id0a=$(source_identity "$_path_a"); _id0b=$(source_identity "$_path_b")
 
   for _p in "$_path_a" "$_path_b"; do
     is_absolute_path "$_p" || { set_error "INVALID_PATH" "Paths must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
@@ -3298,7 +3323,7 @@ handle_image_compare() {
   printf '{"schema":"MJ_IMAGE_COMPARE_1","pathA":'; json_quote "$_path_a"
   printf ',"pathB":'; json_quote "$_path_b"
   printf ',"score":%s,"histogramSimilarity":%s,"gridSimilarity":%s' "$_score" "$_hist_sim" "$_grid_sim"
-  printf ',"sourceUnchanged":true}'
+  if [ "$(source_unchanged_json "$_id0a" "$_path_a")" = true ] && [ "$(source_unchanged_json "$_id0b" "$_path_b")" = true ]; then printf ',"sourceUnchanged":true}'; else printf ',"sourceUnchanged":false}'; fi
   emit_success_end
 }
 
@@ -3578,6 +3603,12 @@ def err(code, message):
     sys.exit(0)
 
 path = os.environ.get("MJ_SCRAPE_PATH", "")
+def _ident(p):
+    try:
+        st = os.stat(p); return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+_id0 = _ident(path)
 max_bytes = int(os.environ.get("MJ_SCRAPE_MAX_BYTES", "8388608"))
 try:
     size = os.path.getsize(path)
@@ -3657,7 +3688,7 @@ data = {
     "layerTypes": layer_types,
     "compsTruncated": bool(doc.get("compsTruncated", False)),
     "footageTruncated": bool(doc.get("footageTruncated", False)),
-    "sourceUnchanged": True,
+    "sourceUnchanged": _ident(path) == _id0,
 }
 print(json.dumps({"ok": True, "data": data}))
 PY_PROJECT_INGEST
@@ -3696,6 +3727,12 @@ def err(code, message):
     sys.exit(0)
 
 path = os.environ.get("MJ_SCRAPE_PATH", "")
+def _ident(p):
+    try:
+        st = os.stat(p); return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+_id0 = _ident(path)
 max_bytes = int(os.environ.get("MJ_SCRAPE_MAX_BYTES", "8388608"))
 max_findings = int(os.environ.get("MJ_LINT_MAX_FINDINGS", "200"))
 try:
@@ -3795,7 +3832,7 @@ data = {
     "findings": findings,
     "findingsTruncated": truncated,
     "rules": ["E001", "E002", "W001", "W002", "W003", "I001"],
-    "sourceUnchanged": True,
+    "sourceUnchanged": _ident(path) == _id0,
 }
 print(json.dumps({"ok": True, "data": data}))
 PY_EXPRESSION_LINT
@@ -3815,6 +3852,7 @@ PY_EXPRESSION_LINT
 
 handle_plugin_audit() {
   local _dir=""
+  local _id0=""
   local _entry=""
   local _name=""
   local _kind=""
@@ -3827,6 +3865,7 @@ handle_plugin_audit() {
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _dir="$MJ_REQUIRED_ARG_VALUE"
+  _id0=$(source_identity "$_dir")
   is_absolute_path "$_dir" || { set_error "INVALID_PATH" "Plugin directory must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -d "$_dir" ] || { set_error "INVALID_TARGET" "Plugin audit target must be a directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -r "$_dir" ] && [ -x "$_dir" ] || { set_error "PERMISSION_DENIED" "Plugin directory is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
@@ -3880,9 +3919,13 @@ handle_plugin_audit() {
   if $_truncated; then printf '%s' "$PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES"; else printf '%s' "$_count"; fi
   if $_truncated; then printf ',"truncated":true'; else printf ',"truncated":false'; fi
   printf ',"entryBound":%s' "$PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES"
-  printf ',"sourceUnchanged":true}'
+  # Directory-level check: entries added or removed while the scan ran change this.
+  printf ',"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_dir")"
   emit_success_end
 }
+
+# Test bundle only redefines this to simulate a project being written mid-copy.
+snapshot_test_hook() { :; }
 
 handle_project_snapshot() {
   local _path=""
@@ -3900,9 +3943,12 @@ handle_project_snapshot() {
   local _receipt=""
   local _bytes=""
   local _clone_used=false
+  local _id0=""
+  local _partial=""
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
+  _id0=$(source_identity "$_path")
   require_arg output || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _outdir="$MJ_REQUIRED_ARG_VALUE"
   is_absolute_path "$_path" && is_absolute_path "$_outdir" || { set_error "INVALID_PATH" "Snapshot path and output directory must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
@@ -3924,7 +3970,7 @@ handle_project_snapshot() {
   [ -n "$_sha_value" ] || { set_error "UNSUPPORTED" "No approved native SHA-256 utility is available."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
 
   _base=${_path##*/}
-  _stem="${_base%.*}"
+  _stem="${_base%.[aA][eE][pP]}"
   [ -n "$_stem" ] && [ "$_stem" != "$_base" ] || _stem="project"
   _latest_file="$_outdir_real/$_stem.latest.json"
   if [ -f "$_latest_file" ]; then
@@ -3934,7 +3980,7 @@ handle_project_snapshot() {
       printf '{"schema":"MJ_PROJECT_SNAPSHOT_1","sourcePath":'; json_quote "$_path"
       printf ',"sha256":'; json_quote "$_sha_value"
       printf ',"hashSource":'; json_quote "$_sha_source"
-      printf ',"snapshotCreated":false,"reason":"unchanged","sourceUnchanged":true}'
+      printf ',"snapshotCreated":false,"reason":"unchanged","sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_path")"
       emit_success_end
       return 0
     fi
@@ -3943,21 +3989,49 @@ handle_project_snapshot() {
   _ts=$(/bin/date -u '+%Y%m%dT%H%M%SZ' 2>/dev/null || printf 'unknown')
   _short=${_sha_value:0:12}
   _dest="$_outdir_real/$_stem.$_ts.$_short.aep"
+  _partial="$_outdir_real/.$_stem.$_ts.$_short.partial.$$"
   [ ! -e "$_dest" ] && [ ! -L "$_dest" ] || { set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
   _bytes=$(file_stat_size "$_path" 2>/dev/null || printf '0')
 
-  # APFS clone first (instant, copy-on-write); fall back to a plain copy.
-  if /bin/cp -c "$_path" "$_dest" 2>/dev/null; then
+  # Stage the copy under a hidden name, prove it matches, then publish with a hard link.
+  # AE may still be writing the project when the watcher fires, so both the staged copy and
+  # the source are re-hashed; any mismatch means a torn snapshot and nothing is published.
+  # ln fails if the destination exists, so a concurrent snapshot can never be clobbered.
+  /bin/rm -f "$_partial" 2>/dev/null
+  if /bin/cp -c "$_path" "$_partial" 2>/dev/null; then
     _clone_used=true
   else
-    /bin/cp "$_path" "$_dest" 2>/dev/null || { set_error "SNAPSHOT_FAILED" "Could not copy the project to the versions directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+    /bin/cp "$_path" "$_partial" 2>/dev/null || { /bin/rm -f "$_partial" 2>/dev/null; set_error "SNAPSHOT_FAILED" "Could not copy the project to the versions directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   fi
+  snapshot_test_hook "$_path"
+  hash_sha256_file "$_partial" 2>/dev/null
+  if [ "$MJ_HASH_VALUE" != "$_sha_value" ]; then
+    /bin/rm -f "$_partial" 2>/dev/null
+    set_error "SNAPSHOT_UNSTABLE" "The project changed while it was being copied; no snapshot was kept. It will be retried on the next save."
+    emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74
+  fi
+  hash_sha256_file "$_path" 2>/dev/null
+  if [ "$MJ_HASH_VALUE" != "$_sha_value" ]; then
+    /bin/rm -f "$_partial" 2>/dev/null
+    set_error "SNAPSHOT_UNSTABLE" "The project changed while it was being copied; no snapshot was kept. It will be retried on the next save."
+    emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74
+  fi
+  if ! /bin/ln "$_partial" "$_dest" 2>/dev/null; then
+    /bin/rm -f "$_partial" 2>/dev/null
+    if [ -e "$_dest" ] || [ -L "$_dest" ]; then
+      set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."
+    else
+      set_error "SNAPSHOT_FAILED" "Could not publish the snapshot."
+    fi
+    emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73
+  fi
+  /bin/rm -f "$_partial" 2>/dev/null
   [ -f "$_dest" ] || { set_error "SNAPSHOT_FAILED" "Snapshot copy did not materialize."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   _receipt="$_dest.snapshot.json"
   MJ_SNAP_SHA="$_sha_value" MJ_SNAP_SRC="$_path" MJ_SNAP_DEST="$_dest" \
   MJ_SNAP_BYTES="$_bytes" MJ_SNAP_TS="$_ts" MJ_SNAP_CLONE="$_clone_used" \
-  MJ_SNAP_HASH_SRC="$_sha_source" \
+  MJ_SNAP_HASH_SRC="$_sha_source" MJ_SNAP_STEM="$_stem" \
   /usr/bin/python3 - <<'PY_SNAPSHOT_RECEIPT' 2>/dev/null
 import json, os
 receipt = {
@@ -3969,7 +4043,8 @@ receipt = {
     "createdAt": os.environ["MJ_SNAP_TS"],
     "bytesCopied": int(os.environ["MJ_SNAP_BYTES"] or 0),
     "cloneUsed": os.environ["MJ_SNAP_CLONE"] == "true",
-    "sourceUnchanged": True,
+    "copyVerified": True,
+    "sourceStableDuringCopy": True,
 }
 with open(os.environ["MJ_SNAP_DEST"] + ".snapshot.json", "w", encoding="utf-8") as f:
     json.dump(receipt, f, sort_keys=True, separators=(",", ":"))
@@ -3981,9 +4056,7 @@ latest = {
     "snapshotPath": os.environ["MJ_SNAP_DEST"],
     "createdAt": os.environ["MJ_SNAP_TS"],
 }
-stem = os.path.basename(os.environ["MJ_SNAP_SRC"])
-if stem.endswith(".aep"):
-    stem = stem[:-4]
+stem = os.environ["MJ_SNAP_STEM"]
 outdir = os.path.dirname(os.environ["MJ_SNAP_DEST"])
 with open(os.path.join(outdir, stem + ".latest.json"), "w", encoding="utf-8") as f:
     json.dump(latest, f, sort_keys=True, separators=(",", ":"))
@@ -3999,9 +4072,10 @@ PY_SNAPSHOT_RECEIPT
   printf ',"receiptPath":'; json_quote "$_receipt"
   printf ',"bytesCopied":%s' "${_bytes:-0}"
   printf ',"cloneUsed":'; $_clone_used && printf 'true' || printf 'false'
-  printf ',"sourceUnchanged":true}'
+  printf ',"copyVerified":true,"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_path")"
   emit_success_end
 }
+snapshot_test_hook() { [ -n "${MJ_TEST_SNAPSHOT_APPEND:-}" ] && printf x >> "$1"; return 0; }
 
 # --- src/modules/frames.zsh ---
 # Frame-sequence intelligence over a local directory of PNG frames
@@ -4064,6 +4138,7 @@ handle_loop_seams() {
   _out=$(MJ_DIR="$MJ_FRAMES_DIR" MJ_MAX="$_max" MJ_MIN="$_min" image_sig_python <<'PY_LOOP_SEAMS'
 def main():
     d = os.environ["MJ_DIR"]
+    id0 = tree_id(d)
     try:
         names = list_frames(d)
         if len(names) < 3:
@@ -4104,7 +4179,7 @@ def main():
             "score": p[0], "histogramSimilarity": p[4], "gridSimilarity": p[5],
         } for i, p in enumerate(chosen)],
         "note": "Loop plays startFrame..endFrame-1; endFrame should match startFrame.",
-        "sourceUnchanged": True,
+        "sourceUnchanged": tree_id(d) == id0,
     }}))
 
 main()
@@ -4133,6 +4208,7 @@ handle_golden_record() {
 import time
 def main():
     d = os.environ["MJ_DIR"]
+    id0 = tree_id(d)
     try:
         names = list_frames(d)
         if not names:
@@ -4163,7 +4239,7 @@ def main():
     print(json.dumps({"ok": True, "data": {
         "schema": "MJ_GOLDEN_1", "label": receipt["label"], "receiptPath": path,
         "sourceDir": d, "frameCount": len(frames), "signatureDownscaled": downscaled,
-        "sourceUnchanged": True,
+        "sourceUnchanged": tree_id(d) == id0,
     }}))
 
 main()
@@ -4189,6 +4265,7 @@ handle_golden_check() {
   _out=$(MJ_DIR="$MJ_FRAMES_DIR" MJ_RECEIPT="$_receipt" MJ_THRESHOLD="$_threshold" image_sig_python <<'PY_GOLDEN_CHECK'
 def main():
     d = os.environ["MJ_DIR"]
+    id0 = tree_id(d)
     threshold = float(os.environ["MJ_THRESHOLD"])
     try:
         if os.path.getsize(os.environ["MJ_RECEIPT"]) > 67108864:
@@ -4234,7 +4311,7 @@ def main():
         "frames": results,
         "extraFrames": extra,
         "signatureDownscaled": downscaled if changed else golden.get("signatureDownscaled"),
-        "sourceUnchanged": True,
+        "sourceUnchanged": tree_id(d) == id0,
     }}))
 
 main()
@@ -4386,6 +4463,22 @@ def err(code, message):
     print(json.dumps({"ok": False, "code": code, "message": message}))
     sys.exit(0)
 
+def tree_id(path):
+    """Cheap identity (size, mtime) of a file, or of the regular files directly inside a directory.
+    Compared before and after an operation to report honestly whether its source changed."""
+    try:
+        if os.path.isdir(path):
+            out = []
+            for n in sorted(os.listdir(path)):
+                p = os.path.join(path, n)
+                if os.path.isfile(p):
+                    st = os.stat(p); out.append((n, st.st_size, st.st_mtime_ns))
+            return tuple(out)
+        st = os.stat(path)
+        return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -4496,6 +4589,7 @@ handle_project_restore() {
   _out=$(MJ_SNAP="$_path" MJ_OUTDIR="$(canonical_existing_dir "$_outdir")" protect_python <<'PY_RESTORE'
 snap = os.environ["MJ_SNAP"]
 outdir = os.environ["MJ_OUTDIR"]
+id0 = tree_id(snap)
 sha = sha256_file(snap)
 receipt_path = snap + ".snapshot.json"
 receipt_verified = False
@@ -4538,7 +4632,7 @@ print(json.dumps({"ok": True, "data": {
     "sha256": sha,
     "receiptVerified": receipt_verified,
     "cloneUsed": clone,
-    "sourceUnchanged": True,
+    "sourceUnchanged": tree_id(snap) == id0,
 }}))
 PY_RESTORE
 ) || true
@@ -4552,6 +4646,7 @@ handle_deps_graph() {
   project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
 
   _out=$(MJ_SCRAPE="$_path" protect_python <<'PY_DEPS'
+id0 = tree_id(os.environ["MJ_SCRAPE"])
 doc = load_scrape(os.environ["MJ_SCRAPE"])
 comps = [c for c in doc["comps"] if isinstance(c, dict)]
 comp_names = {str(c.get("name", "")) for c in comps}
@@ -4622,7 +4717,7 @@ print(json.dumps({"ok": True, "data": {
     "unverifiedFootage": unverified,
     "singlePointsOfFailure": spof,
     "note": "Fonts are project-wide in MJ_PROJECT_SCRAPE_1; comps with usesText depend on them. Footage on network or unknown storage is not checked.",
-    "sourceUnchanged": True,
+    "sourceUnchanged": tree_id(os.environ["MJ_SCRAPE"]) == id0,
 }}))
 PY_DEPS
 ) || true
@@ -4689,6 +4784,7 @@ for ref in refs:
 if len(plan) > MAX_FILES:
     err("TOO_MANY_FILES", "Handoff would collect more than %d files." % MAX_FILES)
 
+ids0 = {p: tree_id(p) for p in [aep] + [src for src, _ in plan]}
 need = os.path.getsize(aep) + sum(os.path.getsize(s) for s, _ in plan) + 67108864
 if shutil.disk_usage(os.environ["MJ_OUTDIR"]).free < need:
     err("INSUFFICIENT_SPACE", "Not enough free space for the handoff (%d bytes needed)." % need)
@@ -4760,7 +4856,7 @@ print(json.dumps({"ok": True, "data": {
     "fonts": manifest["fonts"],
     "effectCount": len(manifest["effects"]),
     "projectMatchesScrape": manifest["project"]["matchesScrape"],
-    "sourceUnchanged": True,
+    "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
 }}))
 PY_HANDOFF
 ) || true
@@ -5010,6 +5106,7 @@ else:
         candidates += [os.path.join(d, f) for f in sorted(files) if f.lower().endswith(".json") and not f.startswith(".")]
         if len(candidates) > MAX_FILES:
             err("TOO_MANY_FILES", "More than %d JSON files under this path; index a narrower folder." % MAX_FILES)
+ids0 = {p: tree_id(p) for p in candidates}
 db = open_db(os.environ["MJ_STORE"], create=True)
 counts = {"added": 0, "updated": 0, "unchanged": 0, "skipped": 0}
 by_schema, problems = {}, []
@@ -5039,7 +5136,7 @@ for p in candidates:
 print(json.dumps({"ok": True, "data": dict(counts, **{
     "schema": "MJ_INDEX_ADD_1", "path": root, "store": os.environ["MJ_STORE"],
     "filesExamined": len(candidates), "indexedBySchema": by_schema, "problems": problems,
-    "sourceUnchanged": True,
+    "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
 })}))
 PY_INDEX_ADD
 ) || true
@@ -5130,6 +5227,7 @@ handle_preset_add() {
 
   _out=$(MJ_PATH="$_path" MJ_LABEL="$_label" MJ_STORE="$MJ_STORE" library_python <<'PY_PRESET_ADD'
 src, label, store = os.environ["MJ_PATH"], os.environ["MJ_LABEL"], os.environ["MJ_STORE"]
+id0 = tree_id(src)
 size = os.path.getsize(src)
 if size > 536870912:
     err("PRESET_TOO_LARGE", "Presets are limited to 512 MB.")
@@ -5140,7 +5238,7 @@ db = open_db(store, create=True)
 latest = db.execute("SELECT version, sha256 FROM presets WHERE label = ? ORDER BY version DESC LIMIT 1", (label,)).fetchone()
 if latest and latest[1] == sha:
     print(json.dumps({"ok": True, "data": {"schema": "MJ_PRESET_1", "label": label, "version": latest[0],
-        "sha256": sha, "created": False, "reason": "unchanged", "sourceUnchanged": True}}))
+        "sha256": sha, "created": False, "reason": "unchanged", "sourceUnchanged": tree_id(src) == id0}}))
     sys.exit(0)
 blob = preset_blob(store, sha)
 os.makedirs(os.path.dirname(blob), mode=0o700, exist_ok=True)
@@ -5164,7 +5262,7 @@ except sqlite3.IntegrityError:
 put_doc(db, "preset:%s@v%d" % (label, version), sha, "MJ_PRESET_1", label,
         [("preset", label, "v%d %s %s" % (version, kind, name))])
 print(json.dumps({"ok": True, "data": {"schema": "MJ_PRESET_1", "label": label, "version": version,
-    "sha256": sha, "kind": kind, "originalName": name, "bytes": size, "created": True, "sourceUnchanged": True}}))
+    "sha256": sha, "kind": kind, "originalName": name, "bytes": size, "created": True, "sourceUnchanged": tree_id(src) == id0}}))
 PY_PRESET_ADD
 ) || true
   frames_emit_python_result "$_out"
@@ -5213,7 +5311,7 @@ for candidate in (name, "%s-v%d%s" % (stem, version, ext)):
 if not dest:
     err("OUTPUT_EXISTS", "Refusing to overwrite existing files in the output directory.")
 print(json.dumps({"ok": True, "data": {"schema": "MJ_PRESET_GET_1", "label": label, "version": version,
-    "sha256": sha, "outputPath": dest, "sourceUnchanged": True}}))
+    "sha256": sha, "outputPath": dest}}))
 PY_PRESET_GET
 ) || true
   frames_emit_python_result "$_out"

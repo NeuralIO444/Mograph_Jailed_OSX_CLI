@@ -58,6 +58,7 @@ handle_loop_seams() {
   _out=$(MJ_DIR="$MJ_FRAMES_DIR" MJ_MAX="$_max" MJ_MIN="$_min" image_sig_python <<'PY_LOOP_SEAMS'
 def main():
     d = os.environ["MJ_DIR"]
+    id0 = tree_id(d)
     try:
         names = list_frames(d)
         if len(names) < 3:
@@ -98,7 +99,7 @@ def main():
             "score": p[0], "histogramSimilarity": p[4], "gridSimilarity": p[5],
         } for i, p in enumerate(chosen)],
         "note": "Loop plays startFrame..endFrame-1; endFrame should match startFrame.",
-        "sourceUnchanged": True,
+        "sourceUnchanged": tree_id(d) == id0,
     }}))
 
 main()
@@ -127,6 +128,7 @@ handle_golden_record() {
 import time
 def main():
     d = os.environ["MJ_DIR"]
+    id0 = tree_id(d)
     try:
         names = list_frames(d)
         if not names:
@@ -157,7 +159,7 @@ def main():
     print(json.dumps({"ok": True, "data": {
         "schema": "MJ_GOLDEN_1", "label": receipt["label"], "receiptPath": path,
         "sourceDir": d, "frameCount": len(frames), "signatureDownscaled": downscaled,
-        "sourceUnchanged": True,
+        "sourceUnchanged": tree_id(d) == id0,
     }}))
 
 main()
@@ -183,6 +185,7 @@ handle_golden_check() {
   _out=$(MJ_DIR="$MJ_FRAMES_DIR" MJ_RECEIPT="$_receipt" MJ_THRESHOLD="$_threshold" image_sig_python <<'PY_GOLDEN_CHECK'
 def main():
     d = os.environ["MJ_DIR"]
+    id0 = tree_id(d)
     threshold = float(os.environ["MJ_THRESHOLD"])
     try:
         if os.path.getsize(os.environ["MJ_RECEIPT"]) > 67108864:
@@ -228,7 +231,7 @@ def main():
         "frames": results,
         "extraFrames": extra,
         "signatureDownscaled": downscaled if changed else golden.get("signatureDownscaled"),
-        "sourceUnchanged": True,
+        "sourceUnchanged": tree_id(d) == id0,
     }}))
 
 main()

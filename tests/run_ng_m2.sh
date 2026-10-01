@@ -30,7 +30,7 @@ arg.path=$(b64 "$ASSET")
 REQ
 run_req manifest-fast
 check test "$RC" -eq 0
-check jq -e --argjson s "$SIZE" --argjson m "$MTIME" '.ok==true and .cliVersion=="0.3.0-dev.2" and .data.schema=="MJ_ASSET_MANIFEST_1" and .data.filename=="asset.txt" and .data.sizeBytes==$s and .data.modifiedEpoch==$m and .data.identity.mode=="STAT_FINGERPRINT" and .data.identity.sha256==null' "$TMP/manifest-fast.json"
+check jq -e --argjson s "$SIZE" --argjson m "$MTIME" '.ok==true and .cliVersion=="0.4.0-dev.1" and .data.schema=="MJ_ASSET_MANIFEST_1" and .data.filename=="asset.txt" and .data.sizeBytes==$s and .data.modifiedEpoch==$m and .data.identity.mode=="STAT_FINGERPRINT" and .data.identity.sha256==null' "$TMP/manifest-fast.json"
 
 # SHA manifest is explicit and stable.
 cat > "$TMP/manifest-sha.req" <<REQ

@@ -85,6 +85,7 @@ handle_image_derivative() {
 
 handle_image_stats() {
   local _path=""
+  local _id0=""
   local _stats_json=""
   local _width=""
   local _height=""
@@ -93,6 +94,7 @@ handle_image_stats() {
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
+  _id0=$(source_identity "$_path")
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Image stats target must be a regular file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Image is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
@@ -116,12 +118,14 @@ handle_image_stats() {
   printf ',"pixelWidth":%s,"pixelHeight":%s' "$_width" "$_height"
   printf ',"histogramBins":64,"histogram":%s' "$_histogram"
   printf ',"gridSize":8,"gridAverages":%s' "$_grid"
-  printf ',"sourceUnchanged":true}'
+  printf ',"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_path")"
   emit_success_end
 }
 
 handle_image_compare() {
   local _path_a=""
+  local _id0a=""
+  local _id0b=""
   local _path_b=""
   local _stats_a=""
   local _stats_b=""
@@ -138,6 +142,7 @@ handle_image_compare() {
   _path_a="$MJ_REQUIRED_ARG_VALUE"
   require_arg pathB || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path_b="$MJ_REQUIRED_ARG_VALUE"
+  _id0a=$(source_identity "$_path_a"); _id0b=$(source_identity "$_path_b")
 
   for _p in "$_path_a" "$_path_b"; do
     is_absolute_path "$_p" || { set_error "INVALID_PATH" "Paths must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
@@ -170,6 +175,6 @@ handle_image_compare() {
   printf '{"schema":"MJ_IMAGE_COMPARE_1","pathA":'; json_quote "$_path_a"
   printf ',"pathB":'; json_quote "$_path_b"
   printf ',"score":%s,"histogramSimilarity":%s,"gridSimilarity":%s' "$_score" "$_hist_sim" "$_grid_sim"
-  printf ',"sourceUnchanged":true}'
+  if [ "$(source_unchanged_json "$_id0a" "$_path_a")" = true ] && [ "$(source_unchanged_json "$_id0b" "$_path_b")" = true ]; then printf ',"sourceUnchanged":true}'; else printf ',"sourceUnchanged":false}'; fi
   emit_success_end
 }

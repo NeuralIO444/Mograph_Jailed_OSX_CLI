@@ -75,5 +75,12 @@ check cmp -s "$TMP/expected" "$TMP/router"
 check cmp -s "$TMP/expected" "$TMP/ae"
 check cmp -s "$TMP/expected" "$TMP/registry"
 
+# Version strings must agree: runtime constant, VERSION file, newest CHANGELOG entry.
+CONST_V=$(sed -n 's/^MOGRAPHJAILED_CLI_VERSION="\(.*\)"$/\1/p' "$ROOT/src/core/constants.zsh")
+FILE_V=$(sed -n '1s/^MographJailed //p' "$ROOT/VERSION")
+LOG_V=$(sed -n 's/^## \([0-9][0-9A-Za-z.-]*\).*/\1/p' "$ROOT/CHANGELOG.md" | head -1)
+check test -n "$CONST_V" -a "$CONST_V" = "$FILE_V"
+check test "$CONST_V" = "$LOG_V"
+
 printf 'Contract audit tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

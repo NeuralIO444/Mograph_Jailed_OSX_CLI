@@ -67,7 +67,7 @@ requestId=qa-stage-describe
 command=system.describe
 REQ
 "$CLI" --request "$TMP/describe.req" > "$TMP/describe.json"
-check jq -e '.cliVersion=="0.3.0-dev.2"' "$TMP/describe.json"
+check jq -e '.cliVersion=="0.4.0-dev.1"' "$TMP/describe.json"
 check jq -e '.data.operations["image.derivative"].requires.all | index("uname") != null' "$TMP/describe.json"
 check jq -e '.data.operations["asset.manifest"].requires.all | index("uname") != null' "$TMP/describe.json"
 check jq -e '.data.operations["storage.preflight"].requires.all == ["df","awk","uname"]' "$TMP/describe.json"

@@ -31,7 +31,7 @@ def make_case(i: int, root: Path):
         lines.append("command=system.describe"); expect_ok = True
     elif kind == 2:
         lines.append("command=runtime.verify")
-        lines.append("arg.expectedCliVersion=" + b64(b"0.3.0-dev.2"))
+        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.1"))
         lines.append("arg.expectedProtocolVersion=" + b64(b"1"))
         lines.append("arg.expectedFilename=" + b64(cli.name.encode()))
         expect_ok = True
@@ -42,10 +42,10 @@ def make_case(i: int, root: Path):
         expect_ok = True
     elif kind == 4:
         lines.append("command=runtime.verify")
-        lines.append("arg.expectedCliVersion=" + b64(b"0.3.0-dev.2"))
+        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.1"))
     elif kind == 5:
         lines.append("command=runtime.verify")
-        lines.append("arg.expectedCliVersion=" + b64(b"0.3.0-dev.2"))
+        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.1"))
         lines.append("arg.expectedProtocolVersion=" + b64(b"1"))
         lines.append("arg.expectedSha256=" + b64(b"not-a-sha"))
     elif kind == 6:

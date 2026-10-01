@@ -17,7 +17,7 @@ REQ
 "$CLI" --request "$TMP/describe.req" > "$TMP/describe.json"
 
 # Registry serialization must be true JSON arrays with one capability per element.
-check jq -e '.cliVersion=="0.3.0-dev.2"' "$TMP/describe.json"
+check jq -e '.cliVersion=="0.4.0-dev.1"' "$TMP/describe.json"
 check jq -e '.data.operations["file.inspect"].requires.all == ["stat","file","uname"]' "$TMP/describe.json"
 check jq -e '.data.operations["image.derivative"].requires.all == ["sips","awk","mktemp","mv","rm","stat","uname"]' "$TMP/describe.json"
 check jq -e '.data.operations["package.create"].requires.all == ["ditto","mktemp","rm","mv","stat","uname"]' "$TMP/describe.json"
@@ -108,7 +108,7 @@ check test -d "$FAKEROOT/config/shell"
 
 # Distribution remains the CLI only; terminal UX is intentionally outside the bundled runtime.
 "$ROOT/scripts/build.zsh" >/dev/null
-check grep -q 'MOGRAPHJAILED_CLI_VERSION="0.3.0-dev.2"' "$ROOT/dist/mograph-jailed.zsh"
+check grep -q 'MOGRAPHJAILED_CLI_VERSION="0.4.0-dev.1"' "$ROOT/dist/mograph-jailed.zsh"
 check_not grep -q 'mj-top' "$ROOT/dist/mograph-jailed.zsh"
 check_not grep -q 'mj-man' "$ROOT/dist/mograph-jailed.zsh"
 

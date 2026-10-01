@@ -7,6 +7,10 @@ file_stat_size() {
   fi
 }
 
+# size:mtime identity, used to report honestly whether a source changed while an operation ran.
+source_identity() { printf '%s:%s' "$(file_stat_size "$1" 2>/dev/null)" "$(file_stat_mtime "$1" 2>/dev/null)"; }
+source_unchanged_json() { [ "$1" = "$(source_identity "$2")" ] && printf 'true' || printf 'false'; }
+
 file_stat_mtime() {
   local _path="$1"
   if [ "$(/usr/bin/uname -s 2>/dev/null)" = "Darwin" ]; then

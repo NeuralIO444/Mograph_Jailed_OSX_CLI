@@ -177,6 +177,59 @@ run_req "$(req project.snapshot "path=$TMP/notes.txt" "output=$TMP/versions")" "
 check jq -e '.ok==false and .error.code=="INVALID_TARGET"' "$TMP/snap-txt.json"
 check test "$(ls "$TMP"/versions/*.aep | wc -l)" = "$N2"
 
+# --- project.snapshot hardening (issues #7 #8 #9 #10) ---
+# receipts record the verification that actually happened
+check jq -e '.data.copyVerified==true and .data.sourceUnchanged==true' "$TMP/snap1.json"
+check jq -e '.copyVerified==true and .sourceStableDuringCopy==true and has("sourceUnchanged")==false' "$SNAP1.snapshot.json"
+check bash -c "ls -A '$TMP/versions' | grep -q 'partial'; test \$? -ne 0"
+
+# #8: uppercase extension dedupes and names its latest pointer consistently
+mkdir -p "$TMP/upper/versions"
+printf 'upper-bytes' > "$TMP/upper/Foo.AEP"
+run_req "$(req project.snapshot "path=$TMP/upper/Foo.AEP" "output=$TMP/upper/versions")" "$TMP/u1.json" >/dev/null
+check jq -e '.ok==true and .data.snapshotCreated==true' "$TMP/u1.json"
+check test -f "$TMP/upper/versions/Foo.latest.json"
+check test ! -e "$TMP/upper/versions/Foo.AEP.latest.json"
+run_req "$(req project.snapshot "path=$TMP/upper/Foo.AEP" "output=$TMP/upper/versions")" "$TMP/u2.json" >/dev/null
+check jq -e '.data.snapshotCreated==false and .data.reason=="unchanged"' "$TMP/u2.json"
+check test "$(ls "$TMP/upper/versions"/Foo.*.aep | wc -l | tr -d ' ')" = 1
+
+# #7: a source that changes while being copied is not snapshotted
+mkdir -p "$TMP/torn/versions"
+printf 'torn-bytes' > "$TMP/torn/Live.aep"
+_f="$TMP/torn_req.txt"; printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=torn\ncommand=project.snapshot\narg.path=%s\narg.output=%s\n' "$(b64 "$TMP/torn/Live.aep")" "$(b64 "$TMP/torn/versions")" > "$_f"
+MJ_TEST_SNAPSHOT_APPEND=1 "$CLI" --request "$_f" > "$TMP/torn.json" 2>/dev/null || true
+check jq -e '.ok==false and .error.code=="SNAPSHOT_UNSTABLE"' "$TMP/torn.json"
+check test -z "$(ls -A "$TMP/torn/versions")"                 # nothing kept: no snapshot, receipt, pointer or partial
+# the next, quiet attempt succeeds and is verified
+"$CLI" --request "$_f" > "$TMP/torn2.json" 2>/dev/null || true
+check jq -e '.ok==true and .data.snapshotCreated==true and .data.copyVerified==true' "$TMP/torn2.json"
+
+# #9: simultaneous snapshots of one new project publish exactly one file and never clobber
+mkdir -p "$TMP/race/versions"
+printf 'race-bytes' > "$TMP/race/Race.aep"
+_f="$TMP/race_req.txt"; printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=race\ncommand=project.snapshot\narg.path=%s\narg.output=%s\n' "$(b64 "$TMP/race/Race.aep")" "$(b64 "$TMP/race/versions")" > "$_f"
+for i in 1 2 3 4 5 6; do "$CLI" --request "$_f" > "$TMP/race$i.json" 2>/dev/null & done; wait
+check test "$(ls "$TMP/race/versions"/Race.*.aep | wc -l | tr -d ' ')" -ge 1
+check test "$(ls "$TMP/race/versions"/Race.*.aep | wc -l | tr -d ' ')" -le 2   # at most one per clock second
+check bash -c "cat '$TMP'/race?.json | jq -s 'all(.ok == true or .error.code == \"OUTPUT_EXISTS\")' | grep -q true"
+check bash -c "ls -A '$TMP/race/versions' | grep -q partial; test \$? -ne 0"
+check bash -c "for f in '$TMP'/race/versions/Race.*.aep; do cmp -s \"\$f\" '$TMP/race/Race.aep' || exit 1; done"
+
+# #10: the dashboard shows project paths read from the real (unwrapped) latest pointer
+D2=$(COLUMNS=110 LINES=32 "$ROOT/tools/mj-observe-dash.zsh" --versions "$TMP/upper/versions" \
+  --cli "$CLI" --once 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
+check printf '%s' "$D2" | grep -q "Foo"
+check python3 - "$ROOT" "$TMP/upper/versions" <<'PY'
+import json, os, sys
+latest = json.load(open(os.path.join(sys.argv[2], "Foo.latest.json")))
+assert latest.get("sourcePath", "").endswith("Foo.AEP") and "data" not in latest
+PY
+
+# sourceUnchanged is a measured field (size + mtime before/after), present and true on a quiet source
+check jq -e '.data.sourceUnchanged==true' "$TMP/ingest.json"
+check jq -e '.data.sourceUnchanged==true' "$TMP/lint.json"
+
 # --- dashboard (btop-style, read-only) ---
 DASH_TMP=$(mktemp -d)
 mkdir -p "$DASH_TMP/versions" "$DASH_TMP/receipts"

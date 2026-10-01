@@ -15,6 +15,22 @@ def err(code, message):
     print(json.dumps({"ok": False, "code": code, "message": message}))
     sys.exit(0)
 
+def tree_id(path):
+    """Cheap identity (size, mtime) of a file, or of the regular files directly inside a directory.
+    Compared before and after an operation to report honestly whether its source changed."""
+    try:
+        if os.path.isdir(path):
+            out = []
+            for n in sorted(os.listdir(path)):
+                p = os.path.join(path, n)
+                if os.path.isfile(p):
+                    st = os.stat(p); out.append((n, st.st_size, st.st_mtime_ns))
+            return tuple(out)
+        st = os.stat(path)
+        return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -125,6 +141,7 @@ handle_project_restore() {
   _out=$(MJ_SNAP="$_path" MJ_OUTDIR="$(canonical_existing_dir "$_outdir")" protect_python <<'PY_RESTORE'
 snap = os.environ["MJ_SNAP"]
 outdir = os.environ["MJ_OUTDIR"]
+id0 = tree_id(snap)
 sha = sha256_file(snap)
 receipt_path = snap + ".snapshot.json"
 receipt_verified = False
@@ -167,7 +184,7 @@ print(json.dumps({"ok": True, "data": {
     "sha256": sha,
     "receiptVerified": receipt_verified,
     "cloneUsed": clone,
-    "sourceUnchanged": True,
+    "sourceUnchanged": tree_id(snap) == id0,
 }}))
 PY_RESTORE
 ) || true
@@ -181,6 +198,7 @@ handle_deps_graph() {
   project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
 
   _out=$(MJ_SCRAPE="$_path" protect_python <<'PY_DEPS'
+id0 = tree_id(os.environ["MJ_SCRAPE"])
 doc = load_scrape(os.environ["MJ_SCRAPE"])
 comps = [c for c in doc["comps"] if isinstance(c, dict)]
 comp_names = {str(c.get("name", "")) for c in comps}
@@ -251,7 +269,7 @@ print(json.dumps({"ok": True, "data": {
     "unverifiedFootage": unverified,
     "singlePointsOfFailure": spof,
     "note": "Fonts are project-wide in MJ_PROJECT_SCRAPE_1; comps with usesText depend on them. Footage on network or unknown storage is not checked.",
-    "sourceUnchanged": True,
+    "sourceUnchanged": tree_id(os.environ["MJ_SCRAPE"]) == id0,
 }}))
 PY_DEPS
 ) || true
@@ -318,6 +336,7 @@ for ref in refs:
 if len(plan) > MAX_FILES:
     err("TOO_MANY_FILES", "Handoff would collect more than %d files." % MAX_FILES)
 
+ids0 = {p: tree_id(p) for p in [aep] + [src for src, _ in plan]}
 need = os.path.getsize(aep) + sum(os.path.getsize(s) for s, _ in plan) + 67108864
 if shutil.disk_usage(os.environ["MJ_OUTDIR"]).free < need:
     err("INSUFFICIENT_SPACE", "Not enough free space for the handoff (%d bytes needed)." % need)
@@ -389,7 +408,7 @@ print(json.dumps({"ok": True, "data": {
     "fonts": manifest["fonts"],
     "effectCount": len(manifest["effects"]),
     "projectMatchesScrape": manifest["project"]["matchesScrape"],
-    "sourceUnchanged": True,
+    "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
 }}))
 PY_HANDOFF
 ) || true

@@ -47,5 +47,8 @@ for f in \
   if [ "$f" = "src/core/constants.zsh" ]; then
     printf '%s\n' 'MJ_HOST_APPS_DIR="${MJ_TEST_APPS_DIR:-/Applications}"' >> "$OUT"
   fi
+  if [ "$f" = "src/modules/project.zsh" ]; then
+    printf '%s\n' 'snapshot_test_hook() { [ -n "${MJ_TEST_SNAPSHOT_APPEND:-}" ] && printf x >> "$1"; return 0; }' >> "$OUT"
+  fi
 done
 chmod 755 "$OUT"

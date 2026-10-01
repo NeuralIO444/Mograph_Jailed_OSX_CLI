@@ -123,7 +123,8 @@ def collect():
             stem = fn[:-len(".latest.json")]
             try:
                 with open(os.path.join(VERSIONS, fn)) as f:
-                    latest = json.load(f).get("data", {})
+                    doc = json.load(f)
+                latest = doc.get("data") or doc      # project.snapshot writes the latest pointer unwrapped
             except Exception:
                 latest = {}
             indexed[stem] = latest.get("sourcePath", "")

@@ -18,6 +18,22 @@ import sys
 import tempfile
 import zlib
 
+def tree_id(path):
+    """Cheap identity (size, mtime) of a file, or of the regular files directly inside a directory.
+    Compared before and after an operation to report honestly whether its source changed."""
+    try:
+        if os.path.isdir(path):
+            out = []
+            for n in sorted(os.listdir(path)):
+                p = os.path.join(path, n)
+                if os.path.isfile(p):
+                    st = os.stat(p); out.append((n, st.st_size, st.st_mtime_ns))
+            return tuple(out)
+        st = os.stat(path)
+        return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
 def error_json(code, message):
     return json.dumps({"ok": False, "code": code, "message": message})
 

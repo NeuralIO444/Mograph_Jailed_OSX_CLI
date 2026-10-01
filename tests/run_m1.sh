@@ -15,7 +15,7 @@ requestId=test-001
 command=system.probe
 REQ
 "$CLI" --request "$TMP/probe.req" > "$TMP/probe.json"
-check jq -e '.protocol=="MOGRAPHJAILED" and .protocolVersion==1 and .cliVersion=="0.3.0-dev.2" and .requestId=="test-001" and .command=="system.probe" and .ok==true and (.data.capabilities|type=="object")' "$TMP/probe.json"
+check jq -e '.protocol=="MOGRAPHJAILED" and .protocolVersion==1 and .cliVersion=="0.4.0-dev.1" and .requestId=="test-001" and .command=="system.probe" and .ok==true and (.data.capabilities|type=="object")' "$TMP/probe.json"
 
 cat > "$TMP/doctor.req" <<'REQ'
 MOGRAPHJAILED_REQUEST 1
