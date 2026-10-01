@@ -30,6 +30,11 @@ audit.verify
 project.restore
 deps.graph
 handoff.package
+index.add
+index.search
+index.verify
+preset.add
+preset.get
 report.tech
 runtime.verify
 search.candidate

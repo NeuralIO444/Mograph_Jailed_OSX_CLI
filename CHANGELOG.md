@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Power CLI Phase 9 (search and recall)
+
+- Added `index.add`, `index.search`, `index.verify`, `preset.add`, `preset.get` (operations 35–39) and argument name `version`.
+- MJ-owned store (SL-M4): fixed-schema SQLite + FTS5 via Python's stdlib `sqlite3` with bound parameters only; migrations by `user_version`; content-addressed preset blobs.
+- AE client: `indexAdd()`, `indexSearch()`, `indexVerify()`, `presetAdd()`, `presetGet()`.
+- Added `tests/run_library.sh` (31 checks).
+
 ## Unreleased — Power CLI Phase 8 (protect work)
 
 - Added `project.restore`, `deps.graph`, `handoff.package` (operations 32–34).

@@ -25,6 +25,7 @@ node "$ROOT/tests/run_m4.js"
 "$ROOT/tests/run_audit.sh"
 "$ROOT/tests/run_mj_cli.sh"
 "$ROOT/tests/run_protect.sh"
+"$ROOT/tests/run_library.sh"
 "$ROOT/scripts/check-scraper-readonly.sh"
 
 "$ROOT/tests/run_dev4_1_mac_hotfix.sh"

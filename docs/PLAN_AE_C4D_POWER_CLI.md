@@ -61,10 +61,10 @@ Status: draft, nothing implemented. Targets: AE 2024 (24.x), C4D 2024 (Redshift 
 - DONE: `handoff.package` (project + local footage incl. image sequences + MANIFEST.json + README). JSON manifest stands in for the sqlite receipt until Phase 9. Deferred: relinking the packaged project (needs AE scripting).
 - DONE: hash-chained append-only audit log of every request (opt-in by directory) + `audit.verify`.
 
-### Phase 9 - Search and recall
-- Receipt store (SL-M4): sqlite3 with FTS5, fixed schema, local volumes only, migrations and integrity receipts.
-- `search`: comp names, layer text, fonts, render notes, dates across all scraped projects and scenes.
-- Preset library: hashed, versioned store of Redshift materials, AE expression snippets, comp templates. `expression.lint` can point at a library entry for known-bad patterns.
+### Phase 9 - Search and recall — DONE
+- DONE: MJ-owned store (SQLite + FTS5, fixed schema, `user_version` migrations, local only) with `index.add`, `index.search`, `index.verify` (integrity receipts).
+- DONE: preset library — `preset.add` / `preset.get`, SHA-256 content-addressed, versioned per label, searchable.
+- Deferred: `expression.lint` suggesting library entries (needs tagged "known-good" expression presets first).
 
 ### Phase 10 - Shell power features — DONE (except render shortcuts)
 - DONE: `mj` front end, `mj ops`, zsh completion driven by `system.describe` args.

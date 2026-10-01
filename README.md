@@ -28,7 +28,7 @@ printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=hello\ncommand=system.probe\n' > /tmp
 zsh -f dist/mograph-jailed.zsh --request /tmp/mj-request.txt
 ```
 
-You get one JSON envelope on stdout. `system.describe` lists all 34 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
+You get one JSON envelope on stdout. `system.describe` lists all 39 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
 
 ## Production rules
 
@@ -73,6 +73,12 @@ Power tools (Phases 8 and 10):
 - **`project.restore`** — copy any snapshot back out as a new, hash-verified `.aep`; never overwrites.
 - **`deps.graph`** — every comp's footage, precomps and effects, what's missing, and which dependencies would break the most comps.
 - **`handoff.package`** — a delivery folder with the project, collected local footage (image sequences included), fonts/plug-in list, README and a SHA-256 manifest.
+
+Search and recall (Phase 9) — a local SQLite/FTS5 store in `~/Library/Application Support/MographJailed`:
+
+- **`index.add`** / **`index.search`** — index scrapes, snapshots, golden records and handoffs, then `mj index.search target="glow logo"` across every comp, layer, effect, expression, font and file.
+- **`preset.add`** / **`preset.get`** — a versioned, SHA-256-addressed library for `.ffx`, templates, expressions, `.c4d`, Redshift materials and more.
+- **`index.verify`** — integrity check of the store and every stored preset.
 
 The Standard Library 1.0 line (`media.frame`, `media.timing`, ImageKit, FrameKit) remains intact underneath; `0.3.0-dev.3` qualified the `image.stats` / `image.compare` slice.
 

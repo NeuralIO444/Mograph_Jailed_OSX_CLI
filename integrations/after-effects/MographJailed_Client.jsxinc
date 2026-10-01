@@ -60,7 +60,8 @@
             "media.timing", "media.frame", "package.create", "report.tech",
             "project.ingest", "expression.lint", "plugin.audit", "project.snapshot",
             "loop.seams", "golden.record", "golden.check", "audit.verify",
-            "project.restore", "deps.graph", "handoff.package"
+            "project.restore", "deps.graph", "handoff.package",
+            "index.add", "index.search", "index.verify", "preset.add", "preset.get"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -218,7 +219,7 @@
             writeRequestLine(f, "requestId=" + requestId);
             writeRequestLine(f, "command=" + command);
             if (args) {
-                allowed = ["path", "pathA", "pathB", "target", "label", "runId", "output", "input", "format", "expectedCliVersion", "expectedProtocolVersion", "expectedFilename", "expectedSha256", "expectedSizeBytes", "expectedModifiedEpoch", "requiredBytes", "maxResults", "timeSeconds", "maxPixels", "minFrames", "threshold"];
+                allowed = ["path", "pathA", "pathB", "target", "label", "runId", "output", "input", "format", "expectedCliVersion", "expectedProtocolVersion", "expectedFilename", "expectedSha256", "expectedSizeBytes", "expectedModifiedEpoch", "requiredBytes", "maxResults", "timeSeconds", "maxPixels", "minFrames", "threshold", "version"];
                 for (i = 0; i < allowed.length; i++) {
                     key = allowed[i];
                     if (typeof args[key] !== "undefined" && args[key] !== null) {
@@ -406,6 +407,26 @@
 
     Client.prototype.handoffPackage = function (aepPath, scrapePath, outputDir, label) {
         return this.call("handoff.package", { path: aepPath, input: scrapePath, output: outputDir, label: label });
+    };
+
+    Client.prototype.indexAdd = function (path) {
+        return this.call("index.add", { path: path });
+    };
+
+    Client.prototype.indexSearch = function (query, maxResults) {
+        return this.call("index.search", { target: query, maxResults: (typeof maxResults === "undefined" ? null : String(maxResults)) });
+    };
+
+    Client.prototype.indexVerify = function () {
+        return this.call("index.verify", {});
+    };
+
+    Client.prototype.presetAdd = function (path, label) {
+        return this.call("preset.add", { path: path, label: label });
+    };
+
+    Client.prototype.presetGet = function (label, outputDir, version) {
+        return this.call("preset.get", { label: label, output: outputDir, version: (typeof version === "undefined" ? null : String(version)) });
     };
 
     Client.prototype.projectIngest = function (path) {

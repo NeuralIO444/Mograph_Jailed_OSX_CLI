@@ -213,3 +213,37 @@ All three are `LOCAL_ONLY` and require `python3` (`project.restore` and `handoff
 - `handoff.package` (`DERIVATIVE_CREATE`) creates `<output>/<label>.handoff/` with `project/`, `footage/` (local referenced files; numbered image sequences collected as a folder), `MANIFEST.json` (`MJ_HANDOFF_1`: SHA-256 of every packaged file, fonts, effects, missing and skipped footage) and `README.txt`. The folder is reserved atomically (`OUTPUT_EXISTS` if present), free space is checked first (`INSUFFICIENT_SPACE`), and a failed build removes the partial folder. The packaged project is not relinked.
 
 Footage paths read from a scrape are classified from the kernel mount table, without touching the path. Footage on network or unknown storage is never stat'ed or copied: `deps.graph` reports it as unverified and `handoff.package` lists it as skipped.
+
+## Search and recall additive contract (MJ-owned store)
+
+Protocol v1 additionally allowlists five operations, growing the public surface from 34 to 39, and adds the argument name `version`. No existing command schema is reinterpreted.
+
+```text
+command=index.add
+arg.path=<Base64 absolute receipt file, or directory searched recursively for *.json>
+
+command=index.search
+arg.target=<Base64 search words>
+arg.maxResults=<optional Base64 integer 1-200; default 20>
+
+command=index.verify
+
+command=preset.add
+arg.path=<Base64 absolute file, max 512 MB>
+arg.label=<Base64 label: letters, digits, dot, dash, underscore; max 64>
+
+command=preset.get
+arg.label=<Base64 label>
+arg.output=<Base64 absolute existing directory>
+arg.version=<optional Base64 integer; default latest>
+```
+
+The store is `~/Library/Application Support/MographJailed` (`MJ_STORE_DIR` overrides), created with mode 700 by the first writing operation, and must be on a local filesystem. It holds `index.sqlite` (fixed schema, `PRAGMA user_version` 1; a newer version is refused with `STORE_TOO_NEW`) and `presets/<sha256>` blobs. There is still no SQL request surface: every statement is fixed text with bound parameters.
+
+- `index.add` (`STORE_WRITE`, `MJ_OWNED_STORE`) indexes `MJ_PROJECT_SCRAPE_1`, `MJ_PROJECT_SNAPSHOT_1`, `MJ_GOLDEN_1` and `MJ_HANDOFF_1` files (≤ 8 MB each, ≤ 5,000 per call), skipping other JSON, hidden directories, symlinks and non-local subtrees. Unchanged files (same SHA-256) are not re-indexed. Returns `MJ_INDEX_ADD_1`.
+- `index.search` (`NONE`, `ADVISORY_INDEX`) splits the query into words (max 12), matches each as a prefix, requires all of them, and ranks by BM25. FTS operators in the query are never interpreted. Returns `MJ_INDEX_SEARCH_1` with `kind` (`project`, `comp`, `layer`, `effect`, `expression`, `font`, `footage`, `snapshot`, `golden`, `handoff`, `file`, `preset`), `name`, `detail` and the source receipt.
+- `index.verify` (`NONE`) returns `MJ_INDEX_VERIFY_1`: SQLite `integrity_check`, FTS integrity, schema version, counts, `staleDocs` (indexed local receipts that no longer exist) and `corruptPresetBlobs`; `healthy` is false on any integrity failure or corrupt blob.
+- `preset.add` (`STORE_WRITE`) stores the file content-addressed and records a new label version only when the bytes differ from the label's latest (`created:false, reason:"unchanged"` otherwise). Kind is inferred from the extension (`.ffx`, `.aet`, `.aep`, `.mogrt`, `.jsx`, `.js`, `.txt`, `.c4d`, `.lib4d`, `.rsmat`). Returns `MJ_PRESET_1`.
+- `preset.get` (`DERIVATIVE_CREATE`) re-hashes the blob (`PRESET_CORRUPT` on mismatch) and writes the original filename, or `<stem>-v<N><ext>` if that exists; `OUTPUT_EXISTS` if both exist. Returns `MJ_PRESET_GET_1`.
+
+`index.search` and `index.verify` fail with `STORE_EMPTY` and create nothing when the store does not exist yet.

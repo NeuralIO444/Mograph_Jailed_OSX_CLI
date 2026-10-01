@@ -52,6 +52,11 @@ dispatch_request() {
     project.restore) handle_project_restore ;;
     deps.graph) handle_deps_graph ;;
     handoff.package) handle_handoff_package ;;
+    index.add) handle_index_add ;;
+    index.search) handle_index_search ;;
+    index.verify) handle_index_verify ;;
+    preset.add) handle_preset_add ;;
+    preset.get) handle_preset_get ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)
