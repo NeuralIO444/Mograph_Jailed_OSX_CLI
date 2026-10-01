@@ -28,7 +28,7 @@ printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=hello\ncommand=system.probe\n' > /tmp
 zsh -f dist/mograph-jailed.zsh --request /tmp/mj-request.txt
 ```
 
-You get one JSON envelope on stdout. `system.describe` lists all 31 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
+You get one JSON envelope on stdout. `system.describe` lists all 34 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
 
 ## Production rules
 
@@ -70,6 +70,9 @@ Power tools (Phases 8 and 10):
 
 - **`mj`** — `mj <operation> name=value …` with tab completion, `mj ops`, and `mj recipe <file>` for checked, data-only multi-step recipes (see `recipes/`).
 - **Audit log** — `mkdir -p ~/Library/Logs/MographJailed` turns on a hash-chained log of every request; `audit.verify` (operation 31) detects edits and deletions.
+- **`project.restore`** — copy any snapshot back out as a new, hash-verified `.aep`; never overwrites.
+- **`deps.graph`** — every comp's footage, precomps and effects, what's missing, and which dependencies would break the most comps.
+- **`handoff.package`** — a delivery folder with the project, collected local footage (image sequences included), fonts/plug-in list, README and a SHA-256 manifest.
 
 The Standard Library 1.0 line (`media.frame`, `media.timing`, ImageKit, FrameKit) remains intact underneath; `0.3.0-dev.3` qualified the `image.stats` / `image.compare` slice.
 

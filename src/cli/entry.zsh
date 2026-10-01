@@ -49,6 +49,9 @@ dispatch_request() {
     golden.record) handle_golden_record ;;
     golden.check) handle_golden_check ;;
     audit.verify) handle_audit_verify ;;
+    project.restore) handle_project_restore ;;
+    deps.graph) handle_deps_graph ;;
+    handoff.package) handle_handoff_package ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

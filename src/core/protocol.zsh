@@ -16,7 +16,7 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -213,9 +213,17 @@ request_schema_for() {
       MJ_SCHEMA_ALLOWED=" path input threshold "
       MJ_SCHEMA_REQUIRED=" path input "
       ;;
-    audit.verify)
+    audit.verify|deps.graph)
       MJ_SCHEMA_ALLOWED=" path "
       MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    project.restore)
+      MJ_SCHEMA_ALLOWED=" path output "
+      MJ_SCHEMA_REQUIRED=" path output "
+      ;;
+    handoff.package)
+      MJ_SCHEMA_ALLOWED=" path input output label "
+      MJ_SCHEMA_REQUIRED=" path input output label "
       ;;
     *) return 1 ;;
   esac

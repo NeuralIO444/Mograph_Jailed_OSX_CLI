@@ -186,3 +186,30 @@ The runtime appends to `<dir>/audit.jsonl` after every request, including reject
 ## Argument schemas in system.describe
 
 Each operation descriptor in `system.describe` now includes `"args":{"allowed":[...],"required":[...]}`, generated from the same table the request validator uses. Clients and shell completion should read this instead of hard-coding argument lists.
+
+## Protect-work additive contract
+
+Protocol v1 additionally allowlists three operations, growing the public surface from 31 to 34. No existing command schema is reinterpreted.
+
+```text
+command=project.restore
+arg.path=<Base64 absolute snapshot .aep path>
+arg.output=<Base64 absolute existing directory>
+
+command=deps.graph
+arg.path=<Base64 absolute MJ_PROJECT_SCRAPE_1 JSON path>
+
+command=handoff.package
+arg.path=<Base64 absolute .aep path>
+arg.input=<Base64 absolute MJ_PROJECT_SCRAPE_1 JSON path for that project>
+arg.output=<Base64 absolute existing parent directory>
+arg.label=<Base64 label: letters, digits, dot, dash, underscore; max 64>
+```
+
+All three are `LOCAL_ONLY` and require `python3` (`project.restore` and `handoff.package` also `cp`).
+
+- `project.restore` (`DERIVATIVE_CREATE`) returns `MJ_PROJECT_RESTORE_1`. If `<snapshot>.snapshot.json` exists, the snapshot's SHA-256 must match it or the restore is refused (`SNAPSHOT_CORRUPT`); `receiptVerified` reports which case applied. Writes `<stem>.restored.<UTC>.aep` (or `-2`, `-3` … on a same-second collision) via a verified temp copy and hard link, so an existing file is never replaced.
+- `deps.graph` (`NONE`) returns `MJ_DEPS_GRAPH_1`: per-comp footage, precomps, effects and text use; every footage/effect dependency with its direct users and the comps impacted through precomp nesting; `missingFootage`, `unverifiedFootage`, and `singlePointsOfFailure` (dependencies impacting two or more comps, most impact first).
+- `handoff.package` (`DERIVATIVE_CREATE`) creates `<output>/<label>.handoff/` with `project/`, `footage/` (local referenced files; numbered image sequences collected as a folder), `MANIFEST.json` (`MJ_HANDOFF_1`: SHA-256 of every packaged file, fonts, effects, missing and skipped footage) and `README.txt`. The folder is reserved atomically (`OUTPUT_EXISTS` if present), free space is checked first (`INSUFFICIENT_SPACE`), and a failed build removes the partial folder. The packaged project is not relinked.
+
+Footage paths read from a scrape are classified from the kernel mount table, without touching the path. Footage on network or unknown storage is never stat'ed or copied: `deps.graph` reports it as unverified and `handoff.package` lists it as skipped.

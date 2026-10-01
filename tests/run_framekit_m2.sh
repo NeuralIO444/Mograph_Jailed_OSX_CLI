@@ -49,7 +49,7 @@ requestId=framekit-describe
 command=system.describe
 REQ
 "$CLI" --request "$TMP/describe.req" > "$TMP/describe.json"
-check jq -e '.ok==true and .cliVersion=="0.3.0-dev.2" and (.data.operations|length)==31' "$TMP/describe.json"
+check jq -e '.ok==true and .cliVersion=="0.3.0-dev.2" and (.data.operations|length)==34' "$TMP/describe.json"
 check jq -e '.data.operations["media.frame"].cost=="FRAME_DECODE" and .data.operations["media.frame"].mutation=="DERIVATIVE_CREATE" and .data.operations["media.frame"].authority=="NATIVE_FRAME_DERIVATIVE" and .data.operations["media.frame"].executionScope=="LOCAL_ONLY" and .data.operations["media.frame"].interactiveSafe==false' "$TMP/describe.json"
 check jq -e '.data.operations["media.frame"].requires.all==["avmediainfo","python3","jq","sips","awk","df","mktemp","mv","rm","stat","uname"]' "$TMP/describe.json"
 check jq -e '.data.standardLibrary.modules.FrameKit.authority=="NATIVE_FRAME_DERIVATIVE" and .data.standardLibrary.modules.FrameKit.executionScope=="LOCAL_ONLY" and .data.standardLibrary.modules.FrameKit.exactRequest==true and .data.standardLibrary.modules.FrameKit.trackTransform==true and .data.standardLibrary.modules.FrameKit.publicGenericJXA==false and .data.standardLibrary.modules.FrameKit.targetMacQualificationRequired==true' "$TMP/describe.json"

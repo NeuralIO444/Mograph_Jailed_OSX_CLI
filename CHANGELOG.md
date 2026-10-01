@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Power CLI Phase 8 (protect work)
+
+- Added `project.restore`, `deps.graph`, `handoff.package` (operations 32–34).
+- Footage from scrapes is classified local/network/unknown from the mount table; only local footage is ever stat'ed or copied.
+- AE client: `projectRestore()`, `depsGraph()`, `handoffPackage()`.
+- Added `tests/run_protect.sh` (31 checks).
+
 ## Unreleased — Power CLI Phases 8 (audit) and 10 (shell)
 
 - Added opt-in hash-chained audit log (`~/Library/Logs/MographJailed/audit.jsonl` when the directory exists; `MJ_AUDIT_DIR` overrides) and `audit.verify` (operation 31).

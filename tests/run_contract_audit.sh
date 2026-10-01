@@ -27,6 +27,9 @@ loop.seams
 golden.record
 golden.check
 audit.verify
+project.restore
+deps.graph
+handoff.package
 report.tech
 runtime.verify
 search.candidate

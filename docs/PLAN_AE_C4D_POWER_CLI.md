@@ -55,10 +55,10 @@ Status: draft, nothing implemented. Targets: AE 2024 (24.x), C4D 2024 (Redshift 
 - Native notifications and sounds on finish/fail via `osascript`.
 - Menu-bar status indicator (JXA) showing watcher and render state; no new daemon beyond the existing LaunchAgent.
 
-### Phase 8 - Protect work
-- `project.restore --as-new`: build a fresh copy from any snapshot; never overwrites. Pair with `project.diff` preview.
-- `deps.graph`: footage, fonts, plugins, `.c4d` files, textures per comp; flag single points of failure. Text tree and self-contained offline HTML.
-- `handoff.package`: delivery folder with project, collected assets, font/plugin manifest, render settings, README, and a sqlite receipt proving contents.
+### Phase 8 - Protect work — DONE
+- DONE: `project.restore` (hash-verified against the snapshot receipt; new file only). `project.diff` preview waits for Phase 4.
+- DONE: `deps.graph` (`MJ_DEPS_GRAPH_1`: per-comp deps, transitive impact through precomps, missing footage, single points of failure). Deferred: offline HTML / text-tree rendering.
+- DONE: `handoff.package` (project + local footage incl. image sequences + MANIFEST.json + README). JSON manifest stands in for the sqlite receipt until Phase 9. Deferred: relinking the packaged project (needs AE scripting).
 - DONE: hash-chained append-only audit log of every request (opt-in by directory) + `audit.verify`.
 
 ### Phase 9 - Search and recall

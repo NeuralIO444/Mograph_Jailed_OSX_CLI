@@ -59,7 +59,8 @@
             "volume.inspect", "temp.create", "temp.clean", "media.inspect",
             "media.timing", "media.frame", "package.create", "report.tech",
             "project.ingest", "expression.lint", "plugin.audit", "project.snapshot",
-            "loop.seams", "golden.record", "golden.check", "audit.verify"
+            "loop.seams", "golden.record", "golden.check", "audit.verify",
+            "project.restore", "deps.graph", "handoff.package"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -393,6 +394,18 @@
 
     Client.prototype.auditVerify = function (logPath) {
         return this.call("audit.verify", { path: logPath });
+    };
+
+    Client.prototype.projectRestore = function (snapshotPath, outputDir) {
+        return this.call("project.restore", { path: snapshotPath, output: outputDir });
+    };
+
+    Client.prototype.depsGraph = function (scrapePath) {
+        return this.call("deps.graph", { path: scrapePath });
+    };
+
+    Client.prototype.handoffPackage = function (aepPath, scrapePath, outputDir, label) {
+        return this.call("handoff.package", { path: aepPath, input: scrapePath, output: outputDir, label: label });
     };
 
     Client.prototype.projectIngest = function (path) {

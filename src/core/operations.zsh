@@ -29,13 +29,16 @@ operation_names() {
     golden.record \
     golden.check \
     audit.verify \
+    project.restore \
+    deps.graph \
+    handoff.package \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -84,8 +87,11 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
-    loop.seams|golden.record|golden.check|audit.verify)
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph)
       cap_available python3
+      ;;
+    project.restore|handoff.package)
+      cap_available python3 && cap_available cp
       ;;
     image.stats|image.compare)
       cap_available python3 && cap_available sips && cap_available awk
@@ -143,7 +149,8 @@ operation_cost() {
     media.inspect) printf 'PATH_DEPENDENT' ;;
     media.timing) printf 'BOUNDED_MEDIA_PROBE' ;;
     media.frame) printf 'FRAME_DECODE' ;;
-    project.ingest|expression.lint|audit.verify) printf 'SIZE_DEPENDENT' ;;
+    project.ingest|expression.lint|audit.verify|deps.graph) printf 'SIZE_DEPENDENT' ;;
+    project.restore|handoff.package) printf 'IO_BOUND' ;;
     plugin.audit) printf 'PATH_DEPENDENT' ;;
     project.snapshot) printf 'IO_BOUND' ;;
     package.create) printf 'IO_BOUND' ;;
@@ -156,7 +163,7 @@ operation_mutation() {
     temp.create) printf 'TEMP_CREATE' ;;
     temp.clean) printf 'TEMP_DELETE' ;;
     search.candidate|loop.seams|golden.check) printf 'INTERNAL_TEMP' ;;
-    image.derivative|media.frame|package.create|project.snapshot|golden.record) printf 'DERIVATIVE_CREATE' ;;
+    image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package) printf 'DERIVATIVE_CREATE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -183,20 +190,22 @@ operation_authority() {
     plugin.audit) printf 'AUTHORITATIVE_FILESYSTEM_METADATA' ;;
     project.snapshot) printf 'AUTHORITATIVE_OPERATION' ;;
     audit.verify) printf 'DERIVED_AUDIT_CHAIN' ;;
+    project.restore|handoff.package) printf 'AUTHORITATIVE_OPERATION' ;;
+    deps.graph) printf 'DERIVED_PROJECT_SUMMARY' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
 
 operation_interactive_safe() {
   case "$1" in
-    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check) return 1 ;;
+    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check|project.restore|handoff.package) return 1 ;;
     *) return 0 ;;
   esac
 }
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -215,7 +224,8 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
-    loop.seams|golden.record|golden.check|audit.verify) printf '%s\n' python3 ;;
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph) printf '%s\n' python3 ;;
+    project.restore|handoff.package) printf '%s\n' python3 cp ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
     temp.clean) printf '%s\n' sed rm pwd ;;
@@ -268,7 +278,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"
