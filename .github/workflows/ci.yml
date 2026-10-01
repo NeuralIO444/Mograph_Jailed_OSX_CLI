@@ -21,6 +21,16 @@ jobs:
           fi
           echo "Sanitize guard clean"
 
+  scraper-readonly:
+    name: Scraper read-only guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scraper must be strictly read-only
+        run: sh scripts/check-scraper-readonly.sh
+      - name: Guard rejects every known mutation pattern
+        run: bash tests/run_scraper_guard.sh
+
   dist-parity:
     name: dist parity
     runs-on: ubuntu-latest
