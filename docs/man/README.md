@@ -13,6 +13,11 @@ mj-man organize
 mj-man terminal
 mj-man troubleshooting
 mj-man recovery
+mj-man mj
+mj-man render
+mj-man frames
+mj-man audit
+mj-man library
 ```
 
 This is a project-local help system. It does not install a system man page and does not change `MANPATH`.

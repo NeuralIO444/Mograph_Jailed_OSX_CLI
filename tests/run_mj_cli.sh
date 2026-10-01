@@ -20,6 +20,9 @@ check jq -e --arg p "$TMP/my frames/a file.txt" '.ok==true and .data.path==$p' "
 set +e; mjz "mj file.inspect path=relative" > "$TMP/o2.json"; rc=$?; set -e
 check test "$rc" -ne 0
 check jq -e '.error.code=="INVALID_PATH"' "$TMP/o2.json"
+# bare `mj` keeps its legacy meaning; an old alias does not shadow the function
+mkdir -p "$TMP/root"
+check test "$(MOGRAPHJAILED_ROOT="$TMP/root" mjz "alias mj='echo OLD'; source '$ROOT/scripts/shell/mj-cli.zsh'; mj; pwd -P")" = "$(cd "$TMP/root" && pwd -P)"
 # argument syntax checked locally
 set +e; mjz "mj file.inspect noequals" 2>"$TMP/e1"; rc=$?; set -e
 check test "$rc" = 64

@@ -39,52 +39,58 @@ You get one JSON envelope on stdout. `system.describe` lists all 44 allowlisted 
 
 ## Runtime requirements
 
-- stock macOS with `/bin/zsh`
-- no Python, Node/npm, Homebrew, FFmpeg, OpenCV, Xcode/CLT, daemon, local server, cloud API, or admin installation required
+- stock macOS (Sequoia or newer) with `/bin/zsh`, Apple Silicon or Intel
+- no Node/npm, Homebrew, FFmpeg, OpenCV, daemon, local server, cloud API, or admin installation required
+- **`/usr/bin/python3` is required for the Project observer, Frame tools, Protect work, Search/audits and Host rendering operations** (everything added since 0.3). On a Mac without the Xcode Command Line Tools, that path is a stub that offers to install them, so on a locked-down Mac confirm `/usr/bin/python3 --version` works before relying on those operations. Python is used with its standard library only (`sqlite3`, `json`, `hashlib`, `subprocess`); no packages are installed. `system.doctor` and `system.describe` report which operations are available.
+- the original asset, image, media, storage and package operations need only stock macOS tools
 - optional Apple-native capabilities are probed and fail closed
 - After Effects invocation uses `/bin/zsh -f` to avoid user shell-startup state
 - Standard Library 1.0 is local-first; network volumes are outside automatic execution/mutation paths
+- Rendering needs your own licensed After Effects and/or Cinema 4D 2024 or newer; nothing here activates or configures licences
 
-Ruby/Perl, Xcode tools, Python, Node, and GNU utilities may be used by isolated development/QA work when available, but they are not production runtime dependencies.
+Ruby/Perl, Xcode tools, Node, and GNU utilities may be used by isolated development/QA work when available, but they are not production runtime dependencies.
 
-## Current development line
+## What it is
 
-`0.3.0` is the qualified production baseline. The current line is the **Tier 0 Observer**: read-only After Effects project intelligence. It can look at everything and change nothing — unless you tell it to, and then it still won't overwrite.
+A local, zero-daemon toolkit for motion-design pipelines on managed Macs. It looks at After Effects and Cinema 4D work, renders it, checks it, searches it and packages it — and never edits your projects. Everything is an allowlisted operation with a structured request and a JSON response. **44 operations**, no network, no sudo, no background service.
 
-- **`project.ingest`** — validate an `MJ_PROJECT_SCRAPE_1` receipt from the After Effects scraper and summarize it: comps, layers, expressions, effects, fonts, footage, missing/unlinked footage.
-- **`expression.lint`** — static analysis over scraped expressions: broken layer/effect references, `sampleImage()` in loops, hard-coded paths, and more.
-- **`plugin.audit`** — enumerate and SHA-256 hash an After Effects Plug-ins directory. Reads only.
-- **`project.snapshot`** — hash an `.aep` and save a timestamped, hash-suffixed versioned copy (APFS clone when available); skips unchanged projects; refuses to overwrite.
-- **AE scraper** — `integrations/after-effects/MographJailed_ProjectScraper.jsx`: ES3 project traversal that writes one user-selected JSON receipt and never modifies the open project. A static guard (`scripts/check-scraper-readonly.sh`) proves it.
-- **Watcher** — an optional user-level LaunchAgent that fires `project.snapshot` on `.aep` changes. No sudo, no network.
-- **Dashboard** — `tools/mj-observe-dash.zsh`: a btop-style live terminal view of snapshots, project vitals, lint findings, and watcher state. Strictly read-only.
+| Area | Operations | What you get |
+|---|---|---|
+| **Hosts and rendering** | `host.detect` `ae.render` `c4d.render` | Finds After Effects / Cinema 4D 2024+ (Redshift, Metal GPU). Renders a comp or scene to a new PNG sequence with a receipt: frames vs expected, first/last-frame hashes, source-unchanged proof. One render at a time, hard timeout, fail-fast on an unconfigured C4D licence. |
+| **Frame tools** | `loop.seams` `golden.record` `golden.check` | Rank the best loop points in a render. Record key frames once, then catch a look changing after a plugin, Redshift or macOS update. |
+| **Project observer** | `project.ingest` `expression.lint` `plugin.audit` `project.snapshot` | Read-only project intelligence from an AE scrape: comps, layers, expressions, effects, fonts, footage; lint; plug-in hashing; versioned snapshots. |
+| **Protect work** | `project.restore` `deps.graph` `handoff.package` `audit.verify` | Restore any snapshot as a new verified copy. See what breaks if a file goes missing. Build a client handoff folder with a SHA-256 manifest. Tamper-evident request log. |
+| **Search and audits** | `index.add` `index.search` `index.verify` `trace.asset` `audit.plugins` | One local index of everything you scrape. Full-text search; exact nested comp path (`Main > Mid > Inner`) to any missing asset or font; every project using a given effect `matchName`; full plugin inventory. |
+| **Presets** | `preset.add` `preset.get` | Versioned, hash-addressed library for `.ffx`, templates, expressions, `.c4d`, Redshift materials. |
+| **Asset and media intelligence** | `file.*` `asset.*` `image.*` `media.*` `storage.*` `volume.*` `search.candidate` `package.create` … | The 0.2/0.3 foundation: identity, provenance, images, native media timing and frame extraction. |
 
-Protocol v1 is preserved and the public surface grows additively from 23 to 27 allowlisted operations. See `docs/TIER0_OBSERVER.md` and `docs/MJ_PROJECT_SCRAPE_1.md`.
+## Quick tour
 
-Frame-sequence tools (Power CLI Phases 5–6, see `docs/PLAN_AE_C4D_POWER_CLI.md`) add three more operations (30 total) over a folder of rendered PNG frames:
+```sh
+mj ops                                             # every operation; required args marked *
+mj host.detect                                     # what is installed, ready to render
+mj ae.render path=/work/hero.aep target="Main" output=/work/renders label=hero range=0-119
+mj last                                            # newest render receipt
+mj loop.seams path=/work/renders/hero.<stamp> minFrames=48
+mj golden.check path=/work/renders/hero.<stamp> input=/work/golden/hero_master.golden.json
+mj index.add path=/work/receipts                   # index scrapes, snapshots, golden records
+mj trace.asset format=missing                      # exact nested path to every missing asset
+mj audit.plugins target=S_Glow                     # which projects use this effect?
+mj recipe recipes/render-qa.mjrecipe frames=... golden=...
+```
 
-- **`loop.seams`** — rank the best start/end frames for a seamless loop.
-- **`golden.record`** / **`golden.check`** — record key-frame hashes and signatures once, then flag frames whose look changed after a plugin, Redshift or macOS update.
+`mj` has tab completion and is installed by `scripts/shell/install-terminal-ux.sh`. Local help: `mj-man` (topics: `mj`, `render`, `frames`, `audit`, `library`, `commands`, `protocol`, `safety`). Live dashboard: `tools/mj-observe-dash.zsh`.
 
-Power tools (Phases 8 and 10):
+## Trust model
 
-- **`mj`** — `mj <operation> name=value …` with tab completion, `mj ops`, and `mj recipe <file>` for checked, data-only multi-step recipes (see `recipes/`).
-- **Audit log** — `mkdir -p ~/Library/Logs/MographJailed` turns on a hash-chained log of every request; `audit.verify` (operation 31) detects edits and deletions.
-- **`project.restore`** — copy any snapshot back out as a new, hash-verified `.aep`; never overwrites.
-- **`deps.graph`** — every comp's footage, precomps and effects, what's missing, and which dependencies would break the most comps.
-- **`handoff.package`** — a delivery folder with the project, collected local footage (image sequences included), fonts/plug-in list, README and a SHA-256 manifest.
+- **Allowlisted operations only.** No `shell.execute`, no `db.query`; every database statement is fixed text with bound parameters, and a recipe is data that is validated before it runs.
+- **Sources are never changed.** Outputs are always new files and folders; nothing is overwritten, and receipts prove the source hash did not change.
+- **Local only.** Network volumes are classified without being touched and are never opened, copied or indexed. Hosts are found only in `/Applications`; a request cannot name a binary.
+- **Fail closed and honest.** Missing tools, unsupported hosts and unconfigured licences return a clear error code, not a guess. Host runs have closed stdin, a hard timeout and a whole-process-group kill.
+- **Tamper-evident.** Turn on the audit log (`mkdir -p ~/Library/Logs/MographJailed`) and every request is chained by SHA-256; `audit.verify` finds edits and deletions.
+- **Stock macOS.** Runs on `/bin/zsh` plus the system `python3` (only for the Power CLI operations). See `DEPENDENCY_AUDIT.md`.
 
-Host applications (Phases 0–1): `host.detect` finds After Effects and Cinema 4D 2024+ (plus Redshift, Metal GPU); `ae.render` and `c4d.render` render a comp or scene to a new PNG-sequence folder with a receipt (frame count vs expected, first/last-frame hashes, source unchanged), one at a time, with a hard timeout and fail-fast when C4D's licence is not configured. `mj last` shows the newest receipt; `mj open-last` opens its folder. Rendered folders feed straight into `loop.seams` and `golden.check`.
-
-Project audits (from indexed scrapes): `mj trace.asset format=missing` gives the exact nested comp path (`Main > Mid > Inner`) to every missing asset in every indexed project; `mj trace.asset format=font target="Brandon Grotesque"` does the same for a font; `mj audit.plugins target=S_Glow` lists every project that uses an effect `matchName`, and `mj audit.plugins` alone is the full plugin inventory.
-
-Search and recall (Phase 9) — a local SQLite/FTS5 store in `~/Library/Application Support/MographJailed`:
-
-- **`index.add`** / **`index.search`** — index scrapes, snapshots, golden records and handoffs, then `mj index.search target="glow logo"` across every comp, layer, effect, expression, font and file.
-- **`preset.add`** / **`preset.get`** — a versioned, SHA-256-addressed library for `.ffx`, templates, expressions, `.c4d`, Redshift materials and more.
-- **`index.verify`** — integrity check of the store and every stored preset.
-
-The Standard Library 1.0 line (`media.frame`, `media.timing`, ImageKit, FrameKit) remains intact underneath; `0.3.0-dev.3` qualified the `image.stats` / `image.compare` slice.
+Protocol v1 is preserved and the public surface has grown additively: 20 → 23 → 27 → 44 operations. The full request and response contracts are in `PROTOCOL.md`; the roadmap is `docs/PLAN_AE_C4D_POWER_CLI.md` and the GitHub milestones. Scraper schema: `docs/MJ_PROJECT_SCRAPE_1.md`; observer tiers: `docs/TIER0_OBSERVER.md`.
 
 ## Existing asset intelligence
 
@@ -128,6 +134,7 @@ No generic `shell.execute`, `db.query`, or similar escape hatch is introduced.
 - `SECURITY.md`
 - `CAPABILITY_REGISTRY.md`
 - `DEPENDENCY_AUDIT.md`
+- `docs/PLAN_AE_C4D_POWER_CLI.md`
 - `docs/releases/0.3.0-dev.2/QA_REPORT.md`
 - `docs/releases/0.3.0-dev.2/RELEASE_MANIFEST.md`
 - `tests/FRAMEKIT_M2_MAC_QUALIFICATION.md`

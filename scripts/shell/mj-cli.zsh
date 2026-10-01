@@ -9,6 +9,9 @@
 # {{name}} placeholders are filled from the command line, and the whole recipe
 # is checked against system.describe before the first step runs.
 
+# An older `mj` alias (cd to the install folder) would shadow this function.
+unalias mj 2>/dev/null
+
 _mj_cli_path() {
     printf '%s\n' "${MJ_CLI:-${MOGRAPHJAILED_ROOT:-$HOME/Documents/MographJailed}/dist/mograph-jailed.zsh}"
 }
@@ -106,8 +109,14 @@ _mj_recipe() {
 
 mj() {
     case "${1:-}" in
-        ""|-h|--help|help)
+        "")
+            # Bare `mj` keeps its original meaning: go to the install folder.
+            local root="${MOGRAPHJAILED_ROOT:-$HOME/Documents/MographJailed}"
+            if [ -d "$root" ]; then cd "$root"; else print -u2 "mj: $root not found (try: mj help)"; return 66; fi
+            return ;;
+        -h|--help|help)
             /bin/cat <<'USAGE'
+mj                                 go to the MographJailed folder
 mj <operation> [name=value ...]    run one allowlisted operation
 mj ops                             list operations and their arguments
 mj recipe <file> [name=value ...]  run a recipe file, stopping at the first failure

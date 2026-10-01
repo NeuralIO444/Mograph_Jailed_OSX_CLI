@@ -26,6 +26,11 @@ mj-man() {
         terminal|top) file="$manroot/terminal.md" ;;
         troubleshooting|trouble|debug) file="$manroot/troubleshooting.md" ;;
         recovery|rollback) file="$manroot/recovery.md" ;;
+        mj|cli) file="$manroot/mj.md" ;;
+        render|hosts|ae|c4d) file="$manroot/render.md" ;;
+        frames|loop|golden) file="$manroot/frames.md" ;;
+        audit|protect|audits) file="$manroot/audit.md" ;;
+        library|index|presets|search) file="$manroot/library.md" ;;
         list)
             /bin/cat <<'LIST'
 MographJailed help topics
@@ -39,6 +44,11 @@ organize
 terminal
 troubleshooting
 recovery
+mj
+render
+frames
+audit
+library
 LIST
             return 0
             ;;

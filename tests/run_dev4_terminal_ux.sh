@@ -34,7 +34,7 @@ check grep -q 'operation_required_all "\$_name" | emit_string_array_lines' "$ROO
 check grep -q 'operation_optional_capabilities "\$_name" | emit_string_array_lines' "$ROOT/src/core/operations.zsh"
 
 # Local help topics and render assets exist.
-for topic in overview commands protocol safety looper organize terminal troubleshooting recovery; do
+for topic in overview commands protocol safety looper organize terminal troubleshooting recovery mj render frames audit library; do
   check test -r "$ROOT/docs/man/$topic.md"
 done
 check test -r "$ROOT/scripts/terminal/mj-md-render.awk"

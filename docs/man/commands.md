@@ -55,4 +55,34 @@ Use `mj-man terminal` for the btop-style observer dashboard.
 - `report.tech` — native diagnostic receipt including Standard Library status.
 - `package.create` — create a ZIP derivative using native `ditto`, refusing overwrite.
 
+## Power CLI operations
+
+Frame sequences (`mj-man frames`):
+
+- `loop.seams` — rank the best start/end frames for a seamless loop in a folder of PNG frames.
+- `golden.record` — write a new golden-frame receipt (SHA-256 + signature per frame); never overwrites.
+- `golden.check` — compare a frame folder against a golden receipt: identical, pass, changed, missing.
+
+Hosts and rendering (`mj-man render`):
+
+- `host.detect` — find After Effects and Cinema 4D 2024+, their CLIs, Redshift, Metal GPU.
+- `ae.render` — render one comp with `aerender` to a new PNG-sequence folder with a receipt.
+- `c4d.render` — render a scene with Cinema 4D Commandline (Redshift or Physical) with a receipt.
+
+Protecting work (`mj-man audit`):
+
+- `project.restore` — copy a snapshot back out as a new, hash-verified `.aep`.
+- `deps.graph` — per-comp dependencies, what is missing, single points of failure.
+- `handoff.package` — delivery folder with project, local footage, manifest and README.
+- `audit.verify` — check the hash-chained request log for edits or deletions.
+
+Search, presets and audits (`mj-man library`):
+
+- `index.add`, `index.search`, `index.verify` — local full-text index of scrapes, snapshots, golden records and handoffs.
+- `preset.add`, `preset.get` — versioned, hash-addressed preset library.
+- `trace.asset` — exact nested comp path to any asset, missing asset, or font.
+- `audit.plugins` — projects using an exact effect `matchName`, or the full plugin inventory.
+
+Use `mj-man mj` for the `mj` command-line front end and `mj ops` for live argument lists.
+
 Use `mj-man protocol` for request-file format.
