@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Power CLI Phases 8 (audit) and 10 (shell)
+
+- Added opt-in hash-chained audit log (`~/Library/Logs/MographJailed/audit.jsonl` when the directory exists; `MJ_AUDIT_DIR` overrides) and `audit.verify` (operation 31).
+- `system.describe` operation descriptors now publish `args.allowed` / `args.required` from the validator's own schema table (`request_schema_for`).
+- Added `mj` front end (`scripts/shell/mj-cli.zsh`): single operations, `mj ops`, zsh completion, and validated data-only recipes (`recipes/render-qa.mjrecipe`).
+- Added `tests/run_audit.sh` (17 checks) and `tests/run_mj_cli.sh` (17 checks).
+
 ## Unreleased — Power CLI Phases 5–6
 
 - Added `loop.seams`, `golden.record`, `golden.check` (operations 28–30) and argument names `minFrames`, `threshold`. Protocol v1 preserved; no existing schema changed.

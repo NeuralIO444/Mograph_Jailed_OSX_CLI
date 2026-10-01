@@ -26,6 +26,7 @@ project.snapshot
 loop.seams
 golden.record
 golden.check
+audit.verify
 report.tech
 runtime.verify
 search.candidate

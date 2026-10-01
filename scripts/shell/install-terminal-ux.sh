@@ -12,6 +12,7 @@ fail() { /bin/echo "ERROR: $*" >&2; exit 1; }
 [ -r "$ROOT/scripts/shell/mj-terminal.zsh" ] || fail "Terminal common helper is missing."
 [ -r "$ROOT/scripts/shell/mj-man.zsh" ] || fail "mj-man helper is missing."
 [ -r "$ROOT/scripts/shell/mj-top.zsh" ] || fail "mj-top helper is missing."
+[ -r "$ROOT/scripts/shell/mj-cli.zsh" ] || fail "mj front end is missing."
 [ -r "$ROOT/scripts/terminal/mj-md-render.awk" ] || fail "Markdown renderer is missing."
 [ -r "$ROOT/scripts/terminal/mj-top-render.js" ] || fail "Dashboard renderer is missing."
 [ -r "$ROOT/scripts/terminal/mj-top-run.zsh" ] || fail "Dashboard worker is missing."
@@ -36,6 +37,7 @@ append_source() {
 append_source 'scripts/shell/mj-terminal.zsh' 'if [ -r "$HOME/Documents/MographJailed/scripts/shell/mj-terminal.zsh" ]; then source "$HOME/Documents/MographJailed/scripts/shell/mj-terminal.zsh"; fi'
 append_source 'scripts/shell/mj-man.zsh' 'if [ -r "$HOME/Documents/MographJailed/scripts/shell/mj-man.zsh" ]; then source "$HOME/Documents/MographJailed/scripts/shell/mj-man.zsh"; fi'
 append_source 'scripts/shell/mj-top.zsh' 'if [ -r "$HOME/Documents/MographJailed/scripts/shell/mj-top.zsh" ]; then source "$HOME/Documents/MographJailed/scripts/shell/mj-top.zsh"; fi'
+append_source 'scripts/shell/mj-cli.zsh' 'if [ -r "$HOME/Documents/MographJailed/scripts/shell/mj-cli.zsh" ]; then source "$HOME/Documents/MographJailed/scripts/shell/mj-cli.zsh"; fi'
 
 /bin/cat <<EOF2
 SUCCESS
@@ -50,4 +52,7 @@ Commands:
   mj-man
   mj-man terminal
   mj-top
+  mj ops
+  mj <operation> name=value ...
+  mj recipe <file> name=value ...
 EOF2

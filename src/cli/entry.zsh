@@ -1,4 +1,5 @@
 main() {
+  local _rc=0
   if [ "$#" -ne 2 ] || [ "$1" != "--request" ]; then
     set_error "USAGE" "Usage: mograph-jailed.zsh --request <request-file>"
     emit_error_response "" ""
@@ -7,9 +8,17 @@ main() {
 
   if ! load_request_file "$2"; then
     emit_error_response "${REQUEST_COMMAND:-}" "${REQUEST_ID:-}"
+    audit_append 65
     return 65
   fi
 
+  dispatch_request
+  _rc=$?
+  audit_append "$_rc"
+  return "$_rc"
+}
+
+dispatch_request() {
   case "$REQUEST_COMMAND" in
     system.probe) handle_system_probe ;;
     system.doctor) handle_system_doctor ;;
@@ -39,6 +48,7 @@ main() {
     loop.seams) handle_loop_seams ;;
     golden.record) handle_golden_record ;;
     golden.check) handle_golden_check ;;
+    audit.verify) handle_audit_verify ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

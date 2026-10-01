@@ -59,17 +59,17 @@ Status: draft, nothing implemented. Targets: AE 2024 (24.x), C4D 2024 (Redshift 
 - `project.restore --as-new`: build a fresh copy from any snapshot; never overwrites. Pair with `project.diff` preview.
 - `deps.graph`: footage, fonts, plugins, `.c4d` files, textures per comp; flag single points of failure. Text tree and self-contained offline HTML.
 - `handoff.package`: delivery folder with project, collected assets, font/plugin manifest, render settings, README, and a sqlite receipt proving contents.
-- Hash-chained append-only audit log of every operation run.
+- DONE: hash-chained append-only audit log of every request (opt-in by directory) + `audit.verify`.
 
 ### Phase 9 - Search and recall
 - Receipt store (SL-M4): sqlite3 with FTS5, fixed schema, local volumes only, migrations and integrity receipts.
 - `search`: comp names, layer text, fonts, render notes, dates across all scraped projects and scenes.
 - Preset library: hashed, versioned store of Redshift materials, AE expression snippets, comp templates. `expression.lint` can point at a library entry for known-bad patterns.
 
-### Phase 10 - Shell power features
-- zsh completion for every operation and recipe.
-- Shortcuts: `mj render --last`, `mj open-output`, etc.
-- Declarative shareable recipes, validated against the allowlist so a shared recipe cannot run arbitrary code.
+### Phase 10 - Shell power features — DONE (except render shortcuts)
+- DONE: `mj` front end, `mj ops`, zsh completion driven by `system.describe` args.
+- DONE: declarative recipes (`mj recipe`), validated against the registry before any step runs; shell syntax is inert.
+- Deferred: `mj render --last`, `mj open-output` (need Phase 1 render receipts).
 
 ### Phase 11 - Hardening and release (ongoing)
 - Target-Mac qualification checklist per phase; fuzz new request surfaces.

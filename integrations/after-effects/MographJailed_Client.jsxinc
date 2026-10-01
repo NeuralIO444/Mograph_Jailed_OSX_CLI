@@ -59,7 +59,7 @@
             "volume.inspect", "temp.create", "temp.clean", "media.inspect",
             "media.timing", "media.frame", "package.create", "report.tech",
             "project.ingest", "expression.lint", "plugin.audit", "project.snapshot",
-            "loop.seams", "golden.record", "golden.check"
+            "loop.seams", "golden.record", "golden.check", "audit.verify"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -389,6 +389,10 @@
             input: receiptPath,
             threshold: (typeof threshold === "undefined" ? null : String(threshold))
         });
+    };
+
+    Client.prototype.auditVerify = function (logPath) {
+        return this.call("audit.verify", { path: logPath });
     };
 
     Client.prototype.projectIngest = function (path) {

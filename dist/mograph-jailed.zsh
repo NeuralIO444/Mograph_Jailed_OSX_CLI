@@ -124,7 +124,7 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -247,84 +247,98 @@ has_ascii_control() {
   }'
 }
 
+# Per-command argument schema. Sets MJ_SCHEMA_ALLOWED / MJ_SCHEMA_REQUIRED
+# (space-padded name lists). Also published by system.describe.
+request_schema_for() {
+  MJ_SCHEMA_ALLOWED=""
+  MJ_SCHEMA_REQUIRED=""
+  case "$1" in
+    system.probe|system.doctor|system.describe|temp.create|report.tech)
+      MJ_SCHEMA_ALLOWED=""
+      MJ_SCHEMA_REQUIRED=""
+      ;;
+    runtime.verify)
+      MJ_SCHEMA_ALLOWED=" expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 "
+      MJ_SCHEMA_REQUIRED=" expectedCliVersion expectedProtocolVersion "
+      ;;
+    file.inspect|file.hash|file.provenance|image.inspect|volume.inspect|temp.clean|media.inspect|media.timing)
+      MJ_SCHEMA_ALLOWED=" path "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    media.frame)
+      MJ_SCHEMA_ALLOWED=" path output timeSeconds maxPixels "
+      MJ_SCHEMA_REQUIRED=" path output timeSeconds "
+      ;;
+    asset.manifest)
+      MJ_SCHEMA_ALLOWED=" path format "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    asset.verify)
+      MJ_SCHEMA_ALLOWED=" path expectedFilename expectedSizeBytes expectedModifiedEpoch expectedSha256 "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    search.candidate)
+      MJ_SCHEMA_ALLOWED=" path target maxResults "
+      MJ_SCHEMA_REQUIRED=" path target "
+      ;;
+    image.derivative)
+      MJ_SCHEMA_ALLOWED=" input output target "
+      MJ_SCHEMA_REQUIRED=" input output target "
+      ;;
+    image.stats)
+      MJ_SCHEMA_ALLOWED=" path "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    image.compare)
+      MJ_SCHEMA_ALLOWED=" pathA pathB "
+      MJ_SCHEMA_REQUIRED=" pathA pathB "
+      ;;
+    storage.preflight)
+      MJ_SCHEMA_ALLOWED=" path requiredBytes "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    package.create)
+      MJ_SCHEMA_ALLOWED=" path output "
+      MJ_SCHEMA_REQUIRED=" path output "
+      ;;
+    project.ingest|expression.lint|plugin.audit)
+      MJ_SCHEMA_ALLOWED=" path "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    project.snapshot)
+      MJ_SCHEMA_ALLOWED=" path output "
+      MJ_SCHEMA_REQUIRED=" path output "
+      ;;
+    loop.seams)
+      MJ_SCHEMA_ALLOWED=" path maxResults minFrames "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    golden.record)
+      MJ_SCHEMA_ALLOWED=" path output label "
+      MJ_SCHEMA_REQUIRED=" path output label "
+      ;;
+    golden.check)
+      MJ_SCHEMA_ALLOWED=" path input threshold "
+      MJ_SCHEMA_REQUIRED=" path input "
+      ;;
+    audit.verify)
+      MJ_SCHEMA_ALLOWED=" path "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 validate_request_schema() {
   local _allowed=""
   local _required=""
   local _arg
-  case "$REQUEST_COMMAND" in
-    system.probe|system.doctor|system.describe|temp.create|report.tech)
-      _allowed=""
-      _required=""
-      ;;
-    runtime.verify)
-      _allowed=" expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 "
-      _required=" expectedCliVersion expectedProtocolVersion "
-      ;;
-    file.inspect|file.hash|file.provenance|image.inspect|volume.inspect|temp.clean|media.inspect|media.timing)
-      _allowed=" path "
-      _required=" path "
-      ;;
-    media.frame)
-      _allowed=" path output timeSeconds maxPixels "
-      _required=" path output timeSeconds "
-      ;;
-    asset.manifest)
-      _allowed=" path format "
-      _required=" path "
-      ;;
-    asset.verify)
-      _allowed=" path expectedFilename expectedSizeBytes expectedModifiedEpoch expectedSha256 "
-      _required=" path "
-      ;;
-    search.candidate)
-      _allowed=" path target maxResults "
-      _required=" path target "
-      ;;
-    image.derivative)
-      _allowed=" input output target "
-      _required=" input output target "
-      ;;
-    image.stats)
-      _allowed=" path "
-      _required=" path "
-      ;;
-    image.compare)
-      _allowed=" pathA pathB "
-      _required=" pathA pathB "
-      ;;
-    storage.preflight)
-      _allowed=" path requiredBytes "
-      _required=" path "
-      ;;
-    package.create)
-      _allowed=" path output "
-      _required=" path output "
-      ;;
-    project.ingest|expression.lint|plugin.audit)
-      _allowed=" path "
-      _required=" path "
-      ;;
-    project.snapshot)
-      _allowed=" path output "
-      _required=" path output "
-      ;;
-    loop.seams)
-      _allowed=" path maxResults minFrames "
-      _required=" path "
-      ;;
-    golden.record)
-      _allowed=" path output label "
-      _required=" path output label "
-      ;;
-    golden.check)
-      _allowed=" path input threshold "
-      _required=" path input "
-      ;;
-    *)
-      set_error "UNSUPPORTED_COMMAND" "Command is not allowlisted."
-      return 1
-      ;;
-  esac
+  request_schema_for "$REQUEST_COMMAND" || {
+    set_error "UNSUPPORTED_COMMAND" "Command is not allowlisted."
+    return 1
+  }
+  _allowed="$MJ_SCHEMA_ALLOWED"
+  _required="$MJ_SCHEMA_REQUIRED"
 
   for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels minFrames threshold; do
     if request_arg_present "$_arg"; then
@@ -681,13 +695,14 @@ operation_names() {
     loop.seams \
     golden.record \
     golden.check \
+    audit.verify \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -736,7 +751,7 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
-    loop.seams|golden.record|golden.check)
+    loop.seams|golden.record|golden.check|audit.verify)
       cap_available python3
       ;;
     image.stats|image.compare)
@@ -795,7 +810,7 @@ operation_cost() {
     media.inspect) printf 'PATH_DEPENDENT' ;;
     media.timing) printf 'BOUNDED_MEDIA_PROBE' ;;
     media.frame) printf 'FRAME_DECODE' ;;
-    project.ingest|expression.lint) printf 'SIZE_DEPENDENT' ;;
+    project.ingest|expression.lint|audit.verify) printf 'SIZE_DEPENDENT' ;;
     plugin.audit) printf 'PATH_DEPENDENT' ;;
     project.snapshot) printf 'IO_BOUND' ;;
     package.create) printf 'IO_BOUND' ;;
@@ -834,6 +849,7 @@ operation_authority() {
     expression.lint) printf 'DERIVED_LINT_FINDINGS' ;;
     plugin.audit) printf 'AUTHORITATIVE_FILESYSTEM_METADATA' ;;
     project.snapshot) printf 'AUTHORITATIVE_OPERATION' ;;
+    audit.verify) printf 'DERIVED_AUDIT_CHAIN' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
@@ -847,7 +863,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -866,7 +882,7 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
-    loop.seams|golden.record|golden.check) printf '%s\n' python3 ;;
+    loop.seams|golden.record|golden.check|audit.verify) printf '%s\n' python3 ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
     temp.clean) printf '%s\n' sed rm pwd ;;
@@ -919,10 +935,13 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
-  printf '}'
+  request_schema_for "$_name"
+  printf ',"args":{"allowed":'; printf '%s\n' ${=MJ_SCHEMA_ALLOWED} | emit_string_array_lines
+  printf ',"required":'; printf '%s\n' ${=MJ_SCHEMA_REQUIRED} | emit_string_array_lines
+  printf '}}'
 }
 
 emit_operation_registry() {
@@ -4129,8 +4148,134 @@ PY_GOLDEN_CHECK
   frames_emit_python_result "$_out"
 }
 
+# --- src/modules/audit.zsh ---
+# Audit log — hash-chained, append-only record of every request this runtime handled.
+#
+# Opt-in: logging happens only when the audit directory already exists
+# (default ~/Library/Logs/MographJailed; MJ_AUDIT_DIR overrides). Each line is
+# one JSON object whose "prev" is the SHA-256 of the previous line, so editing
+# or deleting any line breaks the chain from that point. Logging never changes
+# an operation's response or exit code.
+#
+# audit.verify — read-only chain check of an audit log.
+
+MJ_AUDIT_ZERO_HASH=0000000000000000000000000000000000000000000000000000000000000000
+
+audit_dir() {
+  printf '%s' "${MJ_AUDIT_DIR:-${HOME:-}/Library/Logs/MographJailed}"
+}
+
+audit_sha256_stdin() {
+  if cap_available shasum; then
+    /usr/bin/shasum -a 256 | /usr/bin/awk '{print $1}'
+  elif cap_available sha256; then
+    "$(cap_path sha256)" -q
+  else
+    return 1
+  fi
+}
+
+# mkdir is atomic; concurrent runs serialize on it. A lock older than a minute
+# is a crashed writer and is cleared.
+audit_lock() {
+  local _lock="$1" _i=0
+  while ! /bin/mkdir "$_lock" 2>/dev/null; do
+    _i=$((_i + 1))
+    if [ "$_i" -eq 20 ] && [ -n "$(/usr/bin/find "$_lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+      /bin/rmdir "$_lock" 2>/dev/null
+    fi
+    [ "$_i" -lt 50 ] || return 1
+    /bin/sleep 0.1
+  done
+}
+
+audit_append() {
+  local _rc="$1" _dir="" _log="" _lock="" _prev="" _last="" _name="" _first=1 _line=""
+  _dir=$(audit_dir)
+  [ -n "$_dir" ] && [ -d "$_dir" ] && [ -w "$_dir" ] || return 0
+  _log="$_dir/audit.jsonl"
+  _lock="$_dir/.audit.lock"
+  audit_lock "$_lock" || return 0
+
+  _prev="$MJ_AUDIT_ZERO_HASH"
+  if [ -s "$_log" ]; then
+    _last=$(/usr/bin/tail -n 1 "$_log" 2>/dev/null)
+    _prev=$(printf '%s' "$_last" | audit_sha256_stdin 2>/dev/null) || _prev=""
+  fi
+  if [ ${#_prev} -eq 64 ]; then
+    _line=$(
+      printf '{"v":1,"ts":'; json_quote "$(/bin/date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null)"
+      printf ',"cliVersion":'; json_quote "$MOGRAPHJAILED_CLI_VERSION"
+      printf ',"requestId":'; json_quote "${REQUEST_ID:-}"
+      printf ',"command":'; json_quote "${REQUEST_COMMAND:-}"
+      printf ',"exitCode":%s,"args":{' "$_rc"
+      for _name in ${=REQUEST_ARG_NAMES}; do
+        [ "$_first" -eq 1 ] || printf ','
+        _first=0
+        json_quote "$_name"; printf ':'; json_quote "$(request_arg_get "$_name" 2>/dev/null)"
+      done
+      printf '},"prev":'; json_quote "$_prev"; printf '}'
+    )
+    printf '%s\n' "$_line" >> "$_log" 2>/dev/null
+  fi
+  /bin/rmdir "$_lock" 2>/dev/null
+  return 0
+}
+
+handle_audit_verify() {
+  local _path="" _out=""
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path="$MJ_REQUIRED_ARG_VALUE"
+  is_absolute_path "$_path" || { set_error "INVALID_PATH" "Audit log path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  [ -f "$_path" ] || { set_error "INVALID_TARGET" "Audit log must be a regular file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Audit log is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
+  cap_available python3 || { set_error "UNSUPPORTED" "audit.verify requires python3."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
+  mj_require_local_existing_path "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+
+  _out=$(MJ_AUDIT_PATH="$_path" /usr/bin/python3 - <<'PY_AUDIT_VERIFY' 2>/dev/null
+import hashlib, json, os
+path = os.environ["MJ_AUDIT_PATH"]
+prev = "0" * 64
+entries = 0
+broken = None
+reason = None
+first_ts = last_ts = None
+with open(path, "rb") as f:
+    for n, raw in enumerate(f, 1):
+        line = raw.rstrip(b"\n")
+        try:
+            obj = json.loads(line)
+            assert isinstance(obj, dict)
+        except Exception:
+            broken, reason = n, "unparseable line"
+            break
+        if obj.get("prev") != prev:
+            broken, reason = n, "chain mismatch: previous line was altered, removed or inserted"
+            break
+        entries += 1
+        first_ts = first_ts or obj.get("ts")
+        last_ts = obj.get("ts")
+        prev = hashlib.sha256(line).hexdigest()
+print(json.dumps({"ok": True, "data": {
+    "schema": "MJ_AUDIT_VERIFY_1",
+    "path": path,
+    "valid": broken is None,
+    "entriesVerified": entries,
+    "firstBrokenLine": broken,
+    "reason": reason,
+    "firstTimestamp": first_ts,
+    "lastTimestamp": last_ts,
+    "headHash": prev if broken is None else None,
+    "note": "headHash identifies the newest entry; record it elsewhere to detect truncation of the log tail.",
+}}))
+PY_AUDIT_VERIFY
+) || true
+  frames_emit_python_result "$_out"
+}
+
 # --- src/cli/entry.zsh ---
 main() {
+  local _rc=0
   if [ "$#" -ne 2 ] || [ "$1" != "--request" ]; then
     set_error "USAGE" "Usage: mograph-jailed.zsh --request <request-file>"
     emit_error_response "" ""
@@ -4139,9 +4284,17 @@ main() {
 
   if ! load_request_file "$2"; then
     emit_error_response "${REQUEST_COMMAND:-}" "${REQUEST_ID:-}"
+    audit_append 65
     return 65
   fi
 
+  dispatch_request
+  _rc=$?
+  audit_append "$_rc"
+  return "$_rc"
+}
+
+dispatch_request() {
   case "$REQUEST_COMMAND" in
     system.probe) handle_system_probe ;;
     system.doctor) handle_system_doctor ;;
@@ -4171,6 +4324,7 @@ main() {
     loop.seams) handle_loop_seams ;;
     golden.record) handle_golden_record ;;
     golden.check) handle_golden_check ;;
+    audit.verify) handle_audit_verify ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

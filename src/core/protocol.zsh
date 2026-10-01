@@ -16,7 +16,7 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -139,84 +139,98 @@ has_ascii_control() {
   }'
 }
 
+# Per-command argument schema. Sets MJ_SCHEMA_ALLOWED / MJ_SCHEMA_REQUIRED
+# (space-padded name lists). Also published by system.describe.
+request_schema_for() {
+  MJ_SCHEMA_ALLOWED=""
+  MJ_SCHEMA_REQUIRED=""
+  case "$1" in
+    system.probe|system.doctor|system.describe|temp.create|report.tech)
+      MJ_SCHEMA_ALLOWED=""
+      MJ_SCHEMA_REQUIRED=""
+      ;;
+    runtime.verify)
+      MJ_SCHEMA_ALLOWED=" expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 "
+      MJ_SCHEMA_REQUIRED=" expectedCliVersion expectedProtocolVersion "
+      ;;
+    file.inspect|file.hash|file.provenance|image.inspect|volume.inspect|temp.clean|media.inspect|media.timing)
+      MJ_SCHEMA_ALLOWED=" path "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    media.frame)
+      MJ_SCHEMA_ALLOWED=" path output timeSeconds maxPixels "
+      MJ_SCHEMA_REQUIRED=" path output timeSeconds "
+      ;;
+    asset.manifest)
+      MJ_SCHEMA_ALLOWED=" path format "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    asset.verify)
+      MJ_SCHEMA_ALLOWED=" path expectedFilename expectedSizeBytes expectedModifiedEpoch expectedSha256 "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    search.candidate)
+      MJ_SCHEMA_ALLOWED=" path target maxResults "
+      MJ_SCHEMA_REQUIRED=" path target "
+      ;;
+    image.derivative)
+      MJ_SCHEMA_ALLOWED=" input output target "
+      MJ_SCHEMA_REQUIRED=" input output target "
+      ;;
+    image.stats)
+      MJ_SCHEMA_ALLOWED=" path "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    image.compare)
+      MJ_SCHEMA_ALLOWED=" pathA pathB "
+      MJ_SCHEMA_REQUIRED=" pathA pathB "
+      ;;
+    storage.preflight)
+      MJ_SCHEMA_ALLOWED=" path requiredBytes "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    package.create)
+      MJ_SCHEMA_ALLOWED=" path output "
+      MJ_SCHEMA_REQUIRED=" path output "
+      ;;
+    project.ingest|expression.lint|plugin.audit)
+      MJ_SCHEMA_ALLOWED=" path "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    project.snapshot)
+      MJ_SCHEMA_ALLOWED=" path output "
+      MJ_SCHEMA_REQUIRED=" path output "
+      ;;
+    loop.seams)
+      MJ_SCHEMA_ALLOWED=" path maxResults minFrames "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    golden.record)
+      MJ_SCHEMA_ALLOWED=" path output label "
+      MJ_SCHEMA_REQUIRED=" path output label "
+      ;;
+    golden.check)
+      MJ_SCHEMA_ALLOWED=" path input threshold "
+      MJ_SCHEMA_REQUIRED=" path input "
+      ;;
+    audit.verify)
+      MJ_SCHEMA_ALLOWED=" path "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 validate_request_schema() {
   local _allowed=""
   local _required=""
   local _arg
-  case "$REQUEST_COMMAND" in
-    system.probe|system.doctor|system.describe|temp.create|report.tech)
-      _allowed=""
-      _required=""
-      ;;
-    runtime.verify)
-      _allowed=" expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 "
-      _required=" expectedCliVersion expectedProtocolVersion "
-      ;;
-    file.inspect|file.hash|file.provenance|image.inspect|volume.inspect|temp.clean|media.inspect|media.timing)
-      _allowed=" path "
-      _required=" path "
-      ;;
-    media.frame)
-      _allowed=" path output timeSeconds maxPixels "
-      _required=" path output timeSeconds "
-      ;;
-    asset.manifest)
-      _allowed=" path format "
-      _required=" path "
-      ;;
-    asset.verify)
-      _allowed=" path expectedFilename expectedSizeBytes expectedModifiedEpoch expectedSha256 "
-      _required=" path "
-      ;;
-    search.candidate)
-      _allowed=" path target maxResults "
-      _required=" path target "
-      ;;
-    image.derivative)
-      _allowed=" input output target "
-      _required=" input output target "
-      ;;
-    image.stats)
-      _allowed=" path "
-      _required=" path "
-      ;;
-    image.compare)
-      _allowed=" pathA pathB "
-      _required=" pathA pathB "
-      ;;
-    storage.preflight)
-      _allowed=" path requiredBytes "
-      _required=" path "
-      ;;
-    package.create)
-      _allowed=" path output "
-      _required=" path output "
-      ;;
-    project.ingest|expression.lint|plugin.audit)
-      _allowed=" path "
-      _required=" path "
-      ;;
-    project.snapshot)
-      _allowed=" path output "
-      _required=" path output "
-      ;;
-    loop.seams)
-      _allowed=" path maxResults minFrames "
-      _required=" path "
-      ;;
-    golden.record)
-      _allowed=" path output label "
-      _required=" path output label "
-      ;;
-    golden.check)
-      _allowed=" path input threshold "
-      _required=" path input "
-      ;;
-    *)
-      set_error "UNSUPPORTED_COMMAND" "Command is not allowlisted."
-      return 1
-      ;;
-  esac
+  request_schema_for "$REQUEST_COMMAND" || {
+    set_error "UNSUPPORTED_COMMAND" "Command is not allowlisted."
+    return 1
+  }
+  _allowed="$MJ_SCHEMA_ALLOWED"
+  _required="$MJ_SCHEMA_REQUIRED"
 
   for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels minFrames threshold; do
     if request_arg_present "$_arg"; then

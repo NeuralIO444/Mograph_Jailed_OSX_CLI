@@ -169,3 +169,20 @@ All three are `LOCAL_ONLY`, `FRAME_COUNT_DEPENDENT`, `DERIVED_IMAGE_SIGNATURE`, 
 - `loop.seams` returns `MJ_LOOP_SEAMS_1`: ranked `{startFrame, endFrame, lengthFrames, score}` candidates. The loop plays `startFrame..endFrame-1`; `endFrame` is the frame that should match `startFrame`. Near-duplicate seams (both ends within 2 frames) are suppressed. Mutation `INTERNAL_TEMP`.
 - `golden.record` writes `<output>/<label>.golden.json` (`MJ_GOLDEN_1`: per-frame SHA-256 + signature) and refuses to overwrite (`OUTPUT_EXISTS`). Mutation `DERIVATIVE_CREATE`.
 - `golden.check` returns `MJ_GOLDEN_CHECK_1`: per-frame `identical` (same bytes), `pass` (score ≥ threshold), `changed`, or `missing`, plus `extraFrames`, `worstScore`, and overall `passed`. Mutation `INTERNAL_TEMP`.
+
+## Audit contract
+
+Protocol v1 additionally allowlists `audit.verify`, growing the public surface from 30 to 31 operations. No existing command schema is reinterpreted.
+
+```text
+command=audit.verify
+arg.path=<Base64 absolute audit.jsonl path>
+```
+
+`LOCAL_ONLY`, `SIZE_DEPENDENT`, mutation `NONE`, authority `DERIVED_AUDIT_CHAIN`, requires `python3`. Returns `MJ_AUDIT_VERIFY_1`: `valid`, `entriesVerified`, `firstBrokenLine`, `reason`, first/last timestamps, and `headHash` (SHA-256 of the newest line, only when valid).
+
+The runtime appends to `<dir>/audit.jsonl` after every request, including rejected ones, when `<dir>` already exists. `<dir>` is `~/Library/Logs/MographJailed`, or `MJ_AUDIT_DIR` when set. Each line is `{"v":1,"ts","cliVersion","requestId","command","exitCode","args":{name:value},"prev"}`; `prev` is the SHA-256 of the previous line's bytes (64 zeros for the first). Writers serialize on an atomic `mkdir` lock. Logging never alters a response or exit code, and is skipped (not retried) if the lock cannot be taken within 5 s.
+
+## Argument schemas in system.describe
+
+Each operation descriptor in `system.describe` now includes `"args":{"allowed":[...],"required":[...]}`, generated from the same table the request validator uses. Clients and shell completion should read this instead of hard-coding argument lists.

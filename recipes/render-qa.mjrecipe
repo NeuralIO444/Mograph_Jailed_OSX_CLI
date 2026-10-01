@@ -1,0 +1,5 @@
+# Render QA for a folder of rendered PNG frames.
+#   mj recipe recipes/render-qa.mjrecipe frames=/path/to/frames golden=/path/to/hero.golden.json
+# One allowlisted operation per line; {{name}} values come from the command line.
+golden.check path={{frames}} input={{golden}}
+loop.seams path={{frames}} maxResults=3

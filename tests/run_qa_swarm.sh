@@ -113,6 +113,7 @@ for f in \
   src/modules/package.zsh \
   src/modules/project.zsh \
   src/modules/frames.zsh \
+  src/modules/audit.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$EXPECTED_DIST"
   cat "$ROOT/$f" >> "$EXPECTED_DIST"

@@ -28,7 +28,7 @@ printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=hello\ncommand=system.probe\n' > /tmp
 zsh -f dist/mograph-jailed.zsh --request /tmp/mj-request.txt
 ```
 
-You get one JSON envelope on stdout. `system.describe` lists all 30 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
+You get one JSON envelope on stdout. `system.describe` lists all 31 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
 
 ## Production rules
 
@@ -65,6 +65,11 @@ Frame-sequence tools (Power CLI Phases 5–6, see `docs/PLAN_AE_C4D_POWER_CLI.md
 
 - **`loop.seams`** — rank the best start/end frames for a seamless loop.
 - **`golden.record`** / **`golden.check`** — record key-frame hashes and signatures once, then flag frames whose look changed after a plugin, Redshift or macOS update.
+
+Power tools (Phases 8 and 10):
+
+- **`mj`** — `mj <operation> name=value …` with tab completion, `mj ops`, and `mj recipe <file>` for checked, data-only multi-step recipes (see `recipes/`).
+- **Audit log** — `mkdir -p ~/Library/Logs/MographJailed` turns on a hash-chained log of every request; `audit.verify` (operation 31) detects edits and deletions.
 
 The Standard Library 1.0 line (`media.frame`, `media.timing`, ImageKit, FrameKit) remains intact underneath; `0.3.0-dev.3` qualified the `image.stats` / `image.compare` slice.
 
