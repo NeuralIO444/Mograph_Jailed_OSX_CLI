@@ -37,7 +37,8 @@ epoch=$(date +%s)
 CONFIG_FILE="${MJ_CONFIG:-$HOME/.config/mograph-jailed/config}"
 HOOK="${MJ_POST_SNAPSHOT_HOOK:-}"
 if [[ -z "$HOOK" && -r "$CONFIG_FILE" ]]; then
-    HOOK=$(sed -n 's/^[[:space:]]*post_snapshot_hook[[:space:]]*=[[:space:]]*//p' "$CONFIG_FILE" | tail -1)
+    # Same reading rules as mj-config.zsh: trim whitespace (including a CR from CRLF files) at both ends.
+    HOOK=$(sed -n 's/^[[:space:]]*post_snapshot_hook[[:space:]]*=//p' "$CONFIG_FILE" | tail -1 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 fi
 HOOK_TIMEOUT="${MJ_HOOK_TIMEOUT:-30}"
 HOOK_LOG="$VERSIONS_DIR/hook.log"
@@ -45,14 +46,27 @@ zmodload zsh/stat 2>/dev/null
 
 run_hook() {   # run_hook <receipt> <snapshot> <source> <sha256>
     [[ -n "$HOOK" ]] || return 0
-    local real="${HOOK:A}" uid mode why=""
+    local real="${HOOK:A}" uid mode why="" me d
+    me=$(id -u)
     if [[ "$HOOK" != /* ]]; then why="path is not absolute"
     elif [[ ! -f "$real" ]]; then why="not a file"
     elif [[ ! -x "$real" ]]; then why="not executable"
     else
         uid=$(zstat +uid "$real" 2>/dev/null); mode=$(zstat +mode "$real" 2>/dev/null)
-        if [[ "$uid" != "$(id -u)" ]]; then why="not owned by you"
+        if [[ "$uid" != "$me" ]]; then why="not owned by you"
         elif (( mode & 8#022 )); then why="writable by others"
+        else
+            # Every folder above the script must also be safe: someone who can write a folder on the
+            # path can swap the script. Each must belong to you or root and not be writable by group
+            # or others (a sticky bit, as on /tmp, stops others replacing your files, so it is allowed).
+            d="${real:h}"
+            while true; do
+                uid=$(zstat +uid "$d" 2>/dev/null); mode=$(zstat +mode "$d" 2>/dev/null)
+                if [[ "$uid" != "$me" && "$uid" != 0 ]]; then why="a folder above it is owned by someone else ($d)"; break; fi
+                if (( mode & 8#022 )) && ! (( mode & 8#1000 )); then why="a folder above it is writable by others ($d)"; break; fi
+                [[ "$d" == "/" ]] && break
+                d="${d:h}"
+            done
         fi
     fi
     if [[ -n "$why" ]]; then
@@ -60,13 +74,21 @@ run_hook() {   # run_hook <receipt> <snapshot> <source> <sha256>
         return 0
     fi
     print -r "$(date '+%F %T') --- $HOOK $1" >> "$HOOK_LOG"
+    # The hook gets its own process group (perl's setpgrp), so a timeout can stop everything it
+    # started, grandchildren included, not just the script itself.
+    local pgrp=0
+    local -a runner
+    if [[ -x /usr/bin/perl ]]; then runner=(/usr/bin/perl -e 'setpgrp(0,0); exec { $ARGV[0] } @ARGV'); pgrp=1; else runner=(); fi
     ( MJ_SNAPSHOT_RECEIPT="$1" MJ_SNAPSHOT_PATH="$2" MJ_SOURCE_PATH="$3" MJ_SNAPSHOT_SHA256="$4" \
-        exec "$real" "$1" </dev/null >> "$HOOK_LOG" 2>&1 ) &
+        exec "${runner[@]}" "$real" "$1" </dev/null >> "$HOOK_LOG" 2>&1 ) &
     local pid=$! waited=0 rc
     while kill -0 "$pid" 2>/dev/null; do
         if (( waited >= HOOK_TIMEOUT )); then
-            /usr/bin/pkill -TERM -P "$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null
-            sleep 1; /usr/bin/pkill -KILL -P "$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null
+            if (( pgrp )); then kill -TERM -- "-$pid" 2>/dev/null; else /usr/bin/pkill -TERM -P "$pid" 2>/dev/null; fi
+            kill -TERM "$pid" 2>/dev/null
+            sleep 1
+            if (( pgrp )); then kill -KILL -- "-$pid" 2>/dev/null; else /usr/bin/pkill -KILL -P "$pid" 2>/dev/null; fi
+            kill -KILL "$pid" 2>/dev/null
             wait "$pid" 2>/dev/null
             print -r "$(date '+%F %T') hook timed out after ${HOOK_TIMEOUT}s (stopped): $HOOK" >> "$LOG_FILE"
             return 0

@@ -201,6 +201,10 @@ _f="$TMP/torn_req.txt"; printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=torn\ncommand
 MJ_TEST_SNAPSHOT_APPEND=1 "$CLI" --request "$_f" > "$TMP/torn.json" 2>/dev/null || true
 check jq -e '.ok==false and .error.code=="SNAPSHOT_UNSTABLE"' "$TMP/torn.json"
 check test -z "$(ls -A "$TMP/torn/versions")"                 # nothing kept: no snapshot, receipt, pointer or partial
+# T1: a staged copy that does not match a stable source is a bad copy, reported as such and not kept
+MJ_TEST_SNAPSHOT_CORRUPT_COPY=1 "$CLI" --request "$_f" > "$TMP/torn3.json" 2>/dev/null || true
+check jq -e '.ok==false and .error.code=="SNAPSHOT_FAILED" and (.error.message|test("did not match"))' "$TMP/torn3.json"
+check test -z "$(ls -A "$TMP/torn/versions")"
 # the next, quiet attempt succeeds and is verified
 "$CLI" --request "$_f" > "$TMP/torn2.json" 2>/dev/null || true
 check jq -e '.ok==true and .data.snapshotCreated==true and .data.copyVerified==true' "$TMP/torn2.json"

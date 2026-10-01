@@ -54,7 +54,7 @@ for f in \
   fi
   if [ "$f" = "src/modules/project.zsh" ]; then
     printf '%s\n' 'PROJECT_OBSERVE_MAX_PLUGIN_FILE_BYTES="${MJ_TEST_PLUGIN_FILE_LIMIT:-2147483648}"' >> "$OUT"
-    printf '%s\n' 'snapshot_test_hook() { [ -n "${MJ_TEST_SNAPSHOT_APPEND:-}" ] && printf x >> "$1"; return 0; }' >> "$OUT"
+    printf '%s\n' 'snapshot_test_hook() { [ -n "${MJ_TEST_SNAPSHOT_APPEND:-}" ] && printf x >> "$1"; [ -n "${MJ_TEST_SNAPSHOT_CORRUPT_COPY:-}" ] && printf x >> "$2"; return 0; }' >> "$OUT"
   fi
 done
 chmod 755 "$OUT"

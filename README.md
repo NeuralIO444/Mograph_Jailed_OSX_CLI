@@ -32,7 +32,7 @@ You get one JSON envelope on stdout. `system.describe` lists all 46 allowlisted 
 
 ## Production rules
 
-- No sudo. No package manager. No Xcode. No background daemon.
+- No sudo. No package manager. No Xcode. No always-on daemon (the optional watcher is a user-level LaunchAgent: `mj watch off` removes it).
 - No public arbitrary-shell or arbitrary-SQL operation; product code submits allowlisted structured requests.
 - Standard Library work is local-only by default; network and unknown storage fail closed.
 - Source media is never mutated; derivatives never overwrite.
@@ -42,6 +42,7 @@ You get one JSON envelope on stdout. `system.describe` lists all 46 allowlisted 
 - stock macOS (Sequoia or newer) with `/bin/zsh`, Apple Silicon or Intel
 - no Node/npm, Homebrew, FFmpeg, OpenCV, daemon, local server, cloud API, or admin installation required
 - **`/usr/bin/python3` is required for the Project observer, Frame tools, Protect work, Search/audits and Host rendering operations** (everything added since 0.3). On a Mac without the Xcode Command Line Tools, that path is a stub that offers to install them, so on a locked-down Mac confirm `/usr/bin/python3 --version` works before relying on those operations. Python is used with its standard library only (`sqlite3`, `json`, `hashlib`, `subprocess`); no packages are installed. `system.doctor` and `system.describe` report which operations are available.
+- `jq` (shipped with macOS 15 and later at `/usr/bin/jq`) is used by `mj`, the watcher and frame extraction
 - the original asset, image, media, storage and package operations need only stock macOS tools
 - optional Apple-native capabilities are probed and fail closed
 - After Effects invocation uses `/bin/zsh -f` to avoid user shell-startup state
@@ -52,7 +53,7 @@ Ruby/Perl, Xcode tools, Node, and GNU utilities may be used by isolated developm
 
 ## What it is
 
-A local, zero-daemon toolkit for motion-design pipelines on managed Macs. It looks at After Effects and Cinema 4D work, renders it, checks it, searches it and packages it — and never edits your projects. Everything is an allowlisted operation with a structured request and a JSON response. **44 operations**, no network, no sudo, no background service.
+A local, zero-daemon toolkit for motion-design pipelines on managed Macs. It looks at After Effects and Cinema 4D work, renders it, checks it, searches it and packages it — and never edits your projects. Everything is an allowlisted operation with a structured request and a JSON response. **46 operations**, no network, no sudo, and no background process unless you turn on the optional watcher (a user-level LaunchAgent you can remove with one command).
 
 | Area | Operations | What you get |
 |---|---|---|
@@ -111,7 +112,7 @@ Every one of these is a thin wrapper over an operation and prints sentences, not
 - **Unattended hooks are fenced.** An optional `post_snapshot_hook` runs only if it is an executable you own that nobody else can write to, directly (no shell), with a time limit, and can never harm a snapshot.
 - **Stock macOS.** Runs on `/bin/zsh` plus the system `python3` (only for the Power CLI operations). See `DEPENDENCY_AUDIT.md`.
 
-Protocol v1 is preserved and the public surface has grown additively: 20 → 23 → 27 → 44 operations. The full request and response contracts are in `PROTOCOL.md`; the roadmap is `docs/PLAN_AE_C4D_POWER_CLI.md` and the GitHub milestones. Scraper schema: `docs/MJ_PROJECT_SCRAPE_1.md`; observer tiers: `docs/TIER0_OBSERVER.md`.
+Protocol v1 is preserved and the public surface has grown additively: 20 → 23 → 27 → 46 operations. The full request and response contracts are in `PROTOCOL.md`; the roadmap is `docs/PLAN_AE_C4D_POWER_CLI.md` and the GitHub milestones. Scraper schema: `docs/MJ_PROJECT_SCRAPE_1.md`; observer tiers: `docs/TIER0_OBSERVER.md`.
 
 ## Existing asset intelligence
 

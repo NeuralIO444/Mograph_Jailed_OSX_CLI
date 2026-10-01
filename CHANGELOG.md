@@ -2,7 +2,15 @@
 
 ## 0.4.0-dev.1 — 2026-10-01
 
-Power CLI for After Effects and Cinema 4D. Protocol v1 preserved; the public surface grew additively from 27 to 44 operations. The sections below describe the pieces.
+Power CLI for After Effects and Cinema 4D. Protocol v1 preserved; the public surface grew additively from 27 to 46 operations. The sections below describe the pieces.
+
+### Fixes from the independent QA review of this work
+
+- `project.ingest` / `expression.lint` returned exit 0 on request errors; now 65 (and the audit log records it). Content errors in a scrape (`INVALID_JSON`, `SCHEMA_MISMATCH`, `SCRAPE_TOO_LARGE`) are exit 65 from every operation that reads one; `project.health` now reports the real one.
+- Snapshot hooks: also refuse a script under a folder others can write (sticky folders such as /tmp allowed), kill the hook's whole process group on timeout, read the same config values as `mj`; staged-copy mismatch is `SNAPSHOT_FAILED`, a changing source `SNAPSHOT_UNSTABLE`.
+- Scraper writes `scrapedAt` in UTC (`...Z`); `project.health` treats a bare timestamp as local time, so snapshot freshness is right in any timezone.
+- `project.diff` no longer reports index shifts as moves (`layersMoved`, `footageMoved` counted); `mj explain` no longer says "No differences" when there are, and no longer says "Nothing was changed" after a render failure; health forwards the scrape's truncation warnings and trends compare one formula version.
+- `mj snapshot Foo` prefers the exact name over `Foo_v2`, and typed `*`/`[]` are not wildcards. Installer refuses files not in its checksum list. `--request -` removes its temp file on signals. Scraper guard handles split/commented calls, more mutators, project settings, other file writes, and computed dispatch.
 
 ### Review backlog (issues #1-#33)
 
@@ -10,7 +18,8 @@ Power CLI for After Effects and Cinema 4D. Protocol v1 preserved; the public sur
 - Runtime: `--help` / `--version` (#13); error-code reference with completeness test (#24); real `warnings` (#17); validated image stats (#18); `volume.inspect` gate (#11); `plugin.audit` size bound and hashing-time guidance (#19); `--request -` (#21); `system.doctor` guidance (#23); `project.diff` (#22); `project.health` (#32) with store schema v3; teaching lint (#33).
 - Watcher and dashboard: error codes in the log, collision-free request files, `.AEP` (#14); cached receipt ingest (#16); `--json` mode (#25); snapshot hooks (#31).
 - Human CLI: `mj snapshot/versions/lint/health/diff/explain/watch/doctor/config` (#26), `mj explain` (#28), config file (#29), completions (#30), dashboard offered at install end (#27), installer checksum verification and pinning (#15), `_mj_b64` wrapping fix (#6).
-- 46 operations. Tests added: errors 31, scraper guard 74, review fixes 59, human CLI 201.
+- 46 operations. Tests added: errors 69, scraper guard 98, review fixes 63, human CLI 232.
+- Rejected-by-the-guard is a long list, not "every" mutation: it is a text search, and the residual risks are stated in `SECURITY.md`.
 
 ### Fixes from the 2026-09-30 review
 

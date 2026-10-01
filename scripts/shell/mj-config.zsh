@@ -34,6 +34,7 @@ _mj_config_default() {
 
 # Value from the file only (last assignment wins). Prints nothing if unset.
 _mj_config_file_value() {
+    setopt localoptions extendedglob      # the [[:space:]]# trim below needs it; scripts run under zsh -f
     local f key="$1" line k v val=""
     f=$(_mj_config_file)
     [ -r "$f" ] || return 0
@@ -41,6 +42,7 @@ _mj_config_file_value() {
         case "$line" in ''|'#'*) continue ;; esac
         k=${line%%=*}; v=${line#*=}
         k=${k//[[:space:]]/}
+        v=${v##[[:space:]]#}; v=${v%%[[:space:]]#}      # trim both ends (a CRLF file leaves a CR)
         [ "$k" = "$key" ] && val="$v"
     done < "$f"
     print -r -- "$val"

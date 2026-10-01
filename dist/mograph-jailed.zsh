@@ -4039,6 +4039,7 @@ PY_EXPRESSION_LINT
 }
 
 handle_project_ingest() {
+  local _rc=0
   local _path=""
   local _pyout=""
   local _data=""
@@ -4046,7 +4047,7 @@ handle_project_ingest() {
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
-  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
+  project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
 
   _pyout=$(project_run_ingest "$_path") || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
@@ -4065,6 +4066,7 @@ handle_project_ingest() {
 }
 
 handle_expression_lint() {
+  local _rc=0
   local _path=""
   local _pyout=""
   local _data=""
@@ -4072,7 +4074,7 @@ handle_expression_lint() {
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
-  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
+  project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
 
   _pyout=$(project_run_lint "$_path") || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
@@ -4248,11 +4250,17 @@ handle_project_snapshot() {
   else
     /bin/cp "$_path" "$_partial" 2>/dev/null || { /bin/rm -f "$_partial" 2>/dev/null; set_error "SNAPSHOT_FAILED" "Could not copy the project to the versions directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   fi
-  snapshot_test_hook "$_path"
+  snapshot_test_hook "$_path" "$_partial"
   hash_sha256_file "$_partial" 2>/dev/null
   if [ "$MJ_HASH_VALUE" != "$_sha_value" ]; then
+    # Either the project changed under the copy, or the copy itself is bad; say which.
     /bin/rm -f "$_partial" 2>/dev/null
-    set_error "SNAPSHOT_UNSTABLE" "The project changed while it was being copied; no snapshot was kept. It will be retried on the next save."
+    hash_sha256_file "$_path" 2>/dev/null
+    if [ "$MJ_HASH_VALUE" != "$_sha_value" ]; then
+      set_error "SNAPSHOT_UNSTABLE" "The project changed while it was being copied; no snapshot was kept. It will be retried on the next save."
+    else
+      set_error "SNAPSHOT_FAILED" "The copy did not match the project (a disk or filesystem problem); no snapshot was kept."
+    fi
     emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74
   fi
   hash_sha256_file "$_path" 2>/dev/null
@@ -4356,6 +4364,9 @@ frames_emit_python_result() {
   MJ_FRAMES_ERR_MSG=$(printf '%s' "$_out" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("message","Frame engine failed."))' 2>/dev/null || printf 'Frame engine failed.')
   set_error "$MJ_FRAMES_ERR_CODE" "$MJ_FRAMES_ERR_MSG"
   emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
+  case "$MJ_FRAMES_ERR_CODE" in
+    INVALID_JSON|SCHEMA_MISMATCH|SCRAPE_TOO_LARGE) return 65 ;;    # the file you gave is not acceptable, same as ingest and lint
+  esac
   return 74
 }
 
@@ -5762,8 +5773,8 @@ handle_project_diff() {
 MAX_CHANGES = 200
 ida, idb = tree_id(os.environ["MJ_A"]), tree_id(os.environ["MJ_B"])
 a, b = load_scrape(os.environ["MJ_A"]), load_scrape(os.environ["MJ_B"])
-S = {k: 0 for k in ("compsAdded", "compsRemoved", "compsChanged", "layersAdded", "layersRemoved", "layersChanged", "expressionsChanged",
-                    "footageAdded", "footageRemoved", "footageMissingChanged", "fontsAdded", "fontsRemoved", "effectsAdded", "effectsRemoved")}
+S = {k: 0 for k in ("compsAdded", "compsRemoved", "compsChanged", "layersAdded", "layersRemoved", "layersChanged", "layersMoved", "expressionsChanged",
+                    "footageAdded", "footageRemoved", "footageMissingChanged", "footageMoved", "fontsAdded", "fontsRemoved", "effectsAdded", "effectsRemoved")}
 changes = []
 def note(kind, text, **extra):
     d = {"kind": kind, "text": text}; d.update(extra); changes.append(d)
@@ -5817,6 +5828,12 @@ for k in sorted(set(A) & set(B)):
         S["layersAdded"] += 1; note("layer", 'layer "%s" added to "%s"' % (LB[lk].get("name"), cname), comp=cname, layer=LB[lk].get("name"))
     for lk in sorted(set(LA) - set(LB)):
         S["layersRemoved"] += 1; note("layer", 'layer "%s" removed from "%s"' % (LA[lk].get("name"), cname), comp=cname, layer=LA[lk].get("name"))
+    # A layer "moved" only if its place among the layers both versions share changed; inserting or
+    # deleting a layer shifts every index below it but moves nothing.
+    common_a = [k for k in LA if k in LB]
+    common_b = [k for k in LB if k in LA]
+    rank_a = {k: i for i, k in enumerate(common_a)}
+    rank_b = {k: i for i, k in enumerate(common_b)}
     for lk in sorted(set(LA) & set(LB)):
         p, q = LA[lk], LB[lk]
         lname, bits = q.get("name"), []
@@ -5837,8 +5854,9 @@ for k in sorted(set(A) & set(B)):
             S["expressionsChanged"] += 1
             what = "added" if pp not in xp else "removed" if pp not in xq else "changed"
             note("expression", 'layer "%s" in "%s": expression on %s %s' % (lname, cname, pp, what), comp=cname, layer=lname, propertyPath=pp)
-        if num(p.get("index")) is not None and num(q.get("index")) is not None and p["index"] != q["index"] and not bits and not changed_props:
-            bits.append("moved from position %d to %d" % (p["index"], q["index"]))
+        if rank_a[lk] != rank_b[lk] and not bits and not changed_props:
+            S["layersMoved"] += 1; comp_changed = True
+            note("layer", 'layer "%s" in "%s" moved in the stack' % (lname, cname), comp=cname, layer=lname)
         if bits:
             S["layersChanged"] += 1
             note("layer", 'layer "%s" in "%s": %s' % (lname, cname, "; ".join(bits)), comp=cname, layer=lname)
@@ -5863,6 +5881,7 @@ for k in sorted(set(FA) & set(FB)):
         S["footageMissingChanged"] += 1
         note("footage", 'footage "%s" %s' % (q.get("name"), "went missing" if q.get("missing") else "is no longer missing"))
     elif (p.get("path") or "") != (q.get("path") or ""):
+        S["footageMoved"] += 1
         note("footage", 'footage "%s" moved: %s -> %s' % (q.get("name"), p.get("path") or "none", q.get("path") or "none"))
 fonta, fontb = {str(f) for f in a["fonts"]}, {str(f) for f in b["fonts"]}
 for f in sorted(fontb - fonta):
@@ -5902,7 +5921,7 @@ PY_PROJECT_DIFF
 }
 
 handle_project_health() {
-  local _rc=0 _path="" _versions="" _fmt="score" _ing="" _lint="" _out=""
+  local _rc=0 _path="" _versions="" _fmt="score" _ing="" _lint="" _out="" _data=""
   request_arg_present format && _fmt=$(request_arg_get format)
   case "$_fmt" in score|record|all) ;; *) set_error "INVALID_ARGUMENT" "format must be score, record or all."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
 
@@ -5910,7 +5929,7 @@ handle_project_health() {
     library_require_store existing || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
     _out=$(MJ_STORE="$MJ_STORE" MJ_FORMULA="$HEALTH_FORMULA_VERSION" library_python <<'PY_HEALTH_ALL'
 db = open_db(os.environ["MJ_STORE"])
-rows = db.execute("SELECT project_path, scraped_at, score FROM health ORDER BY project_path, scraped_at").fetchall()
+rows = db.execute("SELECT project_path, scraped_at, score FROM health WHERE formula_version = ? ORDER BY project_path, scraped_at", (int(os.environ["MJ_FORMULA"]),)).fetchall()
 by = {}
 for pp, at, sc in rows:
     by.setdefault(pp, []).append((at, sc))
@@ -5940,7 +5959,11 @@ PY_HEALTH_ALL
     MJ_STORE=""
   fi
   _ing=$(project_run_ingest "$_path") || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
-  _ing=$(project_emit_python_data "$_ing" 2>/dev/null) || { set_error "SCHEMA_MISMATCH" "Scrape file must be an MJ_PROJECT_SCRAPE_1 document."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  _data=$(project_emit_python_data "$_ing" 2>/dev/null) || {
+    # the engine's envelope names the real problem (invalid JSON, too large, wrong schema): pass it on
+    frames_emit_python_result "$_ing"; return $?
+  }
+  _ing="$_data"
   _lint=$(project_run_lint "$_path") || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   _lint=$(project_emit_python_data "$_lint" 2>/dev/null) || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
@@ -5975,7 +5998,10 @@ if versions:
     stamps = sorted(m.group(1) for n in os.listdir(versions) for m in [pat.match(n)] if m)
     scraped = str(doc.get("scrapedAt", ""))
     try:
-        scraped_epoch = calendar.timegm(time.strptime(scraped[:19], "%Y-%m-%dT%H:%M:%S"))
+        parsed = time.strptime(scraped[:19], "%Y-%m-%dT%H:%M:%S")
+        # "...Z" is UTC. A bare timestamp (older scraper builds) is the scraping machine's local time,
+        # which we take to be this machine's, the same as the snapshot stamps are UTC.
+        scraped_epoch = calendar.timegm(parsed) if scraped.endswith("Z") else time.mktime(parsed)
     except ValueError:
         scraped_epoch = time.time()
     if not stamps:
@@ -5995,7 +6021,9 @@ band = "healthy" if score >= 90 else "needs a look" if score >= 70 else "at risk
 out = {"schema": "MJ_PROJECT_HEALTH_1", "projectName": pname, "projectPath": doc.get("projectPath"), "scrapedAt": doc.get("scrapedAt"),
        "score": score, "band": band, "formulaVersion": int(os.environ["MJ_FORMULA"]), "components": comps,
        "formula": "100 x earned / measurable points. footage 35 (-12 per missing item, -3 per unlinked), expressions 40 (-8 per error, -3 per warning), snapshots 25 (0/15/25 by age of newest snapshot, only when measured).",
-       "recorded": False, "trend": None, "sourceUnchanged": tree_id(os.environ["MJ_SCRAPE"]) == scrape_id}
+       "recorded": False, "trend": None, "sourceUnchanged": tree_id(os.environ["MJ_SCRAPE"]) == scrape_id,
+       # The score is built from what the scrape holds; if the scrape is partial the reader must know.
+       "_warnings": list(ing.get("_warnings") or [])}
 if os.environ["MJ_FMT"] == "record":
     db = open_db(os.environ["MJ_STORE"], create=True)
     sha = sha256_file(os.environ["MJ_SCRAPE"])
@@ -6399,6 +6427,13 @@ PY_C4D_RENDER
 }
 
 # --- src/cli/entry.zsh ---
+MJ_STDIN_REQ=""
+MJ_STDIN_HEAD_PID=""
+mj_cleanup_stdin() {
+  [ -z "$MJ_STDIN_HEAD_PID" ] || kill "$MJ_STDIN_HEAD_PID" 2>/dev/null
+  [ -z "$MJ_STDIN_REQ" ] || /bin/rm -f "$MJ_STDIN_REQ"
+}
+
 print_help() {
   local _op=""
   printf 'mograph-jailed %s (protocol %s)\n\n' "$MOGRAPHJAILED_CLI_VERSION" "$MOGRAPHJAILED_PROTOCOL_VERSION"
@@ -6420,21 +6455,26 @@ EOF_HELP_OPS
 
 main() {
   local _rc=0
-  local _stdin_req=""
   # `--request -` reads the request from standard input. It is copied (bounded) to a private
   # temp file first, so the parser sees an ordinary file and no special case leaks further.
   if [ "$#" -eq 2 ] && [ "$1" = "--request" ] && [ "$2" = "-" ]; then
-    _stdin_req=$(/usr/bin/mktemp "$(mj_tmp_parent)/mj-stdin-request.XXXXXX" 2>/dev/null) || {
+    MJ_STDIN_REQ=$(/usr/bin/mktemp "$(mj_tmp_parent)/mj-stdin-request.XXXXXX" 2>/dev/null) || {
       set_error "TEMP_UNAVAILABLE" "Could not create a private file for the request read from standard input."
       emit_error_response "" ""; return 73
     }
-    /usr/bin/head -c 262145 > "$_stdin_req" 2>/dev/null
-    if [ "$(file_stat_size "$_stdin_req" 2>/dev/null)" -gt 262144 ] 2>/dev/null; then
-      /bin/rm -f "$_stdin_req"
+    # Read in the background and wait, so a signal can interrupt a blocked read and still clean up.
+    trap 'mj_cleanup_stdin; exit 143' TERM
+    trap 'mj_cleanup_stdin; exit 130' INT
+    trap 'mj_cleanup_stdin; exit 129' HUP
+    /usr/bin/head -c 262145 > "$MJ_STDIN_REQ" 2>/dev/null &
+    MJ_STDIN_HEAD_PID=$!
+    wait "$MJ_STDIN_HEAD_PID" 2>/dev/null
+    if [ "$(file_stat_size "$MJ_STDIN_REQ" 2>/dev/null)" -gt 262144 ] 2>/dev/null; then
+      /bin/rm -f "$MJ_STDIN_REQ"
       set_error "REQUEST_TOO_LARGE" "Request read from standard input is larger than 256 KB."
       emit_error_response "" ""; return 65
     fi
-    set -- --request "$_stdin_req"
+    set -- --request "$MJ_STDIN_REQ"
   fi
   case "${1:-}" in
     --help|-h) [ "$#" -eq 1 ] && { print_help; return 0; } ;;
@@ -6449,14 +6489,14 @@ main() {
   if ! load_request_file "$2"; then
     emit_error_response "${REQUEST_COMMAND:-}" "${REQUEST_ID:-}"
     audit_append 65
-    [ -z "$_stdin_req" ] || /bin/rm -f "$_stdin_req"
+    [ -z "$MJ_STDIN_REQ" ] || /bin/rm -f "$MJ_STDIN_REQ"
     return 65
   fi
 
   dispatch_request
   _rc=$?
   audit_append "$_rc"
-  [ -z "$_stdin_req" ] || /bin/rm -f "$_stdin_req"
+  [ -z "$MJ_STDIN_REQ" ] || /bin/rm -f "$MJ_STDIN_REQ"
   return "$_rc"
 }
 

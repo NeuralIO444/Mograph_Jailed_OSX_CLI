@@ -119,12 +119,17 @@ _mj_need_dir() {   # _mj_need_dir <config key> <what>  -> prints the folder, or 
 
 # A project given by path or by name (searched under watch_dir). Prints one .aep path.
 _mj_resolve_project() {
-    local arg="$1" w found; local -a hits
+    setopt localoptions extendedglob
+    local arg="$1" w stem pat h; local -a hits exact
     if [ -f "$arg" ]; then print -r -- "${arg:A}"; return 0; fi
     w=$(mj_config_get watch_dir)
     if [ -d "$w" ]; then
-        hits=("${(@f)$(/usr/bin/find "$w" -maxdepth 3 -type f -iname "${arg%.aep}*.aep" 2>/dev/null | /usr/bin/sort)}")
+        stem="${arg%.[aA][eE][pP]}"
+        pat="${stem//(#m)[\[\]*?\\]/\\$MATCH}"           # what you type is a name, never a wildcard
+        hits=("${(@f)$(/usr/bin/find "$w" -maxdepth 3 -type f -iname "${pat}*.aep" 2>/dev/null | /usr/bin/sort)}")
         hits=(${hits:#})
+        for h in $hits; do [[ "${(L)${h:t:r}}" == "${(L)stem}" ]] && exact+=("$h"); done
+        if [ ${#exact} -eq 1 ]; then print -r -- "${exact[1]}"; return 0; fi     # an exact name wins over longer names that start with it
         if [ ${#hits} -eq 1 ]; then print -r -- "${hits[1]}"; return 0; fi
         if [ ${#hits} -gt 1 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; printf '  %s\n' "${hits[@]}" >&2; return 65; fi
     fi

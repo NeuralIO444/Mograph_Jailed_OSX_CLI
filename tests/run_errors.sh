@@ -63,7 +63,6 @@ if missing: print("UNDOCUMENTED:", missing)
 if stale: print("DOCUMENTED BUT UNUSED:", stale)
 sys.exit(1 if missing or stale else 0)
 PY
-check true     # reaching here means the python guard passed (set -e would have stopped us)
 # the rows are well formed: 4 columns, a valid exit code, no empty cells
 check python3 - "$ROOT" <<'PY'
 import re, sys
@@ -80,7 +79,26 @@ rc=$(runx "$TMP/e.json" file.inspect); ex 65 MISSING_ARGUMENT $rc
 rc=$(runx "$TMP/e.json" file.inspect path=relative); ex 65 INVALID_PATH $rc
 rc=$(runx "$TMP/e.json" file.inspect path=/nonexistent/zzz); ex 66 NOT_FOUND $rc
 rc=$(runx "$TMP/e.json" index.search target=glow); ex 66 STORE_EMPTY $rc
-rc=$(runx "$TMP/e.json" image.derivative input=/nonexistent/a.png output="$TMP/o/out.png" target=64); check test "$rc" -ne 0
+rc=$(runx "$TMP/e.json" image.derivative input=/nonexistent/a.png output="$TMP/o/out.png" target=64); check test "$rc" = 65; check jq -e '.ok==false and (.error.code|test("^INVALID_|^NOT_FOUND|^UNSUPPORTED"))' "$TMP/e.json"
+# one exit code (65) for a scrape that is invalid JSON, too large or the wrong schema, from every operation that reads one;
+# and project.health names the real problem (QA review)
+printf 'not json' > "$TMP/o/bad.json"; printf '{"schema":"MJ_X"}' > "$TMP/o/wrong.json"; head -c 9000000 /dev/zero | tr '\0' ' ' > "$TMP/o/big.json"
+for op in project.ingest expression.lint deps.graph project.health; do
+  rc=$(runx "$TMP/e.json" $op path="$TMP/o/bad.json"); check test "$rc" = 65; check jq -e '.error.code=="INVALID_JSON"' "$TMP/e.json"
+  rc=$(runx "$TMP/e.json" $op path="$TMP/o/wrong.json"); check test "$rc" = 65; check jq -e '.error.code=="SCHEMA_MISMATCH"' "$TMP/e.json"
+  rc=$(runx "$TMP/e.json" $op path="$TMP/o/big.json"); check test "$rc" = 65; check jq -e '.error.code=="SCRAPE_TOO_LARGE"' "$TMP/e.json"
+done
+rc=$(runx "$TMP/e.json" project.diff path="$TMP/o/bad.json" input="$TMP/o/bad.json"); check test "$rc" = 65; check jq -e '.error.code=="INVALID_JSON"' "$TMP/e.json"
+# F3 (QA): a failed ingest/lint must exit non-zero, and the audit log must record that code, not 0
+mkdir -p "$TMP/o/adir"
+for op in project.ingest expression.lint; do
+  rc=$(runx "$TMP/e.json" $op path="$TMP/o/adir"); check test "$rc" = 65; check jq -e '.ok==false and .error.code=="INVALID_TARGET"' "$TMP/e.json"
+  rc=$(runx "$TMP/e.json" $op path=relative); check test "$rc" = 65; check jq -e '.error.code=="INVALID_PATH"' "$TMP/e.json"
+  rc=$(runx "$TMP/e.json" $op path=/nonexistent/x.json); check test "$rc" = 65
+done
+mkdir -p "$TMP/audit"; rc=$(runx "$TMP/e.json" project.ingest path="$TMP/o/adir"); check test "$rc" = 65
+check jq -se 'last | .command=="project.ingest" and .exitCode==65' "$TMP/audit/audit.jsonl"
+rm -rf "$TMP/audit"
 printf z > "$TMP/exists.zip"
 rc=$(runx "$TMP/e.json" package.create path="$TMP/o" output="$TMP/exists.zip"); ex 73 OUTPUT_EXISTS $rc
 rc=$(runx "$TMP/e.json" ae.render path="$TMP/o/f.txt" target=x output="$TMP/o" label=x); ex 65 INVALID_TARGET $rc

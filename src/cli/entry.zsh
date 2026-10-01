@@ -1,3 +1,10 @@
+MJ_STDIN_REQ=""
+MJ_STDIN_HEAD_PID=""
+mj_cleanup_stdin() {
+  [ -z "$MJ_STDIN_HEAD_PID" ] || kill "$MJ_STDIN_HEAD_PID" 2>/dev/null
+  [ -z "$MJ_STDIN_REQ" ] || /bin/rm -f "$MJ_STDIN_REQ"
+}
+
 print_help() {
   local _op=""
   printf 'mograph-jailed %s (protocol %s)\n\n' "$MOGRAPHJAILED_CLI_VERSION" "$MOGRAPHJAILED_PROTOCOL_VERSION"
@@ -19,21 +26,26 @@ EOF_HELP_OPS
 
 main() {
   local _rc=0
-  local _stdin_req=""
   # `--request -` reads the request from standard input. It is copied (bounded) to a private
   # temp file first, so the parser sees an ordinary file and no special case leaks further.
   if [ "$#" -eq 2 ] && [ "$1" = "--request" ] && [ "$2" = "-" ]; then
-    _stdin_req=$(/usr/bin/mktemp "$(mj_tmp_parent)/mj-stdin-request.XXXXXX" 2>/dev/null) || {
+    MJ_STDIN_REQ=$(/usr/bin/mktemp "$(mj_tmp_parent)/mj-stdin-request.XXXXXX" 2>/dev/null) || {
       set_error "TEMP_UNAVAILABLE" "Could not create a private file for the request read from standard input."
       emit_error_response "" ""; return 73
     }
-    /usr/bin/head -c 262145 > "$_stdin_req" 2>/dev/null
-    if [ "$(file_stat_size "$_stdin_req" 2>/dev/null)" -gt 262144 ] 2>/dev/null; then
-      /bin/rm -f "$_stdin_req"
+    # Read in the background and wait, so a signal can interrupt a blocked read and still clean up.
+    trap 'mj_cleanup_stdin; exit 143' TERM
+    trap 'mj_cleanup_stdin; exit 130' INT
+    trap 'mj_cleanup_stdin; exit 129' HUP
+    /usr/bin/head -c 262145 > "$MJ_STDIN_REQ" 2>/dev/null &
+    MJ_STDIN_HEAD_PID=$!
+    wait "$MJ_STDIN_HEAD_PID" 2>/dev/null
+    if [ "$(file_stat_size "$MJ_STDIN_REQ" 2>/dev/null)" -gt 262144 ] 2>/dev/null; then
+      /bin/rm -f "$MJ_STDIN_REQ"
       set_error "REQUEST_TOO_LARGE" "Request read from standard input is larger than 256 KB."
       emit_error_response "" ""; return 65
     fi
-    set -- --request "$_stdin_req"
+    set -- --request "$MJ_STDIN_REQ"
   fi
   case "${1:-}" in
     --help|-h) [ "$#" -eq 1 ] && { print_help; return 0; } ;;
@@ -48,14 +60,14 @@ main() {
   if ! load_request_file "$2"; then
     emit_error_response "${REQUEST_COMMAND:-}" "${REQUEST_ID:-}"
     audit_append 65
-    [ -z "$_stdin_req" ] || /bin/rm -f "$_stdin_req"
+    [ -z "$MJ_STDIN_REQ" ] || /bin/rm -f "$MJ_STDIN_REQ"
     return 65
   fi
 
   dispatch_request
   _rc=$?
   audit_append "$_rc"
-  [ -z "$_stdin_req" ] || /bin/rm -f "$_stdin_req"
+  [ -z "$MJ_STDIN_REQ" ] || /bin/rm -f "$MJ_STDIN_REQ"
   return "$_rc"
 }
 

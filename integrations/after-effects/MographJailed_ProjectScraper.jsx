@@ -79,9 +79,10 @@
 
     function mj_pad(n) { return (n < 10 ? "0" : "") + n; }
 
+    /* UTC with a trailing Z, so it can be compared with snapshot names (also UTC) on any machine. */
     function mj_isoNow(d) {
-        return d.getFullYear() + "-" + mj_pad(d.getMonth() + 1) + "-" + mj_pad(d.getDate()) +
-               "T" + mj_pad(d.getHours()) + ":" + mj_pad(d.getMinutes()) + ":" + mj_pad(d.getSeconds());
+        return d.getUTCFullYear() + "-" + mj_pad(d.getUTCMonth() + 1) + "-" + mj_pad(d.getUTCDate()) +
+               "T" + mj_pad(d.getUTCHours()) + ":" + mj_pad(d.getUTCMinutes()) + ":" + mj_pad(d.getUTCSeconds()) + "Z";
     }
 
     function mj_fileStamp(d) {

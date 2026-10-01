@@ -32,6 +32,9 @@ frames_emit_python_result() {
   MJ_FRAMES_ERR_MSG=$(printf '%s' "$_out" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("message","Frame engine failed."))' 2>/dev/null || printf 'Frame engine failed.')
   set_error "$MJ_FRAMES_ERR_CODE" "$MJ_FRAMES_ERR_MSG"
   emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
+  case "$MJ_FRAMES_ERR_CODE" in
+    INVALID_JSON|SCHEMA_MISMATCH|SCRAPE_TOO_LARGE) return 65 ;;    # the file you gave is not acceptable, same as ingest and lint
+  esac
   return 74
 }
 

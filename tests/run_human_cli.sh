@@ -296,7 +296,7 @@ check test "$ALIVE" = 0
 # unsafe hooks are refused (and logged), never run
 refuse(){ # refuse <hook path> <expected reason> <dir>
   local F; F=$(render_watcher "$TMP/hk/watch" "$3" "$CLI"); MJ_POST_SNAPSHOT_HOOK="$1" zsh -f "$F"
-  grep -q "hook refused ($2)" "$3/watcher.log" && grep -q 'snapshot ok:' "$3/watcher.log"
+  grep -qF "hook refused ($2" "$3/watcher.log" && grep -q 'snapshot ok:' "$3/watcher.log"      # prefix: some reasons add the folder
 }
 printf '#!/bin/sh\ntouch "%s/hk/RAN"\n' "$TMP" > "$TMP/hk/evil.sh"
 chmod 775 "$TMP/hk/evil.sh";                          check refuse "$TMP/hk/evil.sh" "writable by others" "$TMP/hk/r1"
@@ -305,6 +305,39 @@ check refuse "relative/hook.sh" "path is not absolute" "$TMP/hk/r3"
 check refuse "$TMP/hk/does-not-exist.sh" "not a file" "$TMP/hk/r4"
 check refuse "$TMP/hk" "not a file" "$TMP/hk/r5"
 check test ! -e "$TMP/hk/RAN"
+# the folders above the script matter too (QA finding F1): world-writable parent = refused, sticky parent = fine
+mkdir -p "$TMP/hk/open" "$TMP/hk/stick"
+printf '#!/bin/sh\ntouch "%s/hk/RAN2"\n' "$TMP" > "$TMP/hk/open/h.sh"; chmod 700 "$TMP/hk/open/h.sh"
+chmod 777 "$TMP/hk/open"
+check refuse "$TMP/hk/open/h.sh" "a folder above it is writable by others" "$TMP/hk/r6"
+check test ! -e "$TMP/hk/RAN2"
+cp "$TMP/hk/open/h.sh" "$TMP/hk/stick/h.sh"; chmod 1777 "$TMP/hk/stick"          # sticky, like /tmp: others cannot replace your files
+F6=$(render_watcher "$TMP/hk/watch" "$TMP/hk/r7" "$CLI"); MJ_POST_SNAPSHOT_HOOK="$TMP/hk/stick/h.sh" zsh -f "$F6"
+check grep -q 'hook ok: h.sh' "$TMP/hk/r7/watcher.log"
+check test -e "$TMP/hk/RAN2"
+# a root-owned program is refused as "not owned by you" (nobody but you may decide what runs as you)
+check refuse /usr/bin/true "not owned by you" "$TMP/hk/r8"
+# a timed-out hook takes its grandchildren with it (QA finding F12)
+cat > "$TMP/hk/grand.sh" <<STUB
+#!/bin/sh
+sh -c 'sleep 301 & echo \$! > "$TMP/hk/grand.pid"; wait' &
+wait
+STUB
+chmod 700 "$TMP/hk/grand.sh"
+FIRE7=$(render_watcher "$TMP/hk/watch" "$TMP/hk/v7" "$CLI")
+MJ_POST_SNAPSHOT_HOOK="$TMP/hk/grand.sh" MJ_HOOK_TIMEOUT=2 zsh -f "$FIRE7"
+sleep 1
+check test -s "$TMP/hk/grand.pid"
+GP=$(cat "$TMP/hk/grand.pid"); check bash -c "! kill -0 $GP 2>/dev/null"
+# CRLF line endings and stray spaces in the config file read the same in mj and in the watcher (QA finding F13)
+printf 'post_snapshot_hook =  %s/hk/my hooks/good hook.sh  \r\n' "$TMP" > "$TMP/hk/crlf.config"
+check test "$(MJ_CONFIG="$TMP/hk/crlf.config" mjz "mj config get post_snapshot_hook")" = "$TMP/hk/my hooks/good hook.sh"
+: > "$TMP/hk/calls.txt"
+FIRE8=$(render_watcher "$TMP/hk/watch" "$TMP/hk/v8" "$CLI"); MJ_CONFIG="$TMP/hk/crlf.config" zsh -f "$FIRE8"
+check test "$(wc -l < "$TMP/hk/calls.txt" | tr -d ' ')" = 1
+# a setting with a line break is rejected (and nothing is written)
+set +e; mjz "mj config set versions_dir \"\$(printf '/a\\n/b')\"" >/dev/null 2>&1; rb=$?; set -e
+check test "$rb" = 64
 # the hook comes from the config file too; the environment wins; the path is never run through a shell
 mjz "mj config set post_snapshot_hook '$TMP/hk/my hooks/good hook.sh'" >/dev/null
 : > "$TMP/hk/calls.txt"
@@ -432,25 +465,24 @@ check test -z "$(complete 3 doctor "")"                                         
 check test -z "$(complete 3 status "")"
 
 # ================= #15 / #27 installer =================
-( cd "$ROOT" && sh scripts/make-manifest.sh >/dev/null )
 mkzip(){ # mkzip <out.zip> [tamper|nomanifest]
   python3 - "$ROOT" "$1" "${2:-}" <<'PY'
-import os, subprocess, sys, zipfile
+import hashlib, os, subprocess, sys, zipfile
 root, out, mode = sys.argv[1:4]
-files = subprocess.check_output(["git", "ls-files"], cwd=root, text=True).split("\n")
-if "SHA256SUMS" not in files: files.append("SHA256SUMS")      # not tracked until first committed
+files = [f for f in subprocess.check_output(["git", "ls-files"], cwd=root, text=True).split("\n") if f and f != "SHA256SUMS" and os.path.isfile(os.path.join(root, f))]
+listed = []
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     for f in files:
-        p = os.path.join(root, f)
-        if not f or not os.path.isfile(p): continue
-        if f == "SHA256SUMS" and mode == "nomanifest": continue
-        data = open(p, "rb").read()
+        data = open(os.path.join(root, f), "rb").read()
+        listed.append("%s  %s\n" % (hashlib.sha256(data).hexdigest(), f))     # the manifest is built here, from the originals
         if mode == "tamper" and f == "src/core/constants.zsh": data += b"\n# injected\n"
         z.writestr("Mograph_Jailed_OSX_CLI-test/" + f, data)
+    if mode == "extra": z.writestr("Mograph_Jailed_OSX_CLI-test/EXTRA_unlisted.sh", "echo hi\n")
+    if mode != "nomanifest": z.writestr("Mograph_Jailed_OSX_CLI-test/SHA256SUMS", "".join(listed))
 PY
 }
 mkdir -p "$TMP/inst" "$TMP/inst/home"
-mkzip "$TMP/inst/good.zip"; mkzip "$TMP/inst/bad.zip" tamper; mkzip "$TMP/inst/old.zip" nomanifest; printf 'not a zip' > "$TMP/inst/junk.zip"
+mkzip "$TMP/inst/good.zip"; mkzip "$TMP/inst/bad.zip" tamper; mkzip "$TMP/inst/extra.zip" extra; mkzip "$TMP/inst/old.zip" nomanifest; printf 'not a zip' > "$TMP/inst/junk.zip"
 GOODSHA=$(shasum -a 256 "$TMP/inst/good.zip" | awk '{print $1}')
 install_with(){ # install_with <zip> <root> [extra env assignments...]
   local z="$1" r="$2"; shift 2
@@ -480,6 +512,11 @@ check grep -q 'does not match the SHA-256 you pinned' "$TMP/inst/o3.txt"
 set +e; install_with "$TMP/inst/bad.zip" "$TMP/inst/r4" > "$TMP/inst/o4.txt" 2>&1; i4=$?; set -e
 check test "$i4" -ne 0 -a ! -e "$TMP/inst/r4"
 check grep -q 'do not match their checksums' "$TMP/inst/o4.txt"
+# a file that is in the download but not in its checksum list is refused too (QA finding F10)
+set +e; install_with "$TMP/inst/extra.zip" "$TMP/inst/r4b" > "$TMP/inst/o4b.txt" 2>&1; i4b=$?; set -e
+check test "$i4b" -ne 0 -a ! -e "$TMP/inst/r4b"
+check grep -q 'not in its checksum list' "$TMP/inst/o4b.txt"
+check grep -q 'EXTRA_unlisted.sh' "$TMP/inst/o4b.txt"
 # an older release with no checksum list still installs, with a clear notice
 set +e; install_with "$TMP/inst/old.zip" "$TMP/inst/r5" > "$TMP/inst/o5.txt" 2>&1; i5=$?; set -e
 check test "$i5" = 0 -a -f "$TMP/inst/r5/dist/mograph-jailed.zsh"
@@ -496,9 +533,85 @@ check test "$i8" = 0 -a -f "$TMP/inst/r7/dist/mograph-jailed.zsh"
 # the installed copy works
 check bash -c "printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=i\ncommand=system.probe\n' | zsh -f '$TMP/inst/r1/dist/mograph-jailed.zsh' --request - | grep -q '\"ok\":true'"
 # the manifest in the repo is current and covers the runtime
-check sh "$ROOT/scripts/make-manifest.sh" --check
+[ ! -d "$ROOT/.git" ] || check sh "$ROOT/scripts/make-manifest.sh" --check        # only meaningful in a git checkout
 check grep -q ' dist/mograph-jailed.zsh$' "$ROOT/SHA256SUMS"
 check bash -c "! grep -q ' SHA256SUMS\$' '$ROOT/SHA256SUMS'"
+
+# ================= QA review fixes =================
+# F2: freshness compares like with like whatever the machine's timezone
+mkdir -p "$TMP/tz/versions"; : > "$TMP/tz/versions/hero.20261001T000000Z.aaaaaaaaaaaa.aep"
+python3 - "$TMP/sc/v1.scrape.json" "$TMP/tz" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["scrapedAt"] = "2026-10-01T10:00:00"            # older scraper: bare local time
+json.dump(d, open(sys.argv[2] + "/local.json", "w"))
+d["scrapedAt"] = "2026-10-01T10:00:00Z"           # current scraper: UTC
+json.dump(d, open(sys.argv[2] + "/utc.json", "w"))
+PY
+snap_points(){ jq -r '.data.components[]|select(.name=="snapshots")|.points' "$1"; }
+TZ=Etc/GMT-10 run "$TMP/tz1.json" project.health "path=$TMP/tz/local.json" "input=$TMP/tz/versions"      # UTC+10: local 10:00 is 00:00Z, same instant
+check test "$(snap_points "$TMP/tz1.json")" = 25
+TZ=UTC run "$TMP/tz2.json" project.health "path=$TMP/tz/local.json" "input=$TMP/tz/versions"               # UTC: local 10:00 is 10:00Z, 10 h later
+check test "$(snap_points "$TMP/tz2.json")" = 15
+TZ=Etc/GMT-10 run "$TMP/tz3.json" project.health "path=$TMP/tz/utc.json" "input=$TMP/tz/versions"        # explicit Z: timezone is irrelevant
+TZ=Etc/GMT+8 run "$TMP/tz4.json" project.health "path=$TMP/tz/utc.json" "input=$TMP/tz/versions"
+check test "$(snap_points "$TMP/tz3.json")" = 15 -a "$(snap_points "$TMP/tz4.json")" = 15
+check grep -q 'getUTCHours' "$ROOT/integrations/after-effects/MographJailed_ProjectScraper.jsx"
+
+# F5: diff does not call index shifts "moves"
+python3 - "$TMP/sc" <<'PY'
+import copy, json, os, sys
+d = sys.argv[1]
+def lay(i, n): return {"index": i, "name": n, "type": "AVLayer", "enabled": True, "solo": False, "locked": False, "sourceName": "", "sourcePath": "", "sourceId": 0, "effects": [], "expressions": []}
+def proj(names, footage=None):
+    return {"schema": "MJ_PROJECT_SCRAPE_1", "scraperVersion": "1.0", "projectPath": "/p/m.aep", "projectName": "m.aep", "scrapedAt": "2026-10-01T09:00:00Z", "aeVersion": "24", "numItems": 1, "fonts": [],
+            "footage": footage or [], "comps": [{"id": 1, "name": "Main", "layers": [lay(i + 1, n) for i, n in enumerate(names)]}]}
+json.dump(proj(["A", "B", "C"]), open(os.path.join(d, "m1.json"), "w"))
+json.dump(proj(["New", "A", "B", "C"]), open(os.path.join(d, "m2.json"), "w"))
+json.dump(proj(["C", "B", "A"]), open(os.path.join(d, "m3.json"), "w"))
+json.dump(proj(["A", "B", "C"], [{"id": 5, "name": "bg.mov", "path": "/old/bg.mov", "missing": False}]), open(os.path.join(d, "m4.json"), "w"))
+json.dump(proj(["A", "B", "C"], [{"id": 5, "name": "bg.mov", "path": "/new/bg.mov", "missing": False}]), open(os.path.join(d, "m5.json"), "w"))
+PY
+run "$TMP/dm1.json" project.diff "path=$TMP/sc/m1.json" "input=$TMP/sc/m2.json"
+check jq -e '.data.summary | .layersAdded==1 and .layersMoved==0 and .layersChanged==0' "$TMP/dm1.json"
+run "$TMP/dm2.json" project.diff "path=$TMP/sc/m1.json" "input=$TMP/sc/m3.json"
+check jq -e '.data.summary.layersMoved>=2 and .data.identical==false' "$TMP/dm2.json"
+run "$TMP/dm3.json" project.diff "path=$TMP/sc/m4.json" "input=$TMP/sc/m5.json"
+check jq -e '.data.summary.footageMoved==1 and .data.identical==false and (.data.changes[0].text|test("moved"))' "$TMP/dm3.json"
+python3 "$EXPL" "$TMP/dm3.json" > "$TMP/dm3.txt"
+check bash -c "! grep -q 'No differences' '$TMP/dm3.txt' && grep -q 'footage files moved' '$TMP/dm3.txt'"
+
+# F7: a score built from a partial scrape says so
+python3 -c "
+import json; d=json.load(open('$TMP/sc/v1.scrape.json')); d['compsTruncated']=True; d['footageTruncated']=True; json.dump(d, open('$TMP/sc/trunc.json','w'))"
+run "$TMP/ht.json" project.health "path=$TMP/sc/trunc.json"
+check jq -e '.ok==true and ([.warnings[].code]|index("COMPS_TRUNCATED")!=null) and ([.warnings[].code]|index("FOOTAGE_TRUNCATED")!=null) and (.data|has("_warnings")|not)' "$TMP/ht.json"
+python3 "$EXPL" "$TMP/ht.json" | grep -q 'Heads up' && pass=$((pass+1)) || { echo "FAIL: health caveat in explain" >&2; fail=$((fail+1)); }
+# trends only compare scores of one formula version
+run "$TMP/hv1.json" project.health "path=$TMP/sc/v1.scrape.json" "format=record"
+python3 - "$TMP/store/index.sqlite" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1]); db.execute("INSERT INTO health(project_path, scraped_at, score, formula_version, receipt_sha256, recorded_at) VALUES ('/p/hero.aep','2026-12-01T00:00:00Z',5,99,'x','now')"); db.commit()
+PY
+run "$TMP/hv2.json" project.health "format=all"
+check jq -e '[.data.projects[]|select(.projectPath=="/p/hero.aep")|.series] | all(index(5)==null)' "$TMP/hv2.json"
+
+# F8: an error after which something is deliberately kept does not claim nothing happened
+printf '{"protocol":"MOGRAPHJAILED","ok":false,"command":"ae.render","error":{"code":"RENDER_FAILED","message":"The host exited with an error."}}' > "$TMP/rf.json"
+python3 "$EXPL" "$TMP/rf.json" > "$TMP/rf.txt"
+check bash -c "grep -q 'render folder, its log and receipt were kept' '$TMP/rf.txt' && ! grep -q 'Nothing was changed' '$TMP/rf.txt'"
+python3 "$EXPL" "$TMP/x_err.json" | grep -q 'Nothing was changed' && pass=$((pass+1)) || { echo "FAIL: ordinary error wording" >&2; fail=$((fail+1)); }
+printf '{"valid":true,"entriesVerified":4,"headHash":"abcdef0123456789abcdef","schema":"MJ_AUDIT_VERIFY_1"}' > "$TMP/av.json"
+python3 "$EXPL" "$TMP/av.json" | grep -q 'cannot be detected' && pass=$((pass+1)) || { echo "FAIL: audit wording" >&2; fail=$((fail+1)); }
+
+# F9: an exact name wins; wildcards typed by a person are just characters
+export MJ_CONFIG="$TMP/hcfg/config"
+mkdir -p "$TMP/hv/projects/Foo"; printf 'foo-one' > "$TMP/hv/projects/Foo/Foo.aep"; printf 'foo-two' > "$TMP/hv/projects/Foo/Foo_v2.aep"
+mjz "mj snapshot Foo" > "$TMP/f9a.txt" 2>&1; check grep -q 'Saved a verified copy of Foo.aep' "$TMP/f9a.txt"
+mjz "mj snapshot foo.aep" > "$TMP/f9b.txt" 2>&1; check grep -q 'Foo.aep' "$TMP/f9b.txt"
+set +e; mjz "mj snapshot 'Foo*'" >/dev/null 2>&1; w1=$?; mjz "mj snapshot 'F[o]o'" >/dev/null 2>&1; w2=$?; mjz "mj snapshot Fo" >/dev/null 2>&1; w3=$?; set -e
+check test "$w1" = 66 -a "$w2" = 66 -a "$w3" = 65
+export MJ_CONFIG="$TMP/cfg/config"
 
 echo "Human CLI tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

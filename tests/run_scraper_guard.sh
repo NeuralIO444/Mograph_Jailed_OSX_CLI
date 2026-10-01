@@ -37,12 +37,26 @@ for s in 'prop.expression = "x";' 'layer.enabled = false;' 'comp.name = "x";' 'l
 # --- dynamic code ---
 for s in 'eval("x");' 'var f = new Function("return 1");' '$.evalFile(f);' 'var a = $.eval("1");'; do must_reject "$s"; done
 
+# --- QA review bypasses: split across lines or comments, more mutators, settings, file writes, computed dispatch ---
+must_reject $'layer.remove\n();'
+must_reject 'layer.remove /*c*/ ();'
+for s in 'layer.applyPreset(f);' 'comp.layers.precompose([1], "x", true);' 'app.project.renderQueue.render();' 'app.project.reduceProject(items);' \
+         'app.project.consolidateFootage();' 'comp.openInViewer();' 'app.project.bitsPerChannel = 8;' 'app.project.linearBlending = true;' \
+         'layer.audioActive = false;' 'f.rename("x");' 'File.copy(a);' 'f.execute();' 'app.scheduleTask("x", 1, false);' \
+         'app.settings.saveSetting("a", "b", "c");' 'layer["remove"]();' 'ops[name](layer);' 'items[i](x);'; do must_reject "$s"; done
+# only the scraper's own output file may be opened for writing
+must_reject 'var f = new File(p); f.open("w"); f.close();'
+must_reject 'new File(p).open("w");'
+must_reject 'var out = new File(p); out.open("a");'
+must_reject "var outFile2 = new File(p); outFile2.open('e');"
+must_accept 'var f = new File(p); if (f.open("r")) { f.close(); }'          # reading is fine
+
 # --- legitimate read-only code is accepted ---
 must_accept 'var rec = {}; rec.expression = "text";'
 must_accept 'rec.name = String(layer.name);'
 must_accept 'var v = layer.enabled; if (v == true) { n++; }'
 must_accept 'if (comp.name == "x" || comp.width >= 10) { ok = true; }'
-must_accept 'var out = new File(p); out.open("w"); out.writeln(s); out.close();'
+must_accept 'var outFile = new File(p); outFile.open("w"); outFile.writeln(s); outFile.close();'
 must_accept 'var names = []; names.push(item.name);'
 must_accept 'for (i = 1; i <= proj.numItems; i++) { item = proj.item(i); }'
 must_accept 'var d = layer.property("Source Text").value;'

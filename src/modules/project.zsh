@@ -310,6 +310,7 @@ PY_EXPRESSION_LINT
 }
 
 handle_project_ingest() {
+  local _rc=0
   local _path=""
   local _pyout=""
   local _data=""
@@ -317,7 +318,7 @@ handle_project_ingest() {
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
-  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
+  project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
 
   _pyout=$(project_run_ingest "$_path") || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
@@ -336,6 +337,7 @@ handle_project_ingest() {
 }
 
 handle_expression_lint() {
+  local _rc=0
   local _path=""
   local _pyout=""
   local _data=""
@@ -343,7 +345,7 @@ handle_expression_lint() {
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
-  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
+  project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
 
   _pyout=$(project_run_lint "$_path") || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
@@ -519,11 +521,17 @@ handle_project_snapshot() {
   else
     /bin/cp "$_path" "$_partial" 2>/dev/null || { /bin/rm -f "$_partial" 2>/dev/null; set_error "SNAPSHOT_FAILED" "Could not copy the project to the versions directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   fi
-  snapshot_test_hook "$_path"
+  snapshot_test_hook "$_path" "$_partial"
   hash_sha256_file "$_partial" 2>/dev/null
   if [ "$MJ_HASH_VALUE" != "$_sha_value" ]; then
+    # Either the project changed under the copy, or the copy itself is bad; say which.
     /bin/rm -f "$_partial" 2>/dev/null
-    set_error "SNAPSHOT_UNSTABLE" "The project changed while it was being copied; no snapshot was kept. It will be retried on the next save."
+    hash_sha256_file "$_path" 2>/dev/null
+    if [ "$MJ_HASH_VALUE" != "$_sha_value" ]; then
+      set_error "SNAPSHOT_UNSTABLE" "The project changed while it was being copied; no snapshot was kept. It will be retried on the next save."
+    else
+      set_error "SNAPSHOT_FAILED" "The copy did not match the project (a disk or filesystem problem); no snapshot was kept."
+    fi
     emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74
   fi
   hash_sha256_file "$_path" 2>/dev/null

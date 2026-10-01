@@ -19,7 +19,7 @@ Every failed request returns a JSON envelope with `"ok": false` and an `error` o
 | 74 | the operation ran and failed |
 | 77 | permission denied |
 
-The exit column is what the shell layer returns. A code detected inside an operation's Python engine (for example a bad `range`, or `STORE_EMPTY` from `trace.asset`) exits 74 even when the same code exits 65 or 66 elsewhere, so branch on the `code` field, not the exit number, when precision matters.
+The exit column is what the shell layer returns. A code detected inside an operation's Python engine (for example a bad `range`, or `STORE_EMPTY` from `trace.asset`) exits 74 even when the same code exits 65 or 66 elsewhere, so branch on the `code` field, not the exit number, when precision matters. The exception is a scrape or receipt that is invalid JSON, too large, or the wrong schema: those are always 65, from every operation that reads one.
 
 No failure ever leaves a half-written result behind: outputs are staged and published only when complete, and sources are never changed.
 
@@ -113,9 +113,9 @@ The runtime protects the evidence it reports.
 
 | Code | Exit | What it means | What to do |
 |---|---|---|---|
-| `INVALID_JSON` | 74 | A scrape or receipt is not valid JSON. | Re-run the scraper; do not edit receipts by hand. |
-| `SCHEMA_MISMATCH` | 74 | A scrape is not an `MJ_PROJECT_SCRAPE_1` document or is missing required parts. | Re-scrape with the current scraper. |
-| `SCRAPE_TOO_LARGE` | 74 | The scrape exceeds the size limit (8 MB). | Scrape a smaller project, or split it. |
+| `INVALID_JSON` | 65 | A scrape or receipt is not valid JSON. | Re-run the scraper; do not edit receipts by hand. |
+| `SCHEMA_MISMATCH` | 65 | A scrape is not an `MJ_PROJECT_SCRAPE_1` document or is missing required parts. | Re-scrape with the current scraper. |
+| `SCRAPE_TOO_LARGE` | 65 | The scrape exceeds the size limit (8 MB). | Scrape a smaller project, or split it. |
 | `READ_FAILED` | 74 | A file could not be read. | Check it exists and is readable. |
 | `INGEST_FAILED` | 74 | The scrape summarizer failed to run. | Run `system.doctor`; confirm `python3` works. |
 | `LINT_FAILED` | 74 | The expression linter failed to run. | Run `system.doctor`; confirm `python3` works. |

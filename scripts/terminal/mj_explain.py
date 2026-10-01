@@ -47,6 +47,16 @@ def error_help(code):
     return None
 
 
+# Failures after which something is deliberately left behind for the user to inspect.
+KEPT_ON_ERROR = {
+    "RENDER_FAILED": "The render folder, its log and receipt were kept so you can see what happened. Your project was not changed.",
+    "RENDER_TIMEOUT": "The render folder, its log and receipt were kept. Your project was not changed.",
+    "RENDER_INCOMPLETE": "The frames that were made, the log and receipt were kept. Your project was not changed.",
+    "LICENCE_NOT_CONFIGURED": "The log and receipt were kept. Your project was not changed.",
+    "STAGE_CLEANUP_REFUSED": "A temporary working folder was left in place on purpose (see the message). Your files were not changed.",
+}
+
+
 def explain_error(env):
     e = env.get("error") or {}
     code = e.get("code", "ERROR")
@@ -55,7 +65,10 @@ def explain_error(env):
     if h:
         out += ["", wrap("What it means: " + h[0]), wrap("What to do: " + h[1])]
     out.append("")
-    out.append("Nothing was changed.")
+    if code in KEPT_ON_ERROR:
+        out.append(KEPT_ON_ERROR[code])
+    else:
+        out.append("Nothing was changed.")
     return out
 
 
@@ -196,11 +209,11 @@ def explain_health(d):
 def explain_diff(d):
     out = ["Comparing %s with %s." % (os.path.basename(d.get("before", {}).get("path", "before")), os.path.basename(d.get("after", {}).get("path", "after")))]
     s = d.get("summary", {})
-    if not any(s.get(k) for k in ("compsAdded", "compsRemoved", "layersAdded", "layersRemoved", "layersChanged", "expressionsChanged", "footageAdded", "footageRemoved", "footageMissingChanged", "fontsAdded", "fontsRemoved", "effectsAdded", "effectsRemoved", "compsChanged")):
+    if d.get("identical"):
         return out + ["No differences."]
     for key, label in (("compsAdded", "comps added"), ("compsRemoved", "comps removed"), ("compsChanged", "comps changed"), ("layersAdded", "layers added"),
-                       ("layersRemoved", "layers removed"), ("layersChanged", "layers changed"), ("expressionsChanged", "expressions changed"),
-                       ("footageAdded", "footage added"), ("footageRemoved", "footage removed"), ("footageMissingChanged", "footage that went missing or came back"),
+                       ("layersRemoved", "layers removed"), ("layersChanged", "layers changed"), ("layersMoved", "layers moved in the stack"), ("expressionsChanged", "expressions changed"),
+                       ("footageAdded", "footage added"), ("footageRemoved", "footage removed"), ("footageMissingChanged", "footage that went missing or came back"), ("footageMoved", "footage files moved"),
                        ("fontsAdded", "fonts added"), ("fontsRemoved", "fonts removed"), ("effectsAdded", "effect types added"), ("effectsRemoved", "effect types removed")):
         if s.get(key):
             out.append("  %d %s" % (s[key], label))
@@ -238,7 +251,8 @@ def explain_plugins(d):
 
 def explain_audit(d):
     if d.get("valid"):
-        return ["The request log is intact: %s checked, none altered or removed." % plural(d.get("entriesVerified", 0), "entry", "entries")]
+        return ["No edits, insertions or deletions found in the request log (%s checked)." % plural(d.get("entriesVerified", 0), "entry", "entries"),
+                "A log cut short at the end, or rebuilt from scratch, cannot be detected from the log alone; keep a copy of the head hash (%s) elsewhere to check." % (d.get("headHash") or "")[:12]]
     return ["The request log has been tampered with: it breaks at line %s (%s)." % (d.get("firstBrokenLine"), d.get("reason"))]
 
 

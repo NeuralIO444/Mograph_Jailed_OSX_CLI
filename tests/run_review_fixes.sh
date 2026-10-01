@@ -6,6 +6,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 CLI="$ROOT/dist/mograph-jailed-linux-test.sh"
 TMP=$(mktemp -d); TMP=$(cd "$TMP" && pwd -P)
 trap 'rm -rf "$TMP"' EXIT
+mkdir -p "$TMP/tmpd"; export TMPDIR="$TMP/tmpd"          # private temp folder: counts below cannot be disturbed by anything else
 export MJ_STORE_DIR="$TMP/store" MJ_AUDIT_DIR="$TMP/noaudit"
 pass=0; fail=0
 check(){ if "$@"; then pass=$((pass+1)); else echo "FAIL: $*" >&2; fail=$((fail+1)); fi; }
@@ -157,7 +158,19 @@ printf '' | "$CLI" --request - > "$TMP/si_empty.json" 2>/dev/null || rc=$?
 check jq -e '.ok==false' "$TMP/si_empty.json"
 head -c 400000 /dev/zero | tr '\0' 'a' 2>/dev/null | "$CLI" --request - > "$TMP/si_big.json" 2>/dev/null || true
 check jq -e '.error.code=="REQUEST_TOO_LARGE"' "$TMP/si_big.json"
-check bash -c "ls '${TMPDIR:-/tmp}' 2>/dev/null | grep -c 'mj-stdin-request' | grep -qx 0"      # no temp file left behind
+check test "$(ls "$TMPDIR" | grep -c 'mj-stdin-request' || true)" = 0                    # no temp file left behind
+# F11 (QA): killed while waiting for input, the temp file is still removed
+mkfifo "$TMP/sig.fifo"
+"$CLI" --request - < "$TMP/sig.fifo" > "$TMP/sig.out" 2>&1 &
+SIGPID=$!
+exec 9> "$TMP/sig.fifo"                                                                   # hold the writer open: the reader blocks
+for _ in $(seq 1 50); do ls "$TMPDIR" | grep -q 'mj-stdin-request' && break; sleep 0.1; done
+check bash -c "ls '$TMPDIR' | grep -q 'mj-stdin-request'"                                  # the temp file exists while blocked
+kill -TERM $SIGPID; wait $SIGPID 2>/dev/null || true
+exec 9>&-
+sleep 0.3
+check test "$(ls "$TMPDIR" | grep -c 'mj-stdin-request' || true)" = 0
+
 "$CLI" --request - extra < "$TMP/in.req" > "$TMP/si_bad.json" 2>/dev/null || rc=$?
 check jq -e '.error.code=="USAGE"' "$TMP/si_bad.json"
 

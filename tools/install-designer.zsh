@@ -135,7 +135,12 @@ else
   if [ -f "$SRC/SHA256SUMS" ]; then
     BAD=$(cd "$SRC" && /usr/bin/shasum -a 256 -c SHA256SUMS 2>&1 | /usr/bin/grep -v ': OK$' | /usr/bin/head -5)
     [ -z "$BAD" ] || die "Some files in the download do not match their checksums — nothing installed.${BAD:+ ($(/bin/echo "$BAD" | /usr/bin/head -1))}"
-    ok "every file matches its checksum"
+    # shasum -c only checks the files the list names; an extra file would ride along unchecked.
+    (cd "$SRC" && /usr/bin/find . -type f ! -name SHA256SUMS | /usr/bin/sed 's|^\./||' | LC_ALL=C /usr/bin/sort) > "$TMPD/present.txt"
+    /usr/bin/sed 's/^[0-9a-f]*  //' "$SRC/SHA256SUMS" | LC_ALL=C /usr/bin/sort > "$TMPD/listed.txt"
+    EXTRA=$(/usr/bin/comm -23 "$TMPD/present.txt" "$TMPD/listed.txt" | /usr/bin/head -3)
+    [ -z "$EXTRA" ] || die "The download contains files that are not in its checksum list — nothing installed. (e.g. $(/bin/echo "$EXTRA" | /usr/bin/head -1))"
+    ok "every file matches its checksum, and nothing extra is included"
   else
     warn "this download has no checksum list (older release); file check skipped"
   fi

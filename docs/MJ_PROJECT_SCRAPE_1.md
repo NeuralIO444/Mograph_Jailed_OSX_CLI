@@ -12,7 +12,7 @@ Produced by `integrations/after-effects/MographJailed_ProjectScraper.jsx`
 | `scraperVersion` | string | yes | e.g. `"1.0"` |
 | `projectPath` | string | yes | Absolute path of the .aep |
 | `projectName` | string | yes | Leaf filename |
-| `scrapedAt` | string | yes | ISO-8601 timestamp |
+| `scrapedAt` | string | yes | ISO-8601 timestamp in UTC with a trailing `Z` (scraper 1.0 and later). Receipts from older scraper builds have no `Z` and mean the scraping machine's local time; consumers treat a bare timestamp as local time |
 | `aeVersion` | string | yes | e.g. `"25.1.0"` |
 | `numItems` | integer | yes | `app.project.numItems` |
 | `comps` | array | yes | Comp descriptors (see below) |
