@@ -4,6 +4,14 @@
 
 Power CLI for After Effects and Cinema 4D. Protocol v1 preserved; the public surface grew additively from 27 to 44 operations. The sections below describe the pieces.
 
+### Review backlog (issues #1-#33)
+
+- Guard and CI: scraper read-only guard enforced in CI and hardened against whole mutator families, assignments and dynamic code (#1 #2 #3, 74-case test).
+- Runtime: `--help` / `--version` (#13); error-code reference with completeness test (#24); real `warnings` (#17); validated image stats (#18); `volume.inspect` gate (#11); `plugin.audit` size bound and hashing-time guidance (#19); `--request -` (#21); `system.doctor` guidance (#23); `project.diff` (#22); `project.health` (#32) with store schema v3; teaching lint (#33).
+- Watcher and dashboard: error codes in the log, collision-free request files, `.AEP` (#14); cached receipt ingest (#16); `--json` mode (#25); snapshot hooks (#31).
+- Human CLI: `mj snapshot/versions/lint/health/diff/explain/watch/doctor/config` (#26), `mj explain` (#28), config file (#29), completions (#30), dashboard offered at install end (#27), installer checksum verification and pinning (#15), `_mj_b64` wrapping fix (#6).
+- 46 operations. Tests added: errors 31, scraper guard 74, review fixes 59, human CLI 201.
+
 ### Fixes from the 2026-09-30 review
 
 - `project.snapshot` (#7, #8, #9): the copy is staged, its SHA-256 and the source's are re-checked, and a mismatch keeps nothing (`SNAPSHOT_UNSTABLE`); publish is by hard link so an existing snapshot is never overwritten; the project stem is case-insensitive so `.AEP` projects dedupe and name their latest pointer consistently. Receipts now record `copyVerified` and `sourceStableDuringCopy`.

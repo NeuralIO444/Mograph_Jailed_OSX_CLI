@@ -105,6 +105,84 @@ _mj_notify_cmd() {
     esac
 }
 
+# --- human commands ---------------------------------------------------------
+_mj_explain() { /usr/bin/python3 "$_MJ_CLI_DIR/../terminal/mj_explain.py" "$@"; }
+
+# Newest file matching a glob in a folder.
+_mj_newest() { local d="$1" pat="$2" f; local -a m; m=("$d"/${~pat}(.Nom[1])); [ ${#m} -gt 0 ] && print -r -- "${m[1]}"; }
+
+_mj_need_dir() {   # _mj_need_dir <config key> <what>  -> prints the folder, or explains how to set it
+    local d; d=$(mj_config_get "$1")
+    [ -d "$d" ] || { print -u2 "mj: your $2 folder was not found${d:+: $d}"; print -u2 "  Set it once:  mj config set $1 <folder>"; return 66; }
+    print -r -- "$d"
+}
+
+# A project given by path or by name (searched under watch_dir). Prints one .aep path.
+_mj_resolve_project() {
+    local arg="$1" w found; local -a hits
+    if [ -f "$arg" ]; then print -r -- "${arg:A}"; return 0; fi
+    w=$(mj_config_get watch_dir)
+    if [ -d "$w" ]; then
+        hits=("${(@f)$(/usr/bin/find "$w" -maxdepth 3 -type f -iname "${arg%.aep}*.aep" 2>/dev/null | /usr/bin/sort)}")
+        hits=(${hits:#})
+        if [ ${#hits} -eq 1 ]; then print -r -- "${hits[1]}"; return 0; fi
+        if [ ${#hits} -gt 1 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; printf '  %s\n' "${hits[@]}" >&2; return 65; fi
+    fi
+    print -u2 "mj: no project found for \"$arg\""
+    [ -d "$w" ] || print -u2 "  To search by name, set your projects folder once:  mj config set watch_dir <folder>"
+    return 66
+}
+
+# Newest scrape receipt, or a path.
+_mj_resolve_scrape() {
+    local arg="${1:-last}" d f
+    if [ "$arg" = last ]; then
+        d=$(_mj_need_dir receipts_dir receipts) || return $?
+        f=$(_mj_newest "$d" '*.scrape.json')
+        [ -n "$f" ] || { print -u2 "mj: no scrape receipts in $d yet (run the After Effects scraper first)"; return 66; }
+        print -r -- "$f"
+    elif [ -f "$arg" ]; then print -r -- "${arg:A}"
+    else print -u2 "mj: no such receipt: $arg"; return 66; fi
+}
+
+_mj_say() {   # run an operation, print it in plain language, return its exit code
+    local out rc
+    out=$(_mj_run "$@"); rc=$?
+    print -r -- "$out" | _mj_explain - ; return $rc
+}
+
+_mj_versions() {
+    local d name f when size stem ts; local -a rows
+    d=$(_mj_need_dir versions_dir versions) || return $?
+    name="${1:-}"
+    for f in "$d"/*.aep(.Nom); do
+        [[ "${f:t}" =~ '^(.*)\.([0-9]{8}T[0-9]{6}Z)\.([0-9a-f]{12})\.aep$' ]] || continue
+        stem="${match[1]}"; ts="${match[2]}"
+        [ -z "$name" ] || [[ "${(L)stem}" == *"${(L)name}"* ]] || continue
+        zmodload -F zsh/stat b:zstat 2>/dev/null
+        zstat -A when -F '%Y-%m-%d %H:%M' +mtime -- "$f"; zstat -A size +size -- "$f"
+        rows+=("$(printf '%-28s %s   %8.1f MB   %s' "$stem" "${when[1]}" "$(( ${size[1]} / 1048576.0 ))" "${match[3]}")")
+    done
+    [ ${#rows} -gt 0 ] || { print "No versions${name:+ matching \"$name\"} in $d yet."; return 0; }
+    print "Versions in $d (newest first):"; printf '  %s\n' "${rows[@]}"
+}
+
+_mj_watch() {
+    local tools="$_MJ_CLI_DIR/../../tools" w v label="com.neuralio.mograph-jailed.watcher"
+    case "${1:-status}" in
+        on)
+            w=$(_mj_need_dir watch_dir "projects (watch)") || return $?
+            v=$(mj_config_get versions_dir); [ -n "$v" ] || { print -u2 "mj: set a versions folder first:  mj config set versions_dir <folder>"; return 66; }
+            /bin/zsh -f "$tools/watch-install.zsh" --yes "$w" "$v" ;;
+        off) /bin/zsh -f "$tools/watch-uninstall.zsh" --yes ;;
+        status)
+            v=$(mj_config_get versions_dir)
+            if /bin/launchctl list 2>/dev/null | /usr/bin/grep -q "$label"; then print "Watcher: on  (versioning .aep files in $(mj_config_get watch_dir))"; else print "Watcher: off  (turn on with: mj watch on)"; fi
+            if [ -r "$v/watcher.log" ]; then print "Recent activity:"; /usr/bin/tail -n 3 "$v/watcher.log" | /usr/bin/sed 's/^/  /'; fi ;;
+        *) print -u2 "usage: mj watch on|off|status"; return 64 ;;
+    esac
+}
+
 _mj_print() {
     if [ -t 1 ] && [ -x /usr/bin/jq ]; then /usr/bin/jq .; else /bin/cat; fi
 }
@@ -205,6 +283,14 @@ mj cd                              go to the MographJailed folder
 mj <operation> [name=value ...]    run one allowlisted operation
 mj ops                             list operations and their arguments
 mj recipe <file> [name=value ...]  run a recipe file, stopping at the first failure
+mj snapshot <project>              save a verified version of a project (path or name)
+mj versions [project]              list saved versions
+mj lint [last|<scrape>]            check expressions, in plain language
+mj health [last|<scrape>] [--record]  project health score (0-100)
+mj diff last | <older> <newer>     what changed between two scrapes
+mj explain [last|<file>]           any receipt, in plain language
+mj watch on|off|status             automatic versioning of your .aep files
+mj doctor                          is this Mac ready? what is missing?
 mj last                            show the newest render receipt
 mj status                          one-line status (rendering progress, last render)
 mj notify on|off|test|status       macOS notifications when renders, golden checks, recipes or long operations finish
@@ -218,6 +304,47 @@ USAGE
                 | "\(.key)\t\(.value.state)\t\($g.allowed | map(. as $a | if ($g.required | index($a)) != null then $a + "*" else $a end) | join(" "))"' 2>/dev/null \
             || { print -u2 "mj: cannot read the operation registry"; return 69; }
             return ;;
+        snapshot)
+            shift; [ -n "${1:-}" ] || { print -u2 "usage: mj snapshot <project path or name>"; return 64; }
+            local v p; v=$(_mj_need_dir versions_dir versions) || return $?
+            p=$(_mj_resolve_project "$1") || return $?
+            _mj_say project.snapshot "path=$p" "output=$v"; return ;;
+        lint)
+            shift; local s; s=$(_mj_resolve_scrape "${1:-last}") || return $?
+            _mj_say expression.lint "path=$s"; return ;;
+        health)
+            shift
+            local rec=0 tgt="last" a; local -a hargs
+            for a in "$@"; do [ "$a" = "--record" ] && rec=1 || tgt="$a"; done
+            local hs; hs=$(_mj_resolve_scrape "$tgt") || return $?
+            hargs=("path=$hs"); [ -d "$(mj_config_get versions_dir)" ] && hargs+=("input=$(mj_config_get versions_dir)")
+            (( rec )) && hargs+=("format=record")
+            _mj_say project.health "${hargs[@]}"; return ;;
+        diff)
+            shift
+            local da db
+            if [ "${1:-last}" = last ] && [ -z "${2:-}" ]; then
+                local rd; rd=$(_mj_need_dir receipts_dir receipts) || return $?
+                local -a two; two=("$rd"/*.scrape.json(.Nom[1,2]))
+                [ ${#two} -eq 2 ] || { print -u2 "mj: need at least two scrape receipts in $rd to compare"; return 66; }
+                da="${two[2]}"; db="${two[1]}"          # older first
+            else
+                [ -n "${2:-}" ] || { print -u2 "usage: mj diff last   |   mj diff <older scrape> <newer scrape>"; return 64; }
+                da=$(_mj_resolve_scrape "$1") || return $?; db=$(_mj_resolve_scrape "$2") || return $?
+            fi
+            _mj_say project.diff "path=$da" "input=$db"; return ;;
+        explain)
+            shift
+            local ef="${1:-last}"
+            if [ "$ef" = last ]; then
+                local sd; sd=$(_mj_store)
+                [ -r "$sd/last-render.json" ] || { print -u2 "mj: nothing to explain yet (no render recorded)"; return 66; }
+                ef=$(/usr/bin/jq -r .receiptPath "$sd/last-render.json")
+            fi
+            _mj_explain "$ef"; return ;;
+        versions) shift; _mj_versions "$@"; return ;;
+        watch) shift; _mj_watch "$@"; return ;;
+        doctor) _mj_say system.doctor; return ;;
         notify)
             shift
             _mj_notify_cmd "$@"
@@ -265,23 +392,43 @@ USAGE
     return $rc
 }
 
-# Completion: operations, then each operation's argument names (from
-# system.describe), then file paths for values.
+# Completion. First word: human commands and every operation. After a human command: what it
+# takes (project files, "last", config keys, on/off ...). After an operation: its argument
+# names (read from system.describe, so they never go stale), then file paths for values.
 _mj_complete() {
     local -a items
-    local json
-    json=$(_mj_describe) || return 1
+    local json cmd="${words[2]}"
+    local -a verbs; verbs=(snapshot versions lint health diff explain watch doctor config notify status last open-last ui home cd ops recipe help)
     if (( CURRENT == 2 )); then
-        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe last open-last ui home cd status notify config)
+        json=$(_mj_describe) || json=""
+        items=($verbs ${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]' 2>/dev/null)"})
         compadd -a items
-    elif [[ "${words[2]}" == recipe ]]; then
-        _files
-    elif [[ "$PREFIX" == *=* ]]; then
-        compset -P '*='
-        _files
-    else
-        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r --arg op "${words[2]}" '.data.operations[$op].args.allowed[]?')"})
-        compadd -S '=' -q -a items
+        return
     fi
+    case "$cmd" in
+        snapshot) _files -g '*.(aep|AEP)' ;;
+        lint|explain) items=(last); compadd -a items; _files ;;
+        health) items=(last --record); compadd -a items; _files ;;
+        diff) items=(last); compadd -a items; _files ;;
+        watch) items=(on off status); compadd -a items ;;
+        notify) items=(on off test status); compadd -a items ;;
+        config)
+            if (( CURRENT == 3 )); then items=(show path get set unset); compadd -a items
+            elif [[ "${words[3]}" == (get|set|unset) ]] && (( CURRENT == 4 )); then items=(${=$(_mj_config_keys)}); compadd -a items
+            elif [[ "${words[3]}" == set ]]; then _files; fi ;;
+        ui) items=(--tab --once --plain); compadd -a items ;;
+        versions) ;;
+        recipe) _files ;;
+        last|open-last|home|cd|doctor|status|ops|help) ;;
+        *)
+            json=$(_mj_describe) || return 1
+            if [[ "$PREFIX" == *=* ]]; then
+                compset -P '*='
+                _files
+            else
+                items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r --arg op "$cmd" '.data.operations[$op].args.allowed[]?')"})
+                compadd -S '=' -q -a items
+            fi ;;
+    esac
 }
 (( $+functions[compdef] )) && compdef _mj_complete mj

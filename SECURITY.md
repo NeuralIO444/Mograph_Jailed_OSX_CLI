@@ -56,3 +56,9 @@ The optional terminal UX is project-local and non-privileged. It does not modify
 - FrameKit uses zero AVFoundation time tolerance and reports requested and actual time separately; consumers must not assume equality.
 - The JXA compatibility adapter uses Apple's deprecated synchronous image-generator method because JXA cannot consume Swift async/await. That implementation detail is isolated and remains target-Mac/AE-child qualification-gated.
 - Ruby and Perl are qualified only as auxiliary engineering/QA runtimes. Python/Xcode-dependent execution, Node/npm, FFmpeg, package managers, and downloaded runtimes are not production dependencies.
+
+## Unattended code and downloads (0.4.0-dev.1)
+
+- **Snapshot hooks** are the one place MographJailed runs a user-supplied program. They are opt-in (`post_snapshot_hook`), live in the user's own config, run only from the user-level watcher, and are refused unless the path is absolute and names a regular, executable file owned by the user that no one else can write to. They run directly (no shell), with closed stdin and a 30-second limit, and can never fail or delay a snapshot. The runtime itself still has no way to execute caller-supplied code.
+- **The installer** checks the unpacked download against a shipped `SHA256SUMS` and supports pinning a release by tag and zip hash (`MJ_INSTALL_REF`, `MJ_INSTALL_SHA256`). Accepted residual risk: `curl | zsh` runs whatever the server returns, and a list inside the download cannot vouch for itself. Download, read, then run for the strongest assurance.
+- **The scraper guard** (`scripts/check-scraper-readonly.sh`, enforced in CI) rejects mutating calls, assignments to settable After Effects properties on anything but its own records, and dynamic code. Accepted residual risk: computed member access (`x["set" + "Value"](...)`) defeats any text search; reviewers must reject it in the scraper.

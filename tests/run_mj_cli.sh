@@ -79,7 +79,7 @@ export MJ_OSASCRIPT="$TMP/osa" OSA_LOG="$TMP/osa.log"
 osa_wait(){ for _ in $(seq 1 30); do grep -q "=== end" "$OSA_LOG" 2>/dev/null && return 0; sleep 0.1; done; return 1; }
 mjn(){ MJ_CLI="$ROOT/dist/mograph-jailed-linux-test.sh" zsh -f -c "source '$ROOT/scripts/shell/mj-cli.zsh'; $1"; }
 
-mjn "mj notify status" | grep -q 'off' && pass=$((pass+1)) || { echo "FAIL: notify default off" >&2; fail=$((fail+1)); }
+check test -n "$(mjn "mj notify status" | grep 'off')"
 mjn "mj golden.check path=/nonexistent input=/x" >/dev/null 2>&1 || true
 sleep 0.4; check test ! -s "$OSA_LOG"                                  # off by default: silent
 mjn "mj notify on" >/dev/null

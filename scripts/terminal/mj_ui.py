@@ -240,7 +240,7 @@ def progress_bar(t, p, width, tick):
 
 class State:
     """Facts about this machine, each loaded independently so the UI can fill in as they land."""
-    SLOTS = ("describe", "hosts", "library", "audit", "plugins")
+    SLOTS = ("describe", "hosts", "library", "audit", "plugins", "health")
 
     def __init__(self):
         self.d = {k: None for k in self.SLOTS}
@@ -257,6 +257,8 @@ class State:
             v = call("index.verify")
         elif slot == "plugins":
             v = call("audit.plugins", maxResults=8)
+        elif slot == "health":
+            v = call("project.health", format="all")
         else:
             log = os.path.join(AUDIT_DIR, "audit.jsonl")
             v = {"enabled": os.path.isdir(AUDIT_DIR), "exists": os.path.isfile(log), "verify": call("audit.verify", path=log) if os.path.isfile(log) else None}
@@ -547,9 +549,27 @@ def tab_renders(t, st, w, tick):
     return out
 
 
+def health_lines(t, st, width):
+    """One line per recorded project: score, trend sparkline, direction. Colour follows the band."""
+    if not st.done["health"]:
+        return [t.paint(t.g["spin"][0] + " reading recorded health scores", DIM)]
+    h = st.d["health"]
+    if not h or not h.get("ok"):
+        return [t.paint("  none recorded yet.  mj health last --record", DIM)]
+    rows = []
+    arrow = {"improving": "▲", "worsening": "▼", "steady": "•"} if not t.ascii else {"improving": "^", "worsening": "v", "steady": "-"}
+    for p in h["data"]["projects"][:8]:
+        sc = p["latestScore"]
+        col = OK if sc >= 90 else ACCENT if sc >= 70 else WARN if sc >= 40 else BAD
+        name = os.path.basename(p["projectPath"])
+        rows.append("%s %s  %s  %s" % (pad(clip(name, max(12, width - 36)), max(12, width - 36)), t.paint("%3d" % sc, col, bold=True),
+                                      t.paint(pad(spark(t, [float(v) for v in p["series"]], 14), 14), col), t.paint("%s %s" % (arrow[p["direction"]], p["direction"]), DIM)))
+    return rows or [t.paint("  none recorded yet.  mj health last --record", DIM)]
+
+
 def tab_library(t, st, w, tick):
     lib = [row_line(t, a, b, c, tick, tick) for a, b, c in library_rows(t, st)]
-    out = card(t, "LIBRARY", lib, w, VIOLET)
+    out = card(t, "LIBRARY", lib, w, VIOLET) + card(t, "PROJECT HEALTH", health_lines(t, st, w - 4), w, OK)
     p = st.d["plugins"]
     lines = []
     if not st.done["plugins"]:

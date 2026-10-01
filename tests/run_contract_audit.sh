@@ -77,6 +77,9 @@ check cmp -s "$TMP/expected" "$TMP/router"
 check cmp -s "$TMP/expected" "$TMP/ae"
 check cmp -s "$TMP/expected" "$TMP/registry"
 
+# The installer's checksum list covers the tree as committed.
+check sh "$ROOT/scripts/make-manifest.sh" --check
+
 # Version strings must agree: runtime constant, VERSION file, newest CHANGELOG entry.
 CONST_V=$(sed -n 's/^MOGRAPHJAILED_CLI_VERSION="\(.*\)"$/\1/p' "$ROOT/src/core/constants.zsh")
 FILE_V=$(sed -n '1s/^MographJailed //p' "$ROOT/VERSION")

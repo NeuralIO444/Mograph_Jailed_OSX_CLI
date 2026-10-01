@@ -128,7 +128,7 @@ PROG=$!
 SEEN=""
 for i in $(seq 1 40); do
   if [ -f "$TMP/store/render-progress.json" ]; then
-    SEEN="$SEEN $(jq -r '.frames' "$TMP/store/render-progress.json" 2>/dev/null)"
+    SEEN="$SEEN $(jq -r '.frames' "$TMP/store/render-progress.json" 2>/dev/null || true)"   # the file can vanish between the test and the read
   fi
   kill -0 $PROG 2>/dev/null || break
   sleep 0.3

@@ -6,12 +6,25 @@
 #
 # Run it straight from the web (macOS Terminal):
 #   curl -fsSL https://raw.githubusercontent.com/NeuralIO444/Mograph_Jailed_OSX_CLI/main/tools/install-designer.zsh | zsh
-# Or download it first and run:  zsh install-designer.zsh
+# Or download it first and run:  zsh install-designer.zsh   (reading it first is the safest way)
+#
+# Integrity: the download is unpacked into a temp folder and every file is checked against the
+# SHA256SUMS list shipped inside it before anything is copied into place, and the download's
+# own SHA-256 is printed. To pin an exact release, set MJ_INSTALL_REF (a tag, e.g. 0.4.0) and
+# MJ_INSTALL_SHA256 (the zip's hash from a source you trust); the install refuses on a mismatch.
+# Scripted installs: MJ_INSTALL_YES=1 MJ_INSTALL_ROOT=/path [MJ_INSTALL_REPLACE=1].
 
 emulate -R zsh
 set -u
 
-REPO_ZIP_URL="https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/archive/refs/heads/main.zip"
+MJ_INSTALL_REF="${MJ_INSTALL_REF:-}"
+if [ -n "$MJ_INSTALL_REF" ]; then
+  REPO_ZIP_URL="https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/archive/refs/tags/$MJ_INSTALL_REF.zip"
+else
+  REPO_ZIP_URL="https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/archive/refs/heads/main.zip"
+fi
+REPO_ZIP_URL="${MJ_INSTALL_ZIP_URL:-$REPO_ZIP_URL}"   # tests and mirrors
+YES="${MJ_INSTALL_YES:-0}"
 DEFAULT_ROOT="$HOME/Documents/MographJailed"
 
 # --- little UI helpers (plain language, no jargon) ---
@@ -25,6 +38,7 @@ die()    { /bin/echo ""; /bin/echo "   ✗ $*"; /bin/echo ""; exit 1; }
 # The prompt goes to stderr so $(ask ...) captures only the answer.
 ask() {
   local _prompt="$1" _default="$2" _ans=""
+  if [ "$YES" = 1 ]; then /bin/echo "$_default"; return; fi
   if [ -n "$_default" ]; then
     /bin/echo -n "   $_prompt [$_default]: " >&2
   else
@@ -36,6 +50,7 @@ ask() {
 }
 confirm() {
   local _ans
+  if [ "$YES" = 1 ]; then return 1; fi      # scripted installs never accept optional extras or replacements by default
   _ans=$(ask "$1" "y")
   case "$_ans" in
     y|Y|yes|YES) return 0 ;;
@@ -54,7 +69,7 @@ step "Step 1 of 4 — Checking your Mac"
 if [ "$(/usr/bin/uname -s)" != "Darwin" ] && [ "${MJ_INSTALL_ALLOW_NONMAC:-}" != "1" ]; then
   die "This installer needs a Mac (found $(/usr/bin/uname -s))."
 fi
-if [ ! -c /dev/tty ] && [ ! -t 0 ]; then
+if [ "$YES" != 1 ] && [ ! -c /dev/tty ] && [ ! -t 0 ]; then
   die "This installer is interactive — please run it in a Terminal, not through automation."
 fi
 ok "macOS detected"
@@ -71,7 +86,7 @@ fi
 # --- 2. choose a home for it ---
 step "Step 2 of 4 — Where should it live?"
 /bin/echo "   Everything goes inside one folder. Nothing is installed anywhere else."
-ROOT=$(ask "Install folder" "$DEFAULT_ROOT")
+ROOT=$(ask "Install folder" "${MJ_INSTALL_ROOT:-$DEFAULT_ROOT}")
 # expand a leading ~ the way a human means it
 case "$ROOT" in
   "~"*) ROOT="$HOME${ROOT#\~}" ;;
@@ -92,7 +107,9 @@ if [ -d "$ROOT/.git" ]; then
 else
   if [ -e "$ROOT" ]; then
     say "   That folder already exists."
-    confirm "Replace its MographJailed contents with a fresh download? (your snapshots elsewhere are not touched)" || die "Quitting — nothing was changed."
+    if [ "$YES" = 1 ] && [ "${MJ_INSTALL_REPLACE:-0}" = 1 ]; then :; else
+      confirm "Replace its MographJailed contents with a fresh download? (your snapshots elsewhere are not touched)" || die "Quitting — nothing was changed."
+    fi
   fi
   step "Step 3 of 4 — Downloading MographJailed"
   /bin/echo "   From: github.com/NeuralIO444/Mograph_Jailed_OSX_CLI"
@@ -100,13 +117,28 @@ else
   trap '/bin/rm -rf "$TMPD"' EXIT
   /usr/bin/curl -fsSL -o "$TMPD/mj.zip" "$REPO_ZIP_URL" || die "Download failed — check your internet and try again."
   ok "downloaded"
-  if command -v ditto >/dev/null 2>&1; then
-    /usr/bin/ditto -x -k "$TMPD/mj.zip" "$TMPD" || die "Couldn't unpack the download."
-  else
-    /usr/bin/unzip -q "$TMPD/mj.zip" -d "$TMPD" || die "Couldn't unpack the download."
+  ZIP_SHA=$(/usr/bin/shasum -a 256 "$TMPD/mj.zip" | /usr/bin/awk '{print $1}')
+  /bin/echo "   download SHA-256: $ZIP_SHA"
+  if [ -n "${MJ_INSTALL_SHA256:-}" ]; then
+    [ "$ZIP_SHA" = "${MJ_INSTALL_SHA256}" ] || die "The download does not match the SHA-256 you pinned (expected ${MJ_INSTALL_SHA256}) — nothing installed."
+    ok "matches the SHA-256 you pinned"
   fi
-  SRC="$TMPD/Mograph_Jailed_OSX_CLI-main"
-  [ -f "$SRC/dist/mograph-jailed.zsh" ] || die "Download looks wrong (missing dist/mograph-jailed.zsh) — nothing installed."
+  if command -v ditto >/dev/null 2>&1; then
+    /usr/bin/ditto -x -k "$TMPD/mj.zip" "$TMPD/unpacked" || die "Couldn't unpack the download."
+  else
+    /usr/bin/unzip -q "$TMPD/mj.zip" -d "$TMPD/unpacked" || die "Couldn't unpack the download."
+  fi
+  # GitHub wraps the files in one folder named after the repo and ref.
+  SRC=$(/bin/ls -d "$TMPD"/unpacked/*/ 2>/dev/null | /usr/bin/head -1)
+  SRC="${SRC%/}"
+  [ -n "$SRC" ] && [ -f "$SRC/dist/mograph-jailed.zsh" ] || die "Download looks wrong (missing dist/mograph-jailed.zsh) — nothing installed."
+  if [ -f "$SRC/SHA256SUMS" ]; then
+    BAD=$(cd "$SRC" && /usr/bin/shasum -a 256 -c SHA256SUMS 2>&1 | /usr/bin/grep -v ': OK$' | /usr/bin/head -5)
+    [ -z "$BAD" ] || die "Some files in the download do not match their checksums — nothing installed.${BAD:+ ($(/bin/echo "$BAD" | /usr/bin/head -1))}"
+    ok "every file matches its checksum"
+  else
+    warn "this download has no checksum list (older release); file check skipped"
+  fi
   /bin/mkdir -p "$ROOT" || die "Can't create $ROOT."
   # copy contents (not the wrapper dir) into place
   /bin/cp -R "$SRC/." "$ROOT/" || die "Copy failed."
@@ -118,7 +150,7 @@ fi
 step "Step 4 of 4 — Making sure it works"
 CLI="$FRESH_ROOT/dist/mograph-jailed.zsh"
 [ -f "$CLI" ] || die "The installed copy looks broken (no dist/mograph-jailed.zsh)."
-PROBE_OUT=$(/bin/zsh -f "$CLI" --request /dev/stdin <<'REQ' 2>/dev/null
+PROBE_OUT=$(/bin/zsh -f "$CLI" --request - <<'REQ' 2>/dev/null
 MOGRAPHJAILED_REQUEST 1
 requestId=designer-install-check
 command=system.probe
@@ -147,6 +179,12 @@ if confirm "Auto-version your After Effects projects when they change? (the watc
   case "$VERSIONS_DIR" in "~"*) VERSIONS_DIR="$HOME${VERSIONS_DIR#\~}" ;; esac
   /bin/zsh -f "$FRESH_ROOT/tools/watch-install.zsh" --yes "$WATCH_DIR" "$VERSIONS_DIR" \
     && ok "watcher installed — snapshots appear in $VERSIONS_DIR"
+  # Remember the folders so every tool (mj, the dashboard) knows them without flags.
+  if [ -r "$FRESH_ROOT/scripts/shell/mj-config.zsh" ]; then
+    /bin/zsh -f -c 'source "$1"; mj_config_set watch_dir "$2" && mj_config_set versions_dir "$3"' _ \
+      "$FRESH_ROOT/scripts/shell/mj-config.zsh" "$WATCH_DIR" "$VERSIONS_DIR" >/dev/null 2>&1 \
+      && ok "remembered your folders (change them any time with: mj config)"
+  fi
 fi
 
 # --- farewell ---
@@ -155,15 +193,27 @@ fi
 /bin/echo "  │  You're in. Here's what you've got:          │"
 /bin/echo "  └──────────────────────────────────────────────┘"
 /bin/echo ""
+/bin/echo "  • Everyday commands (open a new Terminal first):"
+/bin/echo "      mj              status of everything at a glance"
+/bin/echo "      mj ui           live dashboard"
+/bin/echo "      mj doctor       is this Mac ready?"
+/bin/echo "      mj snapshot X   save a verified version of a project"
+/bin/echo "      mj lint last    check your newest scrape, in plain language"
+/bin/echo ""
 /bin/echo "  • Project scraper (run inside After Effects):"
 /bin/echo "      File → Scripts → Run Script File, then pick:"
 /bin/echo "      $FRESH_ROOT/integrations/after-effects/MographJailed_ProjectScraper.jsx"
-/bin/echo ""
-/bin/echo "  • Live dashboard (Terminal):"
-/bin/echo "      zsh -f $FRESH_ROOT/tools/mj-observe-dash.zsh --versions \$HOME/AE_Versions --receipts \$HOME/AE_Receipts"
 /bin/echo ""
 /bin/echo "  • Help any time:  mj-man   (if you installed terminal helpers)"
 /bin/echo "  • Guides: https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/wiki"
 /bin/echo ""
 /bin/echo "  It can look at everything and change nothing."
 /bin/echo ""
+
+# --- the front door: offer the dashboard (shown on every install and re-install) ---
+if [ "$YES" != 1 ] && [ -r "$FRESH_ROOT/scripts/terminal/mj_ui.py" ] && [ -x /usr/bin/python3 ]; then
+  if confirm "Open the live dashboard now? (press q inside it to come back)"; then
+    MOGRAPHJAILED_ROOT="$FRESH_ROOT" MJ_CLI="$CLI" /usr/bin/python3 "$FRESH_ROOT/scripts/terminal/mj_ui.py" home < /dev/tty
+    MOGRAPHJAILED_ROOT="$FRESH_ROOT" MJ_CLI="$CLI" /usr/bin/python3 "$FRESH_ROOT/scripts/terminal/mj_ui.py" ui < /dev/tty
+  fi
+fi

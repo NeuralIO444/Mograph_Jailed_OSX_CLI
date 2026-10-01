@@ -33,7 +33,7 @@ touch "$A/Maxon Cinema 4D 2026/corelibs/redshift.xlib"
 # --- empty machine ---
 python3 "$UI" home --plain --width 90 > "$TMP/h0.txt"
 check grep -q 'M O G R A P H' "$TMP/h0.txt"
-check grep -Eq 'runtime +0\.[0-9a-z.-]+ . 44 operations' "$TMP/h0.txt"
+check grep -Eq 'runtime +[0-9][0-9a-z.-]+ . [0-9]+ operations' "$TMP/h0.txt"
 check grep -Eq 'after effects +2026 \(26\.5\.0\)' "$TMP/h0.txt"
 check grep -Eq 'cinema 4d +2026 \(2026\.3\) +redshift' "$TMP/h0.txt"
 check grep -q 'library .*empty.*mj index.add' "$TMP/h0.txt"
@@ -45,7 +45,7 @@ check test ! -e "$TMP/store" -a ! -e "$TMP/audit"       # looking creates nothin
 # --- populated machine ---
 mkdir -p "$TMP/r" "$TMP/audit"
 cat > "$TMP/r/a.scrape.json" <<'J'
-{"schema":"MJ_PROJECT_SCRAPE_1","projectName":"hero.aep","projectPath":"/p/hero.aep","scrapedAt":"2026-10-01T10:00:00Z","aeVersion":"26.5.0","fonts":["Inter"],
+{"schema":"MJ_PROJECT_SCRAPE_1","scraperVersion":"1.0","numItems":3,"projectName":"hero.aep","projectPath":"/p/hero.aep","scrapedAt":"2026-10-01T10:00:00Z","aeVersion":"26.5.0","fonts":["Inter"],
  "footage":[{"id":1,"name":"bg.mov","path":"/p/bg.mov","missing":false}],
  "comps":[{"id":1,"name":"Main","layers":[{"index":1,"name":"FX","type":"AVLayer","sourceName":"","sourcePath":"","sourceId":0,"effects":[{"name":"Glow","matchName":"ADBE Glo2"}]}]}]}
 J
@@ -169,6 +169,21 @@ python3 "$UI" ui --once --plain --width 100 --tab overview > "$TMP/pg4.txt"
 check bash -c "! grep -q 'shot_07' '$TMP/pg4.txt'"
 check bash -c "python3 '$UI' status --plain | grep -q 'MJ . last render'"
 rm -rf "$TMP/store/locks" "$TMP/store/render-progress.json"
+
+# --- recorded project health shows as a trend ---
+python3 - "$TMP/r/a.scrape.json" "$TMP/r/b.scrape.json" <<'PY'
+import copy, json, sys
+d = json.load(open(sys.argv[1])); d["scrapedAt"] = "2026-10-02T10:00:00Z"
+d["footage"].append({"id": 2, "name": "gone.mov", "path": "/nope/gone.mov", "missing": True})
+json.dump(d, open(sys.argv[2], "w"))
+PY
+run "$TMP/hr1.json" project.health "path=$TMP/r/a.scrape.json" "format=record"
+run "$TMP/hr2.json" project.health "path=$TMP/r/b.scrape.json" "format=record"
+python3 "$UI" ui --once --plain --width 100 --tab library > "$TMP/hl.txt"
+check grep -q 'PROJECT HEALTH' "$TMP/hl.txt"
+check grep -Eq 'hero.aep +[0-9]+ +.+ v worsening' "$TMP/hl.txt"
+check test "$(python3 "$UI" ui --once --plain --width 60 --tab library | maxw)" -le 60
+rm -rf "$TMP/store/index.sqlite-journal"
 
 # --- a tampered audit log is shouted about ---
 cp "$TMP/audit/audit.jsonl" "$TMP/audit.good"

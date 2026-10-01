@@ -48,6 +48,8 @@ jobs:
           zsh -n dist/mograph-jailed.zsh
       - name: dist must match committed bundle
         run: git diff --exit-code -- dist/
+      - name: installer checksum list must be current
+        run: sh scripts/make-manifest.sh --check
 
   portable-tests:
     name: Portable tests + fuzz

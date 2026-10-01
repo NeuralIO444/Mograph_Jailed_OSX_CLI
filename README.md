@@ -85,6 +85,21 @@ mj recipe recipes/render-qa.mjrecipe frames=... golden=...
 
 `mj` has tab completion and is installed by `scripts/shell/install-terminal-ux.sh`. Local help: `mj-man` (topics: `mj`, `render`, `frames`, `audit`, `library`, `commands`, `protocol`, `safety`). Terminal UI: `mj` (launch screen) and `mj ui` (dashboard); the Tier 0 observer view is `tools/mj-observe-dash.zsh`.
 
+## Everyday commands
+
+```sh
+mj snapshot "Spring Promo"        # save a verified version of a project
+mj lint last                      # what is wrong with my expressions, and how to fix it
+mj health last --record           # 0-100 project health, trended over time
+mj diff last                      # what changed between my two newest scrapes
+mj explain last                   # any receipt, in plain language
+mj watch on                       # version my .aep files automatically
+mj doctor                         # is this Mac ready?
+mj config set versions_dir ~/AE_Versions    # set a folder once; every tool remembers it
+```
+
+Every one of these is a thin wrapper over an operation and prints sentences, not JSON. The operations underneath (`project.diff`, `project.health`, `expression.lint` with teaching text, …) stay fully scriptable, and `--request -` reads a request from standard input.
+
 ## Trust model
 
 - **Allowlisted operations only.** No `shell.execute`, no `db.query`; every database statement is fixed text with bound parameters, and a recipe is data that is validated before it runs.
@@ -92,6 +107,8 @@ mj recipe recipes/render-qa.mjrecipe frames=... golden=...
 - **Local only.** Network volumes are classified without being touched and are never opened, copied or indexed. Hosts are found only in `/Applications`; a request cannot name a binary.
 - **Fail closed and honest.** Missing tools, unsupported hosts and unconfigured licences return a clear error code, not a guess. Host runs have closed stdin, a hard timeout and a whole-process-group kill.
 - **Tamper-evident.** Turn on the audit log (`mkdir -p ~/Library/Logs/MographJailed`) and every request is chained by SHA-256; `audit.verify` finds edits and deletions.
+- **Verified downloads.** The installer prints the download's SHA-256, checks every file against a shipped `SHA256SUMS`, and can pin a release tag and hash.
+- **Unattended hooks are fenced.** An optional `post_snapshot_hook` runs only if it is an executable you own that nobody else can write to, directly (no shell), with a time limit, and can never harm a snapshot.
 - **Stock macOS.** Runs on `/bin/zsh` plus the system `python3` (only for the Power CLI operations). See `DEPENDENCY_AUDIT.md`.
 
 Protocol v1 is preserved and the public surface has grown additively: 20 → 23 → 27 → 44 operations. The full request and response contracts are in `PROTOCOL.md`; the roadmap is `docs/PLAN_AE_C4D_POWER_CLI.md` and the GitHub milestones. Scraper schema: `docs/MJ_PROJECT_SCRAPE_1.md`; observer tiers: `docs/TIER0_OBSERVER.md`.

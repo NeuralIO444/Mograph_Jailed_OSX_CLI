@@ -28,6 +28,60 @@ find "$STAGE_DIR" -maxdepth 1 \( -name 'req-*.txt' -o -name 'req.*' \) -mtime +1
 
 epoch=$(date +%s)
 
+# --- optional user hook (post_snapshot_hook in the config file, or MJ_POST_SNAPSHOT_HOOK) ---
+# Runs after a NEW snapshot is safely saved, with the receipt path as its argument. It is the
+# user's own script, so it is held to the same rules as anything that runs unattended: an
+# absolute path, a regular file owned by this user and executable, not writable by anyone else;
+# run directly (no shell), stdin closed, output to hook.log, killed after a timeout. A hook can
+# never fail or delay a snapshot: every problem is logged and the watcher carries on.
+CONFIG_FILE="${MJ_CONFIG:-$HOME/.config/mograph-jailed/config}"
+HOOK="${MJ_POST_SNAPSHOT_HOOK:-}"
+if [[ -z "$HOOK" && -r "$CONFIG_FILE" ]]; then
+    HOOK=$(sed -n 's/^[[:space:]]*post_snapshot_hook[[:space:]]*=[[:space:]]*//p' "$CONFIG_FILE" | tail -1)
+fi
+HOOK_TIMEOUT="${MJ_HOOK_TIMEOUT:-30}"
+HOOK_LOG="$VERSIONS_DIR/hook.log"
+zmodload zsh/stat 2>/dev/null
+
+run_hook() {   # run_hook <receipt> <snapshot> <source> <sha256>
+    [[ -n "$HOOK" ]] || return 0
+    local real="${HOOK:A}" uid mode why=""
+    if [[ "$HOOK" != /* ]]; then why="path is not absolute"
+    elif [[ ! -f "$real" ]]; then why="not a file"
+    elif [[ ! -x "$real" ]]; then why="not executable"
+    else
+        uid=$(zstat +uid "$real" 2>/dev/null); mode=$(zstat +mode "$real" 2>/dev/null)
+        if [[ "$uid" != "$(id -u)" ]]; then why="not owned by you"
+        elif (( mode & 8#022 )); then why="writable by others"
+        fi
+    fi
+    if [[ -n "$why" ]]; then
+        print -r "$(date '+%F %T') hook refused ($why): $HOOK" >> "$LOG_FILE"
+        return 0
+    fi
+    print -r "$(date '+%F %T') --- $HOOK $1" >> "$HOOK_LOG"
+    ( MJ_SNAPSHOT_RECEIPT="$1" MJ_SNAPSHOT_PATH="$2" MJ_SOURCE_PATH="$3" MJ_SNAPSHOT_SHA256="$4" \
+        exec "$real" "$1" </dev/null >> "$HOOK_LOG" 2>&1 ) &
+    local pid=$! waited=0 rc
+    while kill -0 "$pid" 2>/dev/null; do
+        if (( waited >= HOOK_TIMEOUT )); then
+            /usr/bin/pkill -TERM -P "$pid" 2>/dev/null; kill -TERM "$pid" 2>/dev/null
+            sleep 1; /usr/bin/pkill -KILL -P "$pid" 2>/dev/null; kill -KILL "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null
+            print -r "$(date '+%F %T') hook timed out after ${HOOK_TIMEOUT}s (stopped): $HOOK" >> "$LOG_FILE"
+            return 0
+        fi
+        sleep 1; waited=$((waited + 1))
+    done
+    wait "$pid"; rc=$?
+    if (( rc == 0 )); then
+        print -r "$(date '+%F %T') hook ok: ${HOOK:t}" >> "$LOG_FILE"
+    else
+        print -r "$(date '+%F %T') hook FAILED (exit $rc) (snapshot is safe): ${HOOK:t}" >> "$LOG_FILE"
+    fi
+    return 0
+}
+
 if [[ ! -d "$WATCH_DIR" ]]; then
     print -r "$(date '+%F %T') watch dir missing, nothing to do: $WATCH_DIR" >> "$LOG_FILE"
     exit 0
@@ -58,6 +112,9 @@ find "$WATCH_DIR" -maxdepth 2 -type f -iname '*.aep' -print 2>/dev/null | while 
         print -r "$(date '+%F %T') unchanged, skipped: $aep" >> "$LOG_FILE"
     elif [[ "$rc" -eq 0 ]]; then
         print -r "$(date '+%F %T') snapshot ok: $aep" >> "$LOG_FILE"
+        run_hook "$(print -r -- "$out" | /usr/bin/jq -r '.data.receiptPath // empty' 2>/dev/null)" \
+                 "$(print -r -- "$out" | /usr/bin/jq -r '.data.snapshotPath // empty' 2>/dev/null)" \
+                 "$aep" "$(print -r -- "$out" | /usr/bin/jq -r '.data.sha256 // empty' 2>/dev/null)"
     elif [[ "$code" == "OUTPUT_EXISTS" ]]; then
         print -r "$(date '+%F %T') already saved by a concurrent run: $aep" >> "$LOG_FILE"
     elif [[ "$code" == "SNAPSHOT_UNSTABLE" ]]; then

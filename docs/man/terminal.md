@@ -92,6 +92,10 @@ MJ ✓ last render shot_07 complete 2h ago
 
 There is no menu-bar process, because that would be a permanently running daemon. If you already use SwiftBar, `integrations/swiftbar/mj.10s.sh` is an optional plugin that shows the same line in the menu bar.
 
+## Installer integrity
+
+The designer installer prints the SHA-256 of what it downloaded and, before copying anything into place, checks every unpacked file against the `SHA256SUMS` list that ships in the download. That catches truncated, corrupted or mixed-up downloads; it cannot protect against someone who controls the repository (they could change the list too). For a pinned install, set `MJ_INSTALL_REF` to a release tag and `MJ_INSTALL_SHA256` to the zip's hash from a source you trust, and the install refuses on any mismatch. The safest way to run any installer is to download it, read it, then run it. At the end it offers to open the dashboard.
+
 ## Presentation fallback
 
 - modern: ANSI color + Unicode box drawing

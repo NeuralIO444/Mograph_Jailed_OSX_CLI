@@ -14,6 +14,8 @@ fail() { /bin/echo "ERROR: $*" >&2; exit 1; }
 [ -r "$ROOT/scripts/shell/mj-top.zsh" ] || fail "mj-top helper is missing."
 [ -r "$ROOT/scripts/shell/mj-cli.zsh" ] || fail "mj front end is missing."
 [ -r "$ROOT/scripts/terminal/mj_ui.py" ] || fail "mj terminal UI is missing."
+[ -r "$ROOT/scripts/terminal/mj_explain.py" ] || fail "mj explain is missing."
+[ -r "$ROOT/scripts/shell/mj-config.zsh" ] || fail "mj settings helper is missing."
 [ -r "$ROOT/scripts/terminal/mj-md-render.awk" ] || fail "Markdown renderer is missing."
 [ -r "$ROOT/scripts/terminal/mj-top-render.js" ] || fail "Dashboard renderer is missing."
 [ -r "$ROOT/scripts/terminal/mj-top-run.zsh" ] || fail "Dashboard worker is missing."

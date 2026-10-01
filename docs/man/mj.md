@@ -17,9 +17,51 @@ mj notify on|off|test|status        notifications when renders, golden checks, r
 
 Values with spaces need quotes: `mj file.inspect "path=/Users/me/My Project/a.aep"`.
 
+## Everyday commands
+
+These are plain-language wrappers over the operations below; every one prints sentences, not JSON.
+
+```text
+mj snapshot "Spring Promo"       save a verified version (a path or a name searched under watch_dir)
+mj versions [name]               list saved versions, newest first
+mj lint [last|<scrape>]          check expressions: what is wrong, why, and the fix
+mj health [last|<scrape>] [--record]   0-100 score; --record keeps it for the trend
+mj diff last                     what changed between your two newest scrapes
+mj diff <older> <newer>          ... or between any two
+mj explain [last|<file>]         any receipt or response, in plain language
+mj watch on|off|status           automatic versioning of your .aep files
+mj doctor                        is this Mac ready? what is missing, and what to do
+```
+
+`last` means the newest scrape receipt in your receipts folder (or, for `mj explain`, the newest render).
+
+## Remembered settings
+
+Set a folder once and every tool remembers it:
+
+```text
+mj config set versions_dir ~/AE_Versions
+mj config set receipts_dir ~/AE_Receipts
+mj config set watch_dir ~/Movies
+mj config show          settings, and where each value came from (env, file or default)
+mj config path          where the file lives (~/.config/mograph-jailed/config)
+```
+
+Keys: `versions_dir`, `receipts_dir`, `watch_dir`, `cli`, `post_snapshot_hook`. Precedence is always flag, then environment (`MJ_VERSIONS_DIR`, `MJ_RECEIPTS_DIR`, `MJ_WATCH_DIR`, `MJ_CLI`, `MJ_POST_SNAPSHOT_HOOK`), then the file, then the default. The file is read as plain text and never run as code.
+
+## Snapshot hooks
+
+To run your own script after each new snapshot (copy the receipt to a server, send yourself a message, start a check):
+
+```text
+mj config set post_snapshot_hook ~/bin/after-snapshot.sh
+```
+
+The watcher runs it with the receipt path as its first argument (and `MJ_SNAPSHOT_RECEIPT`, `MJ_SNAPSHOT_PATH`, `MJ_SOURCE_PATH`, `MJ_SNAPSHOT_SHA256` in its environment). Because it runs unattended, it must be a full path to a regular file you own, executable and not writable by anyone else; otherwise the watcher logs `hook refused (...)` and skips it. It runs directly (not through a shell), with no input, and is stopped after 30 seconds. Its output goes to `hook.log` in the versions folder. A hook that fails, hangs or is refused never affects the snapshot, which is already saved. Hooks run only when a new snapshot was made, not when nothing changed.
+
 ## Tab completion
 
-Press Tab after `mj` for operation names, after an operation for its argument names, and after `name=` for file paths. Argument lists come from the runtime itself (`system.describe`), so they never go stale.
+Press Tab after `mj` for the everyday commands and operation names, after a command for what it takes (project files, `last`, `on`/`off`, setting names), and after `name=` for file paths. Argument lists come from the runtime itself (`system.describe`), so they never go stale.
 
 ## Recipes
 

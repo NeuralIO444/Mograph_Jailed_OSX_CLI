@@ -19,11 +19,13 @@ run(){
     for _a in "$@"; do printf 'arg.%s=%s\n' "${_a%%=*}" "$(b64 "${_a#*=}")"; done; } > "$_f"
   "$CLI" --request "$_f" > "$_out" 2>/dev/null || true
 }
+# has: like `grep`, but reads all of stdin first, so `producer | has -q x` cannot die of SIGPIPE under pipefail
+has(){ local _in; _in=$(cat); grep "$@" <<<"$_in"; }
 mjz(){ MJ_CLI="$CLI" zsh -f -c "source '$ROOT/scripts/shell/mj-cli.zsh'; $1"; }
 
 # ================= #29 config =================
 check bash -c "MJ_CONFIG='$TMP/cfg/config' zsh -f -c \"source '$ROOT/scripts/shell/mj-config.zsh'; mj_config_get versions_dir\" | grep -q 'AE_Versions'"
-mjz "mj config set versions_dir '$TMP/v'" | grep -q 'saved' && pass=$((pass+1)) || { echo "FAIL: config set" >&2; fail=$((fail+1)); }
+mjz "mj config set versions_dir '$TMP/v'" | has -q 'saved' && pass=$((pass+1)) || { echo "FAIL: config set" >&2; fail=$((fail+1)); }
 check test "$(cat "$TMP/cfg/config")" = "versions_dir=$TMP/v"
 check test "$(mjz "mj config get versions_dir")" = "$TMP/v"
 mjz "mj config set versions_dir '$TMP/v2'" >/dev/null                                   # replaces, no duplicate lines
@@ -227,7 +229,7 @@ printf '{"schema":"WHO_KNOWS"}' > "$TMP/x_unk.json"
 set +e; python3 "$EXPL" "$TMP/x_unk.json" > "$TMP/x8.txt" 2>&1; r=$?; python3 "$EXPL" "$TMP/nope" >/dev/null 2>&1; r2=$?; echo 'not json' | python3 "$EXPL" - >/dev/null 2>&1; r3=$?; set -e
 check test "$r" = 65 -a "$r2" = 66 -a "$r3" = 65
 check grep -q 'do not recognise' "$TMP/x8.txt"
-cat "$TMP/x_ing.json" | python3 "$EXPL" - | head -1 | grep -q 'hero.aep' && pass=$((pass+1)) || { echo "FAIL: explain stdin" >&2; fail=$((fail+1)); }
+cat "$TMP/x_ing.json" | python3 "$EXPL" - | head -1 | has -q 'hero.aep' && pass=$((pass+1)) || { echo "FAIL: explain stdin" >&2; fail=$((fail+1)); }
 # warnings from the response are shown to a person
 run "$TMP/x_wr.json" project.ingest "path=$TMP/scrape_trunc.json"
 python3 -c "
@@ -235,6 +237,254 @@ import json; d=json.load(open('$TMP/sc/v2.scrape.json')); d['compsTruncated']=Tr
 run "$TMP/x_wr.json" project.ingest "path=$TMP/scrape_trunc.json"
 explain "$TMP/x_wr.json" > "$TMP/x9.txt"
 check grep -q 'Heads up:' "$TMP/x9.txt"
+
+# ================= #31 snapshot hooks =================
+render_watcher(){ mkdir -p "$2"; sed -e "s|__WATCH_DIR__|$1|g" -e "s|__VERSIONS_DIR__|$2|g" -e "s|__CLI_PATH__|$3|g" "$ROOT/watcher/watch-fire.zsh" > "$2/fire.zsh"; echo "$2/fire.zsh"; }
+mkdir -p "$TMP/hk/watch" "$TMP/hk/my hooks"
+printf 'hook-project' > "$TMP/hk/watch/Hooked.aep"
+cat > "$TMP/hk/my hooks/good hook.sh" <<STUB
+#!/bin/sh
+echo "\$1" >> "$TMP/hk/calls.txt"
+echo "\$MJ_SNAPSHOT_RECEIPT|\$MJ_SNAPSHOT_PATH|\$MJ_SOURCE_PATH|\$MJ_SNAPSHOT_SHA256" >> "$TMP/hk/env.txt"
+echo "hook stdout line"
+STUB
+chmod 700 "$TMP/hk/my hooks/good hook.sh"
+FIRE=$(render_watcher "$TMP/hk/watch" "$TMP/hk/v1" "$CLI")
+MJ_POST_SNAPSHOT_HOOK="$TMP/hk/my hooks/good hook.sh" zsh -f "$FIRE"; rc=$?
+check test "$rc" = 0
+check test "$(wc -l < "$TMP/hk/calls.txt" | tr -d ' ')" = 1
+RCPT=$(cat "$TMP/hk/calls.txt")
+check test -f "$RCPT"
+check bash -c "echo '$RCPT' | grep -q 'snapshot.json\$'"
+check bash -c "cut -d'|' -f1 '$TMP/hk/env.txt' | grep -qx '$RCPT'"
+check bash -c "cut -d'|' -f3 '$TMP/hk/env.txt' | grep -q 'Hooked.aep\$' && cut -d'|' -f4 '$TMP/hk/env.txt' | grep -Eq '^[0-9a-f]{64}\$'"
+check grep -q 'hook ok: good hook.sh' "$TMP/hk/v1/watcher.log"
+check grep -q 'hook stdout line' "$TMP/hk/v1/hook.log"
+MJ_POST_SNAPSHOT_HOOK="$TMP/hk/my hooks/good hook.sh" zsh -f "$FIRE"                   # unchanged project: no new snapshot, no hook
+check test "$(wc -l < "$TMP/hk/calls.txt" | tr -d ' ')" = 1
+check grep -q 'unchanged, skipped' "$TMP/hk/v1/watcher.log"
+# a failing hook is logged and cannot hurt the snapshot or the watcher
+printf '#!/bin/sh\nexit 3\n' > "$TMP/hk/fail.sh"; chmod 700 "$TMP/hk/fail.sh"
+FIRE2=$(render_watcher "$TMP/hk/watch" "$TMP/hk/v2" "$CLI")
+MJ_POST_SNAPSHOT_HOOK="$TMP/hk/fail.sh" zsh -f "$FIRE2"; rc=$?
+check test "$rc" = 0
+check grep -q 'snapshot ok:' "$TMP/hk/v2/watcher.log"
+check grep -q 'hook FAILED (exit 3) (snapshot is safe)' "$TMP/hk/v2/watcher.log"
+check test "$(ls "$TMP"/hk/v2/Hooked.*.aep | wc -l | tr -d ' ')" = 1
+# a hook that hangs is stopped at the timeout, children included
+printf '#!/bin/sh\nsleep 300 &\nsleep 300\n' > "$TMP/hk/hang.sh"; chmod 700 "$TMP/hk/hang.sh"
+FIRE3=$(render_watcher "$TMP/hk/watch" "$TMP/hk/v3" "$CLI")
+START=$(date +%s)
+MJ_POST_SNAPSHOT_HOOK="$TMP/hk/hang.sh" MJ_HOOK_TIMEOUT=2 zsh -f "$FIRE3"; rc=$?
+check test "$rc" = 0 -a "$(( $(date +%s) - START ))" -lt 20
+check grep -q 'hook timed out after 2s' "$TMP/hk/v3/watcher.log"
+check grep -q 'snapshot ok:' "$TMP/hk/v3/watcher.log"
+sleep 1; check bash -c "! pgrep -f 'sleep 300' >/dev/null"
+# unsafe hooks are refused (and logged), never run
+refuse(){ # refuse <hook path> <expected reason> <dir>
+  local F; F=$(render_watcher "$TMP/hk/watch" "$3" "$CLI"); MJ_POST_SNAPSHOT_HOOK="$1" zsh -f "$F"
+  grep -q "hook refused ($2)" "$3/watcher.log" && grep -q 'snapshot ok:' "$3/watcher.log"
+}
+printf '#!/bin/sh\ntouch "%s/hk/RAN"\n' "$TMP" > "$TMP/hk/evil.sh"
+chmod 775 "$TMP/hk/evil.sh";                          check refuse "$TMP/hk/evil.sh" "writable by others" "$TMP/hk/r1"
+chmod 600 "$TMP/hk/evil.sh";                          check refuse "$TMP/hk/evil.sh" "not executable" "$TMP/hk/r2"
+check refuse "relative/hook.sh" "path is not absolute" "$TMP/hk/r3"
+check refuse "$TMP/hk/does-not-exist.sh" "not a file" "$TMP/hk/r4"
+check refuse "$TMP/hk" "not a file" "$TMP/hk/r5"
+check test ! -e "$TMP/hk/RAN"
+# the hook comes from the config file too; the environment wins; the path is never run through a shell
+mjz "mj config set post_snapshot_hook '$TMP/hk/my hooks/good hook.sh'" >/dev/null
+: > "$TMP/hk/calls.txt"
+FIRE4=$(render_watcher "$TMP/hk/watch" "$TMP/hk/v4" "$CLI")
+zsh -f "$FIRE4"
+check test "$(wc -l < "$TMP/hk/calls.txt" | tr -d ' ')" = 1
+mkdir -p "$TMP/hk/inj"; printf '#!/bin/sh\nexit 0\n' > "$TMP/hk/inj/a;touch INJECTED;b.sh"; chmod 700 "$TMP/hk/inj/a;touch INJECTED;b.sh"
+FIRE5=$(render_watcher "$TMP/hk/watch" "$TMP/hk/v5" "$CLI")
+( cd "$TMP/hk/inj" && MJ_POST_SNAPSHOT_HOOK="$TMP/hk/inj/a;touch INJECTED;b.sh" zsh -f "$FIRE5" )
+check grep -q 'hook ok: a;touch INJECTED;b.sh' "$TMP/hk/v5/watcher.log"
+check test ! -e "$TMP/hk/inj/INJECTED" -a ! -e "$TMP/hk/INJECTED"
+mjz "mj config unset post_snapshot_hook" >/dev/null
+
+# ================= #26 human commands =================
+export MJ_CONFIG="$TMP/hcfg/config"
+mkdir -p "$TMP/hv/versions" "$TMP/hv/receipts" "$TMP/hv/projects/Spring Promo" "$TMP/hv/projects/Other"
+printf 'spring-promo-v1' > "$TMP/hv/projects/Spring Promo/Spring Promo.aep"
+printf 'other-project' > "$TMP/hv/projects/Other/Other_Project.aep"
+printf 'second' > "$TMP/hv/projects/Other/Other_Second.aep"
+mjz "mj config set versions_dir '$TMP/hv/versions'" >/dev/null
+mjz "mj config set receipts_dir '$TMP/hv/receipts'" >/dev/null
+mjz "mj config set watch_dir '$TMP/hv/projects'" >/dev/null
+mjz "mj config set cli '$CLI'" >/dev/null
+# snapshot by name, plain language out
+mjz "mj snapshot 'Spring Promo'" > "$TMP/hs1.txt"
+check grep -q 'Saved a verified copy of Spring Promo.aep' "$TMP/hs1.txt"
+check test "$(ls "$TMP"/hv/versions/Spring\ Promo.*.aep | wc -l | tr -d ' ')" = 1
+mjz "mj snapshot 'Spring Promo'" > "$TMP/hs2.txt"
+check grep -q 'Nothing to save: Spring Promo.aep has not changed' "$TMP/hs2.txt"
+mjz "mj snapshot '$TMP/hv/projects/Other/Other_Project.aep'" >/dev/null                 # by path
+check test "$(ls "$TMP"/hv/versions/Other_Project.*.aep | wc -l | tr -d ' ')" = 1
+set +e; mjz "mj snapshot Other_" > "$TMP/hs3.txt" 2>&1; r1=$?; mjz "mj snapshot nonexistent" > "$TMP/hs4.txt" 2>&1; r2=$?; mjz "mj snapshot" >/dev/null 2>&1; r3=$?; set -e
+check test "$r1" = 65 -a "$r2" = 66 -a "$r3" = 64
+check grep -q 'matches more than one project' "$TMP/hs3.txt"
+check grep -q 'Other_Second.aep' "$TMP/hs3.txt"
+check grep -q 'no project found for "nonexistent"' "$TMP/hs4.txt"
+# versions
+mjz "mj versions" > "$TMP/hv1.txt"
+check grep -Eq 'Spring Promo +20[0-9-]+ [0-9:]+ +[0-9.]+ MB +[0-9a-f]{12}' "$TMP/hv1.txt"
+mjz "mj versions spring" > "$TMP/hv2.txt"; check bash -c "grep -q 'Spring Promo' '$TMP/hv2.txt' && ! grep -q Other_Project '$TMP/hv2.txt'"
+mjz "mj versions nothing-like-this" | has -q 'No versions matching' && pass=$((pass+1)) || { echo "FAIL: versions none" >&2; fail=$((fail+1)); }
+# lint / health / diff / explain from remembered receipts
+cp "$TMP/sc/v1.scrape.json" "$TMP/hv/receipts/hero.20261001T090000Z.scrape.json"
+cp "$TMP/sc/v2.scrape.json" "$TMP/hv/receipts/hero.20261001T103000Z.scrape.json"
+touch -t 202610010900 "$TMP/hv/receipts/hero.20261001T090000Z.scrape.json"; touch -t 202610011030 "$TMP/hv/receipts/hero.20261001T103000Z.scrape.json"
+mjz "mj lint last" > "$TMP/hl.txt"
+check grep -q 'Found 1 problem: 1 error' "$TMP/hl.txt"
+check grep -q 'Why it matters:' "$TMP/hl.txt"
+check bash -c "! grep -Eq '^[[:space:]]*[{\"]' '$TMP/hl.txt'"
+mjz "mj health last" > "$TMP/hh.txt"
+check grep -q 'health: 55 out of 100 (at risk)' "$TMP/hh.txt"
+check grep -q 'snapshots: lost 25 of 25 points. No snapshots of this project exist' "$TMP/hh.txt"
+check test ! -e "$TMP/store/index.sqlite"                                          # reading a score never writes
+mjz "mj health last --record" > "$TMP/hh2.txt"
+check test -e "$TMP/store/index.sqlite"
+mjz "mj health '$TMP/hv/receipts/hero.20261001T090000Z.scrape.json' --record" > "$TMP/hh3.txt"
+check grep -q 'Trend over 2 snapshots' "$TMP/hh3.txt"
+mjz "mj diff last" > "$TMP/hd.txt"
+check grep -q 'frame rate 24 -> 30' "$TMP/hd.txt"
+check grep -q 'hero.20261001T090000Z' "$TMP/hd.txt"                                 # older first
+mjz "mj diff '$TMP/hv/receipts/hero.20261001T090000Z.scrape.json' '$TMP/hv/receipts/hero.20261001T103000Z.scrape.json'" | has -q 'frame rate 24 -> 30' && pass=$((pass+1)) || { echo "FAIL: diff paths" >&2; fail=$((fail+1)); }
+mjz "mj explain '$TMP/hv/receipts/hero.20261001T103000Z.scrape.json'" | has -q 'Scrape of hero.aep' && pass=$((pass+1)) || { echo "FAIL: explain file" >&2; fail=$((fail+1)); }
+# doctor in plain language, healthy and not
+mjz "mj doctor" | has -q 'This Mac is ready' && pass=$((pass+1)) || { echo "FAIL: doctor ok" >&2; fail=$((fail+1)); }
+MJ_TEST_MISSING_CAPS="python3" mjz "mj doctor" > "$TMP/hdoc.txt" 2>&1 || true
+# python3 itself is hidden from the runtime, but the explainer still needs a real one
+check grep -q 'python3 is missing and blocks' "$TMP/hdoc.txt"
+check grep -q 'What to do: Used by the project' "$TMP/hdoc.txt"
+# errors are explained, with the next step, and set a non-zero exit
+set +e; mjz "mj snapshot /nonexistent/x.aep" > "$TMP/herr.txt" 2>&1; r=$?; set -e
+check test "$r" -ne 0
+# not configured: clear hints, never a stack trace
+export MJ_CONFIG="$TMP/hcfg/empty"
+set +e
+HOME="$TMP/emptyhome" mjz "mj versions" > "$TMP/n1.txt" 2>&1; n1=$?
+HOME="$TMP/emptyhome" mjz "mj lint last" > "$TMP/n2.txt" 2>&1; n2=$?
+HOME="$TMP/emptyhome" mjz "mj watch on" > "$TMP/n3.txt" 2>&1; n3=$?
+set -e
+check test "$n1" = 66 -a "$n2" = 66 -a "$n3" = 66
+check grep -q 'mj config set versions_dir' "$TMP/n1.txt"
+check grep -q 'mj config set receipts_dir' "$TMP/n2.txt"
+check grep -q 'mj config set watch_dir' "$TMP/n3.txt"
+# watch on/off call the real installers with the remembered folders (stubs here: nothing is installed)
+export MJ_CONFIG="$TMP/hcfg/config"
+mkdir -p "$TMP/fake/scripts/shell" "$TMP/fake/scripts/terminal" "$TMP/fake/tools"
+cp "$ROOT/scripts/shell/mj-cli.zsh" "$ROOT/scripts/shell/mj-config.zsh" "$TMP/fake/scripts/shell/"; cp "$ROOT/scripts/terminal/mj_explain.py" "$TMP/fake/scripts/terminal/"
+printf '#!/bin/zsh -f\nprint -r -- "INSTALL $*" >> "%s/fake/calls.txt"\n' "$TMP" > "$TMP/fake/tools/watch-install.zsh"
+printf '#!/bin/zsh -f\nprint -r -- "UNINSTALL $*" >> "%s/fake/calls.txt"\n' "$TMP" > "$TMP/fake/tools/watch-uninstall.zsh"
+MJ_CLI="$CLI" zsh -f -c "source '$TMP/fake/scripts/shell/mj-cli.zsh'; mj watch on; mj watch off; mj watch bogus" >/dev/null 2>&1 || true
+check grep -qx "INSTALL --yes $TMP/hv/projects $TMP/hv/versions" "$TMP/fake/calls.txt"
+check grep -qx "UNINSTALL --yes" "$TMP/fake/calls.txt"
+MJ_CLI="$CLI" zsh -f -c "source '$TMP/fake/scripts/shell/mj-cli.zsh'; mj watch status" > "$TMP/ws.txt" 2>&1 || true
+check grep -Eq 'Watcher: (on|off)' "$TMP/ws.txt"
+unset MJ_CONFIG; export MJ_CONFIG="$TMP/cfg/config"
+
+# ================= #30 completions =================
+# Drive the completer with stubbed completion primitives and read what it offers.
+complete(){ # complete <word index> <words...>  -> offered words, one per line, and FILES markers
+  local cur="$1"; shift
+  MJ_CLI="$CLI" zsh -f -c "
+    source '$ROOT/scripts/shell/mj-cli.zsh'
+    compadd() { local arr=0; while [ \$# -gt 0 ]; do case \$1 in -a) arr=1 ;; -S|-P|-J) shift ;; -*) ;; *) if (( arr )); then print -rl -- \"\${(P@)1}\"; else print -r -- \"\$1\"; fi ;; esac; shift; done }
+    _files() { print -r -- FILES\${*:+ \$*}; }
+    compset() { return 0; }
+    typeset -a words; words=(mj $*)
+    CURRENT=$cur; PREFIX=\"\${words[CURRENT]:-}\"
+    _mj_complete
+  "
+}
+complete 2 "" > "$TMP/c1.txt"
+for w in snapshot versions lint health diff explain watch doctor config notify status ui file.inspect loop.seams trace.asset project.health; do check grep -qx "$w" "$TMP/c1.txt"; done
+check grep -qx "ae.render" "$TMP/c1.txt"
+complete 3 watch "" | has -qx on && complete 3 watch "" | has -qx status && pass=$((pass+2)) || { echo "FAIL: watch completion" >&2; fail=$((fail+1)); }
+check test "$(complete 3 notify "" | sort | tr '\n' ' ')" = "off on status test "
+complete 3 config "" > "$TMP/c2.txt"; for w in show path get set unset; do check grep -qx "$w" "$TMP/c2.txt"; done
+complete 4 config set "" > "$TMP/c3.txt"; for w in versions_dir receipts_dir watch_dir cli post_snapshot_hook; do check grep -qx "$w" "$TMP/c3.txt"; done
+check grep -q "FILES" <(complete 5 config set versions_dir "")
+check grep -q "FILES -g" <(complete 3 snapshot "")
+complete 3 lint "" > "$TMP/c4.txt"; check grep -qx last "$TMP/c4.txt"; check grep -q FILES "$TMP/c4.txt"
+complete 3 health "" | has -qx -- --record && pass=$((pass+1)) || { echo "FAIL: health completion" >&2; fail=$((fail+1)); }
+complete 3 loop.seams "" > "$TMP/c5.txt"; for w in path minFrames maxResults; do check grep -qx "$w" "$TMP/c5.txt"; done      # operation args come from the runtime
+complete 3 golden.check "" > "$TMP/c6.txt"; check grep -qx threshold "$TMP/c6.txt"
+check test -z "$(complete 3 doctor "")"                                                                                  # commands without arguments offer nothing
+check test -z "$(complete 3 status "")"
+
+# ================= #15 / #27 installer =================
+( cd "$ROOT" && sh scripts/make-manifest.sh >/dev/null )
+mkzip(){ # mkzip <out.zip> [tamper|nomanifest]
+  python3 - "$ROOT" "$1" "${2:-}" <<'PY'
+import os, subprocess, sys, zipfile
+root, out, mode = sys.argv[1:4]
+files = subprocess.check_output(["git", "ls-files"], cwd=root, text=True).split("\n")
+if "SHA256SUMS" not in files: files.append("SHA256SUMS")      # not tracked until first committed
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+    for f in files:
+        p = os.path.join(root, f)
+        if not f or not os.path.isfile(p): continue
+        if f == "SHA256SUMS" and mode == "nomanifest": continue
+        data = open(p, "rb").read()
+        if mode == "tamper" and f == "src/core/constants.zsh": data += b"\n# injected\n"
+        z.writestr("Mograph_Jailed_OSX_CLI-test/" + f, data)
+PY
+}
+mkdir -p "$TMP/inst" "$TMP/inst/home"
+mkzip "$TMP/inst/good.zip"; mkzip "$TMP/inst/bad.zip" tamper; mkzip "$TMP/inst/old.zip" nomanifest; printf 'not a zip' > "$TMP/inst/junk.zip"
+GOODSHA=$(shasum -a 256 "$TMP/inst/good.zip" | awk '{print $1}')
+install_with(){ # install_with <zip> <root> [extra env assignments...]
+  local z="$1" r="$2"; shift 2
+  env HOME="$TMP/inst/home" MJ_INSTALL_ALLOW_NONMAC=1 MJ_INSTALL_YES=1 MJ_INSTALL_ROOT="$r" MJ_INSTALL_ZIP_URL="file://$z" "$@" zsh -f "$ROOT/tools/install-designer.zsh" </dev/null
+}
+set +e
+install_with "$TMP/inst/good.zip" "$TMP/inst/r1" > "$TMP/inst/o1.txt" 2>&1; i1=$?
+set -e
+check test "$i1" = 0
+check test -f "$TMP/inst/r1/dist/mograph-jailed.zsh"
+check grep -q 'every file matches its checksum' "$TMP/inst/o1.txt"
+check grep -q "download SHA-256: $GOODSHA" "$TMP/inst/o1.txt"
+check grep -q 'it runs' "$TMP/inst/o1.txt"
+check grep -q 'mj ui' "$TMP/inst/o1.txt"                                       # farewell teaches the everyday commands
+check test ! -e "$TMP/inst/home/Library/LaunchAgents" -a ! -e "$TMP/inst/home/.config"   # scripted install adds no extras, no watcher, no config
+check bash -c "! grep -q 'Open the live dashboard' '$TMP/inst/o1.txt'"       # and never launches the dashboard
+# pinned hash: right -> proceeds, wrong -> refuses with nothing installed
+set +e
+install_with "$TMP/inst/good.zip" "$TMP/inst/r2" MJ_INSTALL_SHA256="$GOODSHA" > "$TMP/inst/o2.txt" 2>&1; i2=$?
+install_with "$TMP/inst/good.zip" "$TMP/inst/r3" MJ_INSTALL_SHA256="$(printf '0%.0s' $(seq 1 64))" > "$TMP/inst/o3.txt" 2>&1; i3=$?
+set -e
+check test "$i2" = 0 -a -f "$TMP/inst/r2/dist/mograph-jailed.zsh"
+check grep -q 'matches the SHA-256 you pinned' "$TMP/inst/o2.txt"
+check test "$i3" -ne 0 -a ! -e "$TMP/inst/r3"
+check grep -q 'does not match the SHA-256 you pinned' "$TMP/inst/o3.txt"
+# a file changed after the manifest was made: refused, nothing copied
+set +e; install_with "$TMP/inst/bad.zip" "$TMP/inst/r4" > "$TMP/inst/o4.txt" 2>&1; i4=$?; set -e
+check test "$i4" -ne 0 -a ! -e "$TMP/inst/r4"
+check grep -q 'do not match their checksums' "$TMP/inst/o4.txt"
+# an older release with no checksum list still installs, with a clear notice
+set +e; install_with "$TMP/inst/old.zip" "$TMP/inst/r5" > "$TMP/inst/o5.txt" 2>&1; i5=$?; set -e
+check test "$i5" = 0 -a -f "$TMP/inst/r5/dist/mograph-jailed.zsh"
+check grep -q 'no checksum list' "$TMP/inst/o5.txt"
+# garbage download: refused
+set +e; install_with "$TMP/inst/junk.zip" "$TMP/inst/r6" > "$TMP/inst/o6.txt" 2>&1; i6=$?; set -e
+check test "$i6" -ne 0 -a ! -e "$TMP/inst/r6"
+# existing folder: untouched unless replacement is explicitly allowed
+mkdir -p "$TMP/inst/r7"; printf 'mine' > "$TMP/inst/r7/keep.txt"
+set +e; install_with "$TMP/inst/good.zip" "$TMP/inst/r7" > "$TMP/inst/o7.txt" 2>&1; i7=$?; set -e
+check test "$i7" -ne 0 -a "$(cat "$TMP/inst/r7/keep.txt")" = mine -a ! -e "$TMP/inst/r7/dist"
+set +e; install_with "$TMP/inst/good.zip" "$TMP/inst/r7" MJ_INSTALL_REPLACE=1 > "$TMP/inst/o8.txt" 2>&1; i8=$?; set -e
+check test "$i8" = 0 -a -f "$TMP/inst/r7/dist/mograph-jailed.zsh"
+# the installed copy works
+check bash -c "printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=i\ncommand=system.probe\n' | zsh -f '$TMP/inst/r1/dist/mograph-jailed.zsh' --request - | grep -q '\"ok\":true'"
+# the manifest in the repo is current and covers the runtime
+check sh "$ROOT/scripts/make-manifest.sh" --check
+check grep -q ' dist/mograph-jailed.zsh$' "$ROOT/SHA256SUMS"
+check bash -c "! grep -q ' SHA256SUMS\$' '$ROOT/SHA256SUMS'"
 
 echo "Human CLI tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

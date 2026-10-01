@@ -219,7 +219,7 @@ check bash -c "for f in '$TMP'/race/versions/Race.*.aep; do cmp -s \"\$f\" '$TMP
 # #10: the dashboard shows project paths read from the real (unwrapped) latest pointer
 D2=$(COLUMNS=110 LINES=32 "$ROOT/tools/mj-observe-dash.zsh" --versions "$TMP/upper/versions" \
   --cli "$CLI" --once 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
-check printf '%s' "$D2" | grep -q "Foo"
+check test -n "$(printf '%s' "$D2" | grep "Foo")"
 check python3 - "$ROOT" "$TMP/upper/versions" <<'PY'
 import json, os, sys
 latest = json.load(open(os.path.join(sys.argv[2], "Foo.latest.json")))
