@@ -99,7 +99,7 @@ check jq -e '[.data.results[] | select(.kind=="preset")] | length == 2' "$TMP/s9
 
 # --- verify: healthy, then stale doc and corrupted preset blob ---
 run "$TMP/v1.json" index.verify
-check jq -e '.data.healthy==true and .data.sqliteIntegrity=="ok" and .data.ftsIntegrity==true and .data.schemaVersion==2 and .data.presetVersions==2 and .data.staleDocs==[]' "$TMP/v1.json"
+check jq -e '.data.healthy==true and .data.sqliteIntegrity=="ok" and .data.ftsIntegrity==true and .data.schemaVersion==3 and .data.presetVersions==2 and .data.staleDocs==[]' "$TMP/v1.json"
 rm "$TMP/receipts/sub/hero_master.golden.json"
 V1SHA=$(jq -r '.data.sha256' "$TMP/p1.json")
 printf 'tampered' > "$TMP/store/presets/$V1SHA"

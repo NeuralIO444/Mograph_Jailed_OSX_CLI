@@ -171,7 +171,7 @@ check jq -e '.ok==true and .cliVersion=="0.4.0-dev.1"' "$TMP/describe.json"
 check jq -e '.data.standardLibrary.version=="1.0" and .data.standardLibrary.policy.localOnlyByDefault==true and .data.standardLibrary.policy.networkMutation==false and .data.standardLibrary.policy.arbitrarySqlAPI==false' "$TMP/describe.json"
 check jq -e '.data.standardLibrary.modules.LocalFS.available==true and (.data.standardLibrary.modules.NativeDB.available|type)=="boolean" and .data.standardLibrary.modules.NativeDB.publicSql==false and (.data.standardLibrary.modules.NativeDB.features.json|type)=="boolean" and (.data.standardLibrary.modules.NativeDB.features.fts5|type)=="boolean"' "$TMP/describe.json"
 check jq -e '.data.standardLibrary.modules.FrameKit.available==false and .data.standardLibrary.modules.FrameKit.state=="UNAVAILABLE" and .data.standardLibrary.modules.FrameKit.targetMacQualificationRequired==true' "$TMP/describe.json"
-check jq -e '.data.operations|length==44' "$TMP/describe.json"
+check jq -e '.data.operations|length==46' "$TMP/describe.json"
 check jq -e '.data.operations["media.timing"].cost=="BOUNDED_MEDIA_PROBE" and .data.operations["media.timing"].authority=="NORMALIZED_NATIVE_MEDIA" and .data.operations["media.timing"].executionScope=="LOCAL_ONLY" and .data.operations["media.timing"].interactiveSafe==false' "$TMP/describe.json"
 check jq -e '.data.operations["media.timing"].requires.all==["avmediainfo","awk","df","uname"]' "$TMP/describe.json"
 

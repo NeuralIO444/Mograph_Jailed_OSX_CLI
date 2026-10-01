@@ -163,7 +163,7 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -403,6 +403,14 @@ request_schema_for() {
       ;;
     audit.plugins)
       MJ_SCHEMA_ALLOWED=" target maxResults "
+      MJ_SCHEMA_REQUIRED=" "
+      ;;
+    project.diff)
+      MJ_SCHEMA_ALLOWED=" path input "
+      MJ_SCHEMA_REQUIRED=" path input "
+      ;;
+    project.health)
+      MJ_SCHEMA_ALLOWED=" path input format "
       MJ_SCHEMA_REQUIRED=" "
       ;;
     ae.render)
@@ -800,13 +808,15 @@ operation_names() {
     c4d.render \
     trace.asset \
     audit.plugins \
+    project.diff \
+    project.health \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -855,7 +865,7 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins)
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health)
       cap_available python3
       ;;
     project.restore|handoff.package|preset.add|preset.get)
@@ -944,6 +954,8 @@ operation_summary() {
     ae.render) printf 'Render a comp with aerender to a new PNG-sequence folder.' ;;
     c4d.render) printf 'Render a Cinema 4D scene to a new PNG-sequence folder.' ;;
     trace.asset) printf 'Exact nested comp path to an asset, missing asset or font.' ;;
+    project.diff) printf 'What changed between two scrapes: comps, layers, expressions, footage.' ;;
+    project.health) printf 'A documented 0-100 health score for a project, with its trend.' ;;
     audit.plugins) printf 'Projects using an effect matchName, or the plugin inventory.' ;;
     report.tech) printf 'Native diagnostic receipt for support.' ;;
     package.create) printf 'Zip a file or folder with ditto; never overwrites.' ;;
@@ -974,6 +986,7 @@ operation_cost() {
     index.verify) printf 'SIZE_DEPENDENT' ;;
     host.detect) printf 'BOUNDED_PROBE' ;;
     trace.asset|audit.plugins) printf 'INDEX_DEPENDENT' ;;
+    project.diff|project.health) printf 'SIZE_DEPENDENT' ;;
     ae.render|c4d.render) printf 'RENDER_BOUND' ;;
     plugin.audit) printf 'PATH_DEPENDENT' ;;
     project.snapshot) printf 'IO_BOUND' ;;
@@ -988,7 +1001,7 @@ operation_mutation() {
     temp.clean) printf 'TEMP_DELETE' ;;
     search.candidate|loop.seams|golden.check) printf 'INTERNAL_TEMP' ;;
     image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get|ae.render|c4d.render) printf 'DERIVATIVE_CREATE' ;;
-    index.add|preset.add) printf 'STORE_WRITE' ;;
+    index.add|preset.add|project.health) printf 'STORE_WRITE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -1019,7 +1032,7 @@ operation_authority() {
     deps.graph) printf 'DERIVED_PROJECT_SUMMARY' ;;
     index.add|preset.add) printf 'MJ_OWNED_STORE' ;;
     index.search) printf 'ADVISORY_INDEX' ;;
-    trace.asset|audit.plugins) printf 'DERIVED_PROJECT_SUMMARY' ;;
+    trace.asset|audit.plugins|project.diff|project.health) printf 'DERIVED_PROJECT_SUMMARY' ;;
     index.verify) printf 'AUTHORITATIVE_STORE_INTEGRITY' ;;
     preset.get|ae.render|c4d.render) printf 'AUTHORITATIVE_OPERATION' ;;
     host.detect) printf 'AUTHORITATIVE_ENVIRONMENT' ;;
@@ -1036,7 +1049,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1055,7 +1068,7 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins) printf '%s\n' python3 ;;
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health) printf '%s\n' python3 ;;
     project.restore|handoff.package|preset.add|preset.get) printf '%s\n' python3 cp ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
@@ -1110,7 +1123,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"
@@ -3760,17 +3773,10 @@ project_require_scrape_file() {
   return 0
 }
 
-handle_project_ingest() {
-  local _path=""
-  local _pyout=""
-  local _data=""
-  local _code=""
-
-  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
-  _path="$MJ_REQUIRED_ARG_VALUE"
-  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
-
-  _pyout=$(MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
+# Runs the ingest engine on a scrape; prints the engine's JSON envelope. Shared by project.ingest and project.health.
+project_run_ingest() {
+  local _path="$1"
+  MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
     /usr/bin/python3 - <<'PY_PROJECT_INGEST' 2>/dev/null
 import json, os, sys
 
@@ -3875,33 +3881,12 @@ data = {
 }
 print(json.dumps({"ok": True, "data": data}))
 PY_PROJECT_INGEST
-  ) || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
-
-  if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
-    split_warnings "$_data"
-    emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-    printf '%s' "$MJ_DATA_JSON"
-    emit_success_end
-    return 0
-  fi
-  # The python envelope already describes the failure; surface it as an error.
-  _code=$(printf '%s' "$_pyout" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("code","INGEST_FAILED"))' 2>/dev/null || printf 'INGEST_FAILED')
-  set_error "$_code" "Scrape file failed validation (see ingest rules)."
-  emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
-  return 65
 }
 
-handle_expression_lint() {
-  local _path=""
-  local _pyout=""
-  local _data=""
-  local _code=""
-
-  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
-  _path="$MJ_REQUIRED_ARG_VALUE"
-  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
-
-  _pyout=$(MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
+# Runs the lint engine on a scrape; prints the engine's JSON envelope. Shared by expression.lint and project.health.
+project_run_lint() {
+  local _path="$1"
+  MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
     MJ_LINT_MAX_FINDINGS="$PROJECT_OBSERVE_MAX_FINDINGS" \
     /usr/bin/python3 - <<'PY_EXPRESSION_LINT' 2>/dev/null
 import json, os, re, sys
@@ -3998,6 +3983,35 @@ for comp in doc["comps"]:
                 add("W003", "warning", comp_name, layer_name, prop,
                     "Expression exceeds 2000 characters; consider splitting it across properties.")
 
+# Teaching text lives beside, not inside, the stable finding fields: codes and messages never
+# change, and scripted consumers can ignore "teach" / "teaching". The identifier is split
+# ("ev"+"al") for the same reason as the I001 rule below.
+_ev = "ev" + "al"
+TEACH = {
+    "E001": ("The expression looks up a layer by name and no layer has that name in this comp (it was renamed, deleted, or lives in another comp), so the property stops working.",
+             "Fix the name, or pick-whip the layer so the link follows renames.",
+             'thisComp.layer("Logo old").transform.position', 'thisComp.layer("Logo").transform.position   // or pick-whip it'),
+    "E002": ("effect(\"Name\") needs an effect with that exact name on this same layer; none exists (renamed, removed, or it is on another layer).",
+             "Use the name shown in the Effect Controls panel, or pick-whip the property.",
+             'effect("Speed Slider")("Slider")', 'effect("Speed")("Slider")   // name as shown in Effect Controls'),
+    "W001": ("sampleImage() reads rendered pixels; inside a loop it runs once per pass, on every frame, which is the usual cause of very slow renders.",
+             "Sample once (a wider area is fine) outside the loop and reuse the result.",
+             'for (i = 0; i < 50; i++) { s += thisComp.layer("Bg").sampleImage([i*10, 0], [1, 1], true, time); }',
+             's = thisComp.layer("Bg").sampleImage([250, 0], [250, 1], true, time);   // one sample, outside any loop'),
+    "W002": ("A path such as /Users/you/... exists only on your Mac, so the expression breaks on another machine or after a move.",
+             "Keep the file in the project and refer to it by name instead of by location.",
+             'footage("/Users/me/Desktop/data.json").sourceData', 'footage("data.json").sourceData   // imported into the project'),
+    "W003": ("A very long expression is hard to read and re-runs in full on every frame.",
+             "Split it across properties, or move repeated values into sliders on a control layer.",
+             '// one 3000-character expression doing everything', 'speed = effect("Speed")("Slider");   // small, named pieces'),
+    "I001": (_ev + "() runs text as code at render time, so neither this linter nor a colleague can tell what the expression does.",
+             "Replace it with direct property access or a simple conditional.",
+             _ev + '("thisComp.layer(" + n + ").opacity")', 'thisComp.layer(n).opacity'),
+}
+for _f in findings:
+    _t = TEACH.get(_f["code"])
+    if _t:
+        _f["teach"] = {"why": _t[0], "fix": _t[1]}
 findings.sort(key=lambda f: (f["code"], f["comp"], f["layer"], f["propertyPath"]))
 if len(findings) > max_findings:
     findings = findings[:max_findings]
@@ -4015,13 +4029,52 @@ data = {
     "info": infos,
     "findings": findings,
     "findingsTruncated": truncated,
+    "teaching": {c: {"before": TEACH[c][2], "after": TEACH[c][3]} for c in sorted({f["code"] for f in findings}) if c in TEACH},
     "_warnings": ([{"code": "FINDINGS_TRUNCATED", "message": "Only the first %d findings are listed." % max_findings}] if truncated else []),
     "rules": ["E001", "E002", "W001", "W002", "W003", "I001"],
     "sourceUnchanged": _ident(path) == _id0,
 }
 print(json.dumps({"ok": True, "data": data}))
 PY_EXPRESSION_LINT
-  ) || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+}
+
+handle_project_ingest() {
+  local _path=""
+  local _pyout=""
+  local _data=""
+  local _code=""
+
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path="$MJ_REQUIRED_ARG_VALUE"
+  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
+
+  _pyout=$(project_run_ingest "$_path") || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+
+  if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
+    split_warnings "$_data"
+    emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+    printf '%s' "$MJ_DATA_JSON"
+    emit_success_end
+    return 0
+  fi
+  # The python envelope already describes the failure; surface it as an error.
+  _code=$(printf '%s' "$_pyout" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("code","INGEST_FAILED"))' 2>/dev/null || printf 'INGEST_FAILED')
+  set_error "$_code" "Scrape file failed validation (see ingest rules)."
+  emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
+  return 65
+}
+
+handle_expression_lint() {
+  local _path=""
+  local _pyout=""
+  local _data=""
+  local _code=""
+
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path="$MJ_REQUIRED_ARG_VALUE"
+  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
+
+  _pyout=$(project_run_lint "$_path") || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
     split_warnings "$_data"
@@ -5077,7 +5130,7 @@ PY_HANDOFF
 IFS= read -r -d '' MJ_PY_LIBRARY <<'PY_LIBRARY' || true
 import sqlite3
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SUPPORTED = ("MJ_PROJECT_SCRAPE_1", "MJ_PROJECT_SNAPSHOT_1", "MJ_GOLDEN_1", "MJ_HANDOFF_1")
 MAX_ENTRIES_PER_DOC = 20000
 
@@ -5137,6 +5190,16 @@ def open_db(store, create=False):
                 -- Receipts indexed under v1 have no relational rows; force one re-read.
                 UPDATE docs SET sha256 = '' WHERE schema = 'MJ_PROJECT_SCRAPE_1';
                 PRAGMA user_version = 2;
+            """)
+    if v < 3:
+        # v3: recorded project health scores (project.health format=record), for trends.
+        with db:
+            db.executescript("""
+                CREATE TABLE health(id INTEGER PRIMARY KEY, project_path TEXT NOT NULL, scraped_at TEXT NOT NULL, score INTEGER NOT NULL,
+                                  formula_version INTEGER NOT NULL, receipt_sha256 TEXT NOT NULL, recorded_at TEXT NOT NULL,
+                                  UNIQUE(project_path, receipt_sha256, formula_version));
+                CREATE INDEX idx_health_project ON health(project_path, scraped_at);
+                PRAGMA user_version = 3;
             """)
     db.execute("PRAGMA foreign_keys = ON")
     return db
@@ -5673,6 +5736,280 @@ PY_AUDIT_PLUGINS
   frames_emit_python_result "$_out"
 }
 
+# --- src/modules/insight.zsh ---
+# Project insight — what changed, and how healthy is it. Both are read-only (Tier 0) and built on
+# the existing ingest and lint engines; nothing here edits a project.
+#
+# project.diff   — compare two MJ_PROJECT_SCRAPE_1 receipts: comps, layers, expressions, footage,
+#                  fonts and effect types added, removed or changed
+# project.health — a 0-100 score from missing footage, expression problems and snapshot freshness.
+#                  The formula is versioned (HEALTH_FORMULA_VERSION) and every point lost links back
+#                  to the findings behind it. format=record keeps the score in the local store so
+#                  it can be trended; format=all lists every recorded project with its trend.
+
+HEALTH_FORMULA_VERSION=1
+
+handle_project_diff() {
+  local _rc=0 _a="" _b="" _out=""
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _a="$MJ_REQUIRED_ARG_VALUE"
+  require_arg input || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _b="$MJ_REQUIRED_ARG_VALUE"
+  project_require_scrape_file "$_a" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  project_require_scrape_file "$_b" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+
+  _out=$(MJ_A="$_a" MJ_B="$_b" protect_python <<'PY_PROJECT_DIFF'
+MAX_CHANGES = 200
+ida, idb = tree_id(os.environ["MJ_A"]), tree_id(os.environ["MJ_B"])
+a, b = load_scrape(os.environ["MJ_A"]), load_scrape(os.environ["MJ_B"])
+S = {k: 0 for k in ("compsAdded", "compsRemoved", "compsChanged", "layersAdded", "layersRemoved", "layersChanged", "expressionsChanged",
+                    "footageAdded", "footageRemoved", "footageMissingChanged", "fontsAdded", "fontsRemoved", "effectsAdded", "effectsRemoved")}
+changes = []
+def note(kind, text, **extra):
+    d = {"kind": kind, "text": text}; d.update(extra); changes.append(d)
+
+def num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+def keyed(items, key_fn):
+    """Key each item; duplicates get #2, #3 ... so same-named layers still pair up in order."""
+    seen, out = {}, {}
+    for it in items:
+        k = key_fn(it)
+        seen[k] = seen.get(k, 0) + 1
+        out[k if seen[k] == 1 else "%s#%d" % (k, seen[k])] = it
+    return out
+
+def comps_of(doc):
+    return [c for c in doc["comps"] if isinstance(c, dict)]
+
+ca, cb = comps_of(a), comps_of(b)
+ids_ok = all(isinstance(c.get("id"), int) and c["id"] > 0 for c in ca + cb) and len({c["id"] for c in ca}) == len(ca) and len({c["id"] for c in cb}) == len(cb)
+ck = (lambda c: "id:%d" % c["id"]) if ids_ok else (lambda c: "name:%s" % c.get("name", ""))
+A, B = keyed(ca, ck), keyed(cb, ck)
+
+def eff_set(layer):
+    out = {}
+    for e in layer.get("effects") or []:
+        if isinstance(e, dict) and e.get("matchName"):
+            out[str(e["matchName"])] = str(e.get("name", e["matchName"]))
+    return out
+
+def exprs(layer):
+    return {str(x.get("propertyPath", "")): str(x.get("expression", "")) for x in (layer.get("expressions") or []) if isinstance(x, dict)}
+
+for k in sorted(set(B) - set(A)):
+    S["compsAdded"] += 1; note("comp", 'comp "%s" added (%d layers)' % (B[k].get("name"), len(B[k].get("layers") or [])), comp=B[k].get("name"))
+for k in sorted(set(A) - set(B)):
+    S["compsRemoved"] += 1; note("comp", 'comp "%s" removed' % A[k].get("name"), comp=A[k].get("name"))
+for k in sorted(set(A) & set(B)):
+    x, y = A[k], B[k]
+    cname = y.get("name")
+    comp_changed = False
+    if x.get("name") != y.get("name"):
+        comp_changed = True; note("comp", 'comp renamed "%s" -> "%s"' % (x.get("name"), y.get("name")), comp=cname)
+    for field, label in (("width", "width"), ("height", "height"), ("frameRate", "frame rate"), ("duration", "duration"), ("pixelAspect", "pixel aspect")):
+        if num(x.get(field)) is not None and num(y.get(field)) is not None and x[field] != y[field]:
+            comp_changed = True; note("comp", 'comp "%s": %s %s -> %s' % (cname, label, x[field], y[field]), comp=cname)
+    LA = keyed([l for l in x.get("layers") or [] if isinstance(l, dict)], lambda l: str(l.get("name", "")))
+    LB = keyed([l for l in y.get("layers") or [] if isinstance(l, dict)], lambda l: str(l.get("name", "")))
+    for lk in sorted(set(LB) - set(LA)):
+        S["layersAdded"] += 1; note("layer", 'layer "%s" added to "%s"' % (LB[lk].get("name"), cname), comp=cname, layer=LB[lk].get("name"))
+    for lk in sorted(set(LA) - set(LB)):
+        S["layersRemoved"] += 1; note("layer", 'layer "%s" removed from "%s"' % (LA[lk].get("name"), cname), comp=cname, layer=LA[lk].get("name"))
+    for lk in sorted(set(LA) & set(LB)):
+        p, q = LA[lk], LB[lk]
+        lname, bits = q.get("name"), []
+        for field in ("enabled", "locked", "solo"):
+            if p.get(field) != q.get(field) and field in p and field in q:
+                bits.append("%s %s -> %s" % (field, p[field], q[field]))
+        if p.get("sourceName") != q.get("sourceName") or p.get("sourcePath") != q.get("sourcePath"):
+            bits.append("source %s -> %s" % (p.get("sourceName") or "none", q.get("sourceName") or "none"))
+        if p.get("type") != q.get("type"):
+            bits.append("type %s -> %s" % (p.get("type"), q.get("type")))
+        ep, eq = eff_set(p), eff_set(q)
+        if set(ep) != set(eq):
+            add_, rem_ = sorted(set(eq) - set(ep)), sorted(set(ep) - set(eq))
+            bits.append("effects" + ("".join(" +" + eq[m] for m in add_)) + ("".join(" -" + ep[m] for m in rem_)))
+        xp, xq = exprs(p), exprs(q)
+        changed_props = sorted(pp for pp in set(xp) | set(xq) if xp.get(pp) != xq.get(pp))
+        for pp in changed_props:
+            S["expressionsChanged"] += 1
+            what = "added" if pp not in xp else "removed" if pp not in xq else "changed"
+            note("expression", 'layer "%s" in "%s": expression on %s %s' % (lname, cname, pp, what), comp=cname, layer=lname, propertyPath=pp)
+        if num(p.get("index")) is not None and num(q.get("index")) is not None and p["index"] != q["index"] and not bits and not changed_props:
+            bits.append("moved from position %d to %d" % (p["index"], q["index"]))
+        if bits:
+            S["layersChanged"] += 1
+            note("layer", 'layer "%s" in "%s": %s' % (lname, cname, "; ".join(bits)), comp=cname, layer=lname)
+        if bits or changed_props:
+            comp_changed = True
+    if comp_changed:
+        S["compsChanged"] += 1
+
+# footage: by id when every item has one, else by path (or name)
+fa = [f for f in a["footage"] if isinstance(f, dict)]
+fb = [f for f in b["footage"] if isinstance(f, dict)]
+fids = all(isinstance(f.get("id"), int) and f["id"] > 0 for f in fa + fb)
+fk = (lambda f: "id:%d" % f["id"]) if fids else (lambda f: "p:%s" % (f.get("path") or f.get("name") or ""))
+FA, FB = keyed(fa, fk), keyed(fb, fk)
+for k in sorted(set(FB) - set(FA)):
+    S["footageAdded"] += 1; note("footage", 'footage "%s" added' % FB[k].get("name"))
+for k in sorted(set(FA) - set(FB)):
+    S["footageRemoved"] += 1; note("footage", 'footage "%s" removed' % FA[k].get("name"))
+for k in sorted(set(FA) & set(FB)):
+    p, q = FA[k], FB[k]
+    if bool(p.get("missing")) != bool(q.get("missing")):
+        S["footageMissingChanged"] += 1
+        note("footage", 'footage "%s" %s' % (q.get("name"), "went missing" if q.get("missing") else "is no longer missing"))
+    elif (p.get("path") or "") != (q.get("path") or ""):
+        note("footage", 'footage "%s" moved: %s -> %s' % (q.get("name"), p.get("path") or "none", q.get("path") or "none"))
+fonta, fontb = {str(f) for f in a["fonts"]}, {str(f) for f in b["fonts"]}
+for f in sorted(fontb - fonta):
+    S["fontsAdded"] += 1; note("font", 'font "%s" added' % f)
+for f in sorted(fonta - fontb):
+    S["fontsRemoved"] += 1; note("font", 'font "%s" no longer used' % f)
+def all_effects(doc):
+    out = set()
+    for c in comps_of(doc):
+        for l in c.get("layers") or []:
+            if isinstance(l, dict):
+                out |= set(eff_set(l))
+    return out
+ea, eb = all_effects(a), all_effects(b)
+for m in sorted(eb - ea):
+    S["effectsAdded"] += 1; note("effect", 'effect type %s now used' % m)
+for m in sorted(ea - eb):
+    S["effectsRemoved"] += 1; note("effect", 'effect type %s no longer used' % m)
+
+def side(doc, path):
+    return {"path": path, "projectName": doc.get("projectName"), "projectPath": doc.get("projectPath"), "scrapedAt": doc.get("scrapedAt")}
+warnings = []
+if a.get("projectPath") != b.get("projectPath"):
+    warnings.append({"code": "DIFFERENT_PROJECTS", "message": "The two scrapes are from different project paths (%s, %s)." % (a.get("projectPath"), b.get("projectPath"))})
+if str(a.get("scrapedAt", "")) > str(b.get("scrapedAt", "")):
+    warnings.append({"code": "SCRAPES_OUT_OF_ORDER", "message": "The first scrape is newer than the second; 'added' and 'removed' are reversed from a history point of view."})
+print(json.dumps({"ok": True, "data": {
+    "schema": "MJ_DIFF_1", "before": side(a, os.environ["MJ_A"]), "after": side(b, os.environ["MJ_B"]),
+    "identical": not changes, "summary": S, "changes": changes[:MAX_CHANGES], "changesTruncated": len(changes) > MAX_CHANGES,
+    "matchedBy": {"comps": "id" if ids_ok else "name", "footage": "id" if fids else "path"},
+    "sourceUnchanged": tree_id(os.environ["MJ_A"]) == ida and tree_id(os.environ["MJ_B"]) == idb,
+    "_warnings": warnings + ([{"code": "CHANGES_TRUNCATED", "message": "Only the first %d changes are listed." % MAX_CHANGES}] if len(changes) > MAX_CHANGES else []),
+}}))
+PY_PROJECT_DIFF
+) || true
+  frames_emit_python_result "$_out"
+}
+
+handle_project_health() {
+  local _rc=0 _path="" _versions="" _fmt="score" _ing="" _lint="" _out=""
+  request_arg_present format && _fmt=$(request_arg_get format)
+  case "$_fmt" in score|record|all) ;; *) set_error "INVALID_ARGUMENT" "format must be score, record or all."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
+
+  if [ "$_fmt" = all ]; then
+    library_require_store existing || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+    _out=$(MJ_STORE="$MJ_STORE" MJ_FORMULA="$HEALTH_FORMULA_VERSION" library_python <<'PY_HEALTH_ALL'
+db = open_db(os.environ["MJ_STORE"])
+rows = db.execute("SELECT project_path, scraped_at, score FROM health ORDER BY project_path, scraped_at").fetchall()
+by = {}
+for pp, at, sc in rows:
+    by.setdefault(pp, []).append((at, sc))
+projects = []
+for pp, series in sorted(by.items()):
+    projects.append({"projectPath": pp, "latestScore": series[-1][1], "latestAt": series[-1][0],
+                     "series": [sc for _, sc in series][-30:], "snapshots": len(series),
+                     "direction": "improving" if len(series) > 1 and series[-1][1] > series[0][1] else "worsening" if len(series) > 1 and series[-1][1] < series[0][1] else "steady"})
+print(json.dumps({"ok": True, "data": {"schema": "MJ_HEALTH_TRENDS_1", "formulaVersion": int(os.environ["MJ_FORMULA"]), "projects": projects}}))
+PY_HEALTH_ALL
+) || true
+    frames_emit_python_result "$_out"
+    return
+  fi
+
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path="$MJ_REQUIRED_ARG_VALUE"
+  request_arg_present input && _versions=$(request_arg_get input)
+  if [ -n "$_versions" ]; then
+    is_absolute_path "$_versions" && [ -d "$_versions" ] || { set_error "INVALID_PATH" "The versions folder must be an existing absolute directory."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+    mj_require_local_existing_path "$_versions" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+  fi
+  project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  if [ "$_fmt" = record ]; then
+    library_require_store create || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  else
+    MJ_STORE=""
+  fi
+  _ing=$(project_run_ingest "$_path") || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  _ing=$(project_emit_python_data "$_ing" 2>/dev/null) || { set_error "SCHEMA_MISMATCH" "Scrape file must be an MJ_PROJECT_SCRAPE_1 document."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  _lint=$(project_run_lint "$_path") || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  _lint=$(project_emit_python_data "$_lint" 2>/dev/null) || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+
+  _out=$(MJ_SCRAPE="$_path" MJ_VERSIONS="$_versions" MJ_FMT="$_fmt" MJ_STORE="$MJ_STORE" MJ_INGEST="$_ing" MJ_LINT="$_lint" MJ_FORMULA="$HEALTH_FORMULA_VERSION" library_python <<'PY_PROJECT_HEALTH'
+import calendar
+ing, lint = json.loads(os.environ["MJ_INGEST"]), json.loads(os.environ["MJ_LINT"])
+scrape_id = tree_id(os.environ["MJ_SCRAPE"])
+doc = load_scrape(os.environ["MJ_SCRAPE"])
+missing, unlinked = ing.get("footageMissing") or [], ing.get("footageUnlinked") or []
+comps = []
+
+# footage (35): 12 per missing item, 3 per item not linked to a file
+lost = min(35, 12 * len(missing) + 3 * len(unlinked))
+comps.append({"name": "footage", "max": 35, "points": 35 - lost, "measured": True,
+              "why": ("%d missing and %d unlinked footage items." % (len(missing), len(unlinked))) if lost else "All footage is linked and present.",
+              "findings": [{"kind": "missing", "name": n} for n in missing[:20]] + [{"kind": "unlinked", "name": n} for n in unlinked[:20]]})
+
+# expressions (40): 8 per error, 3 per warning (notes cost nothing)
+errs, warns = lint.get("errors", 0), lint.get("warnings", 0)
+lost = min(40, 8 * errs + 3 * warns)
+comps.append({"name": "expressions", "max": 40, "points": 40 - lost, "measured": True,
+              "why": ("%d expression errors and %d warnings." % (errs, warns)) if lost else "No expression problems.",
+              "findings": [{"code": f["code"], "severity": f["severity"], "comp": f["comp"], "layer": f["layer"], "propertyPath": f["propertyPath"]}
+                           for f in lint.get("findings", []) if f["severity"] in ("error", "warning")][:20]})
+
+# snapshots (25): only measured when a versions folder is given
+pname = str(doc.get("projectName", ""))
+stem = pname[:-4] if pname.lower().endswith(".aep") else pname
+versions = os.environ["MJ_VERSIONS"]
+if versions:
+    pat = re.compile(r"^" + re.escape(stem) + r"\.(\d{8}T\d{6}Z)\.[0-9a-f]{12}\.aep$", re.I)
+    stamps = sorted(m.group(1) for n in os.listdir(versions) for m in [pat.match(n)] if m)
+    scraped = str(doc.get("scrapedAt", ""))
+    try:
+        scraped_epoch = calendar.timegm(time.strptime(scraped[:19], "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        scraped_epoch = time.time()
+    if not stamps:
+        pts, why = 0, "No snapshots of this project exist."
+    else:
+        newest = calendar.timegm(time.strptime(stamps[-1], "%Y%m%dT%H%M%SZ"))
+        gap = scraped_epoch - newest
+        pts, why = (25, "Newest of %d snapshots is current." % len(stamps)) if gap <= 3600 else (15, "Newest snapshot is %d hours older than the scrape." % (gap // 3600)) if gap <= 86400 else (0, "Newest snapshot is %d days older than the scrape." % (gap // 86400))
+    comps.append({"name": "snapshots", "max": 25, "points": pts, "measured": True, "why": why, "findings": [{"kind": "snapshot", "name": s} for s in stamps[-5:]]})
+else:
+    comps.append({"name": "snapshots", "max": 25, "points": 0, "measured": False, "why": "Not measured; pass a versions folder to include it.", "findings": []})
+
+earned = sum(c["points"] for c in comps if c["measured"])
+possible = sum(c["max"] for c in comps if c["measured"])
+score = round(100 * earned / possible)
+band = "healthy" if score >= 90 else "needs a look" if score >= 70 else "at risk" if score >= 40 else "unhealthy"
+out = {"schema": "MJ_PROJECT_HEALTH_1", "projectName": pname, "projectPath": doc.get("projectPath"), "scrapedAt": doc.get("scrapedAt"),
+       "score": score, "band": band, "formulaVersion": int(os.environ["MJ_FORMULA"]), "components": comps,
+       "formula": "100 x earned / measurable points. footage 35 (-12 per missing item, -3 per unlinked), expressions 40 (-8 per error, -3 per warning), snapshots 25 (0/15/25 by age of newest snapshot, only when measured).",
+       "recorded": False, "trend": None, "sourceUnchanged": tree_id(os.environ["MJ_SCRAPE"]) == scrape_id}
+if os.environ["MJ_FMT"] == "record":
+    db = open_db(os.environ["MJ_STORE"], create=True)
+    sha = sha256_file(os.environ["MJ_SCRAPE"])
+    with db:
+        db.execute("INSERT OR REPLACE INTO health(project_path, scraped_at, score, formula_version, receipt_sha256, recorded_at) VALUES (?,?,?,?,?,?)",
+                   (str(doc.get("projectPath") or pname), str(doc.get("scrapedAt", "")), score, int(os.environ["MJ_FORMULA"]), sha, now_iso()))
+    out["recorded"] = True
+    out["trend"] = [r[0] for r in db.execute("SELECT score FROM health WHERE project_path = ? AND formula_version = ? ORDER BY scraped_at", (str(doc.get("projectPath") or pname), int(os.environ["MJ_FORMULA"])))][-30:]
+print(json.dumps({"ok": True, "data": out}))
+PY_PROJECT_HEALTH
+) || true
+  frames_emit_python_result "$_out"
+}
+
 # --- src/modules/host.zsh ---
 # Host applications — After Effects and Cinema 4D (Power CLI Phases 0-1).
 #
@@ -6167,6 +6504,8 @@ dispatch_request() {
     c4d.render) handle_c4d_render ;;
     trace.asset) handle_trace_asset ;;
     audit.plugins) handle_audit_plugins ;;
+    project.diff) handle_project_diff ;;
+    project.health) handle_project_health ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

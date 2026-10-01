@@ -103,6 +103,8 @@ dispatch_request() {
     c4d.render) handle_c4d_render ;;
     trace.asset) handle_trace_asset ;;
     audit.plugins) handle_audit_plugins ;;
+    project.diff) handle_project_diff ;;
+    project.health) handle_project_health ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

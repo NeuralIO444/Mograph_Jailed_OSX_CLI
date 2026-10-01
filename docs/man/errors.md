@@ -198,4 +198,7 @@ A successful response can still carry `warnings`: a list of `{ "code", "message"
 | `STALE_RECEIPTS` | Indexed receipts no longer exist on disk. | Re-run `index.add` on the current folder. |
 | `PRESET_BLOB_CORRUPT` | Stored presets failed their hash check. | Re-add them from their source files. |
 | `EXTRA_FRAMES` | Frames not in the golden record were not checked. | Record a new golden set if they belong. |
+| `DIFFERENT_PROJECTS` | The two scrapes compared by `project.diff` come from different project paths. | Check you passed two versions of the same project. |
+| `SCRAPES_OUT_OF_ORDER` | The first scrape is newer than the second. | Swap the arguments to read the diff in time order. |
+| `CHANGES_TRUNCATED` | `project.diff` found more changes than it lists. | The summary counts are complete; narrow the comparison. |
 | `SOURCE_CHANGED_DURING_RENDER` | The project or scene changed while rendering. | The frames may mix two versions; re-render. |

@@ -42,13 +42,15 @@ operation_names() {
     c4d.render \
     trace.asset \
     audit.plugins \
+    project.diff \
+    project.health \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -97,7 +99,7 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins)
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health)
       cap_available python3
       ;;
     project.restore|handoff.package|preset.add|preset.get)
@@ -186,6 +188,8 @@ operation_summary() {
     ae.render) printf 'Render a comp with aerender to a new PNG-sequence folder.' ;;
     c4d.render) printf 'Render a Cinema 4D scene to a new PNG-sequence folder.' ;;
     trace.asset) printf 'Exact nested comp path to an asset, missing asset or font.' ;;
+    project.diff) printf 'What changed between two scrapes: comps, layers, expressions, footage.' ;;
+    project.health) printf 'A documented 0-100 health score for a project, with its trend.' ;;
     audit.plugins) printf 'Projects using an effect matchName, or the plugin inventory.' ;;
     report.tech) printf 'Native diagnostic receipt for support.' ;;
     package.create) printf 'Zip a file or folder with ditto; never overwrites.' ;;
@@ -216,6 +220,7 @@ operation_cost() {
     index.verify) printf 'SIZE_DEPENDENT' ;;
     host.detect) printf 'BOUNDED_PROBE' ;;
     trace.asset|audit.plugins) printf 'INDEX_DEPENDENT' ;;
+    project.diff|project.health) printf 'SIZE_DEPENDENT' ;;
     ae.render|c4d.render) printf 'RENDER_BOUND' ;;
     plugin.audit) printf 'PATH_DEPENDENT' ;;
     project.snapshot) printf 'IO_BOUND' ;;
@@ -230,7 +235,7 @@ operation_mutation() {
     temp.clean) printf 'TEMP_DELETE' ;;
     search.candidate|loop.seams|golden.check) printf 'INTERNAL_TEMP' ;;
     image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get|ae.render|c4d.render) printf 'DERIVATIVE_CREATE' ;;
-    index.add|preset.add) printf 'STORE_WRITE' ;;
+    index.add|preset.add|project.health) printf 'STORE_WRITE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -261,7 +266,7 @@ operation_authority() {
     deps.graph) printf 'DERIVED_PROJECT_SUMMARY' ;;
     index.add|preset.add) printf 'MJ_OWNED_STORE' ;;
     index.search) printf 'ADVISORY_INDEX' ;;
-    trace.asset|audit.plugins) printf 'DERIVED_PROJECT_SUMMARY' ;;
+    trace.asset|audit.plugins|project.diff|project.health) printf 'DERIVED_PROJECT_SUMMARY' ;;
     index.verify) printf 'AUTHORITATIVE_STORE_INTEGRITY' ;;
     preset.get|ae.render|c4d.render) printf 'AUTHORITATIVE_OPERATION' ;;
     host.detect) printf 'AUTHORITATIVE_ENVIRONMENT' ;;
@@ -278,7 +283,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -297,7 +302,7 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins) printf '%s\n' python3 ;;
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health) printf '%s\n' python3 ;;
     project.restore|handoff.package|preset.add|preset.get) printf '%s\n' python3 cp ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
@@ -352,7 +357,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"

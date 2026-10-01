@@ -13,6 +13,7 @@
 unalias mj 2>/dev/null
 
 _MJ_CLI_DIR=${${(%):-%x}:A:h}
+[ -r "$_MJ_CLI_DIR/mj-config.zsh" ] && source "$_MJ_CLI_DIR/mj-config.zsh"
 
 _mj_ui() {
     local ui="${MJ_UI:-$_MJ_CLI_DIR/../terminal/mj_ui.py}"
@@ -21,7 +22,8 @@ _mj_ui() {
 }
 
 _mj_cli_path() {
-    printf '%s\n' "${MJ_CLI:-${MOGRAPHJAILED_ROOT:-$HOME/Documents/MographJailed}/dist/mograph-jailed.zsh}"
+    # flag > environment (MJ_CLI) > config file (cli=) > the install folder
+    if (( $+functions[mj_config_get] )); then mj_config_get cli; else printf '%s\n' "${MJ_CLI:-${MOGRAPHJAILED_ROOT:-$HOME/Documents/MographJailed}/dist/mograph-jailed.zsh}"; fi
 }
 
 # Run one request; response JSON on stdout, runtime exit code returned.
@@ -206,6 +208,7 @@ mj recipe <file> [name=value ...]  run a recipe file, stopping at the first fail
 mj last                            show the newest render receipt
 mj status                          one-line status (rendering progress, last render)
 mj notify on|off|test|status       macOS notifications when renders, golden checks, recipes or long operations finish
+mj config [set <key> <value>]      remembered settings (versions_dir, receipts_dir, watch_dir, cli, post_snapshot_hook)
 mj open-last                       open the newest render folder in Finder
 USAGE
             return 0 ;;
@@ -218,6 +221,17 @@ USAGE
         notify)
             shift
             _mj_notify_cmd "$@"
+            return ;;
+        config)
+            shift
+            case "${1:-show}" in
+                show) mj_config_show ;;
+                path) _mj_config_file ;;
+                get) [ -n "${2:-}" ] || { print -u2 "usage: mj config get <key>"; return 64; }; mj_config_get "$2" || { print -u2 "mj: unknown setting '$2'"; return 64; } ;;
+                set) [ -n "${2:-}" ] && [ -n "${3:-}" ] || { print -u2 "usage: mj config set <key> <value>   (keys: $(_mj_config_keys))"; return 64; }; mj_config_set "$2" "$3" && print "saved: $2" ;;
+                unset) [ -n "${2:-}" ] || { print -u2 "usage: mj config unset <key>"; return 64; }; mj_config_unset "$2" && print "removed: $2" ;;
+                *) print -u2 "usage: mj config [show|path|get <key>|set <key> <value>|unset <key>]"; return 64 ;;
+            esac
             return ;;
         status)
             shift
@@ -258,7 +272,7 @@ _mj_complete() {
     local json
     json=$(_mj_describe) || return 1
     if (( CURRENT == 2 )); then
-        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe last open-last ui home cd status notify)
+        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe last open-last ui home cd status notify config)
         compadd -a items
     elif [[ "${words[2]}" == recipe ]]; then
         _files

@@ -16,7 +16,7 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -256,6 +256,14 @@ request_schema_for() {
       ;;
     audit.plugins)
       MJ_SCHEMA_ALLOWED=" target maxResults "
+      MJ_SCHEMA_REQUIRED=" "
+      ;;
+    project.diff)
+      MJ_SCHEMA_ALLOWED=" path input "
+      MJ_SCHEMA_REQUIRED=" path input "
+      ;;
+    project.health)
+      MJ_SCHEMA_ALLOWED=" path input format "
       MJ_SCHEMA_REQUIRED=" "
       ;;
     ae.render)

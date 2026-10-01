@@ -13,7 +13,7 @@
 IFS= read -r -d '' MJ_PY_LIBRARY <<'PY_LIBRARY' || true
 import sqlite3
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SUPPORTED = ("MJ_PROJECT_SCRAPE_1", "MJ_PROJECT_SNAPSHOT_1", "MJ_GOLDEN_1", "MJ_HANDOFF_1")
 MAX_ENTRIES_PER_DOC = 20000
 
@@ -73,6 +73,16 @@ def open_db(store, create=False):
                 -- Receipts indexed under v1 have no relational rows; force one re-read.
                 UPDATE docs SET sha256 = '' WHERE schema = 'MJ_PROJECT_SCRAPE_1';
                 PRAGMA user_version = 2;
+            """)
+    if v < 3:
+        # v3: recorded project health scores (project.health format=record), for trends.
+        with db:
+            db.executescript("""
+                CREATE TABLE health(id INTEGER PRIMARY KEY, project_path TEXT NOT NULL, scraped_at TEXT NOT NULL, score INTEGER NOT NULL,
+                                  formula_version INTEGER NOT NULL, receipt_sha256 TEXT NOT NULL, recorded_at TEXT NOT NULL,
+                                  UNIQUE(project_path, receipt_sha256, formula_version));
+                CREATE INDEX idx_health_project ON health(project_path, scraped_at);
+                PRAGMA user_version = 3;
             """)
     db.execute("PRAGMA foreign_keys = ON")
     return db

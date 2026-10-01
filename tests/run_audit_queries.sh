@@ -147,7 +147,7 @@ db.execute("INSERT INTO docs(path, sha256, schema, title, indexed_at) VALUES (?,
 db.commit()
 PY
 run "$TMP/m1.json" index.verify
-check jq -e '.data.schemaVersion==2 and .data.healthy==true and .data.docs==1' "$TMP/m1.json"
+check jq -e '.data.schemaVersion==3 and .data.healthy==true and .data.docs==1' "$TMP/m1.json"
 run "$TMP/m2.json" audit.plugins
 check jq -e '.error.code=="STORE_EMPTY"' "$TMP/m2.json"
 run "$TMP/m3.json" index.add "path=$TMP/r/vendor.scrape.json"

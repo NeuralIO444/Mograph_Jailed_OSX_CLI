@@ -63,7 +63,8 @@
             "project.restore", "deps.graph", "handoff.package",
             "index.add", "index.search", "index.verify", "preset.add", "preset.get",
             "host.detect", "ae.render", "c4d.render",
-            "trace.asset", "audit.plugins"
+            "trace.asset", "audit.plugins",
+            "project.diff", "project.health"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -437,6 +438,14 @@
 
     Client.prototype.auditPlugins = function (matchName) {
         return this.call("audit.plugins", { target: matchName || null });
+    };
+
+    Client.prototype.projectDiff = function (beforeScrape, afterScrape) {
+        return this.call("project.diff", { path: beforeScrape, input: afterScrape });
+    };
+
+    Client.prototype.projectHealth = function (scrapePath, versionsDir, format) {
+        return this.call("project.health", { path: scrapePath, input: versionsDir || null, format: format || null });
     };
 
     Client.prototype.hostDetect = function () {

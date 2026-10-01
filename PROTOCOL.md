@@ -319,3 +319,23 @@ Every success response carries `"warnings": []`. When an operation completes but
 - **`--request -`** reads the request from standard input (up to 256 KB; larger is `REQUEST_TOO_LARGE`). The runtime copies it to a private temporary file first, so parsing and the audit log behave exactly as for a file. The temporary file is removed on every exit path.
 - **`system.doctor`** now includes `guidance` (one entry per missing tool: `capability`, the `unlocks` list of operations it blocks, and a plain-language `hint`) and `operations: {total, unavailable}`. `ready` still means "core capabilities present"; it does not mean every operation is available. The doctor itself uses only core tools, so it answers even when `python3` is missing.
 - **`tools/mj-observe-dash.zsh --json`** prints the dashboard's data as one JSON document (`MJ_OBSERVE_DASH_1`) and exits. The receipt ingest is cached by the newest receipt's path, size and modification time.
+
+## Project insight: diff, health, teaching lint (0.4.0-dev.1)
+
+Two read-only operations are added (44 to 46). Store schema is now v3 (adds a `health` table; v1/v2 stores migrate in place).
+
+```text
+command=project.diff
+arg.path=<Base64 absolute MJ_PROJECT_SCRAPE_1 path: the earlier version>
+arg.input=<Base64 absolute MJ_PROJECT_SCRAPE_1 path: the later version>
+
+command=project.health
+arg.path=<Base64 absolute scrape path>                    (not needed for format=all)
+arg.input=<optional Base64 absolute snapshot versions folder: adds snapshot freshness>
+arg.format=<optional: score (default) | record | all>
+```
+
+- `project.diff` returns `MJ_DIFF_1`: a `summary` of counts and a `changes` list of plain sentences (comps, layers, expression text per property, footage including "went missing", fonts, effect types). Comps and footage are matched by the scraper's item `id` when every item has one, otherwise by name or path; `matchedBy` says which. Warnings: `DIFFERENT_PROJECTS`, `SCRAPES_OUT_OF_ORDER`, `CHANGES_TRUNCATED`.
+- `project.health` returns `MJ_PROJECT_HEALTH_1`: `score` 0-100, a `band`, and `components` that each carry their points, what was lost and why, and the findings behind it. **Formula version 1:** score = 100 x earned / measurable points, where *footage* is worth 35 (minus 12 per missing item, 3 per unlinked item), *expressions* 40 (minus 8 per lint error, 3 per warning) and *snapshots* 25 (25 if the newest snapshot is within an hour of the scrape, 15 within a day, else 0; none = 0), counted only when `input` is given. Bands: 90+ healthy, 70-89 needs a look, 40-69 at risk, below 40 unhealthy. The formula text is returned with every score and `formulaVersion` changes whenever the arithmetic does; trends only compare scores of the same version. Plug-in availability is not part of v1 (a scrape records effect names but not whether they are installed).
+- `format=record` also stores the score (keyed by project path and receipt hash, so it is idempotent) and returns the `trend`; `format=all` returns `MJ_HEALTH_TRENDS_1`, every recorded project's latest score and series. Mutation is `STORE_WRITE` for the operation as a whole; `score` and `all` never write.
+- `expression.lint` findings gain `teach: {why, fix}`, and the result gains `teaching: {code: {before, after}}` for the codes present. Codes, severities and messages are unchanged, so scripted consumers are unaffected.

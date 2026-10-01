@@ -6,7 +6,8 @@
 # writes outside temp request files it deletes immediately.
 #
 # Usage:
-#   tools/mj-observe-dash.zsh --versions ~/AE_Versions [--receipts ~/AE_Receipts]
+#   tools/mj-observe-dash.zsh [--versions ~/AE_Versions] [--receipts ~/AE_Receipts]
+#   (folders and --cli can be remembered once with:  mj config set versions_dir ~/AE_Versions)
 #                             [--cli dist/mograph-jailed.zsh] [--interval 5] [--once | --json]
 #
 # Keys: q quit · r refresh now. --once renders a single frame (scripting).
@@ -24,23 +25,38 @@ INTERVAL=5
 ONCE=0
 JSON=0
 TICKS=1
+CLI_FROM_FLAG=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --versions) VERSIONS_DIR="$2"; shift 2 ;;
     --receipts) RECEIPTS_DIR="$2"; shift 2 ;;
-    --cli) CLI_PATH="$2"; shift 2 ;;
+    --cli) CLI_PATH="$2"; CLI_FROM_FLAG=1; shift 2 ;;
     --interval) INTERVAL="$2"; shift 2 ;;
     --once) ONCE=1; shift ;;
     --json) JSON=1; ONCE=1; shift ;;
     --ticks) TICKS="$2"; shift 2 ;;
-    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) print -u2 "unknown arg: $1"; exit 2 ;;
   esac
 done
 
+# Remembered settings: flag > environment > config file (mj config) > default.
+[[ -r "$ROOT/scripts/shell/mj-config.zsh" ]] && source "$ROOT/scripts/shell/mj-config.zsh"
+if (( $+functions[mj_config_get] )); then
+  [[ -n "$VERSIONS_DIR" ]] || VERSIONS_DIR=$(mj_config_get versions_dir)
+  [[ -n "$RECEIPTS_DIR" ]] || { RECEIPTS_DIR=$(mj_config_get receipts_dir); [[ -d "$RECEIPTS_DIR" ]] || RECEIPTS_DIR=""; }
+  if (( ! CLI_FROM_FLAG )); then
+    _cfg=$(_mj_config_resolve cli); [[ "${_cfg##*	}" == default ]] || CLI_PATH="${_cfg%%	*}"
+  fi
+fi
 if [[ -z "$VERSIONS_DIR" ]]; then
-  print -u2 "mj-observe-dash: --versions DIR is required (your snapshot versions folder)."
+  print -u2 "mj-observe-dash: no versions folder. Pass --versions DIR, or set it once:  mj config set versions_dir ~/AE_Versions"
+  exit 2
+fi
+if [[ ! -d "$VERSIONS_DIR" ]]; then
+  print -u2 "mj-observe-dash: versions folder not found: $VERSIONS_DIR"
+  print -u2 "  Pass --versions DIR, or set it once:  mj config set versions_dir <folder>"
   exit 2
 fi
 if [[ ! -x "$CLI_PATH" ]]; then

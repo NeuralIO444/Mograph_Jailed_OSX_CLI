@@ -31,6 +31,7 @@ node "$ROOT/tests/run_m4.js"
 "$ROOT/tests/run_ui.sh"
 "$ROOT/tests/run_errors.sh"
 "$ROOT/tests/run_review_fixes.sh"
+"$ROOT/tests/run_human_cli.sh"
 "$ROOT/scripts/check-scraper-readonly.sh"
 "$ROOT/tests/run_scraper_guard.sh"
 

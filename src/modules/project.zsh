@@ -44,17 +44,10 @@ project_require_scrape_file() {
   return 0
 }
 
-handle_project_ingest() {
-  local _path=""
-  local _pyout=""
-  local _data=""
-  local _code=""
-
-  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
-  _path="$MJ_REQUIRED_ARG_VALUE"
-  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
-
-  _pyout=$(MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
+# Runs the ingest engine on a scrape; prints the engine's JSON envelope. Shared by project.ingest and project.health.
+project_run_ingest() {
+  local _path="$1"
+  MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
     /usr/bin/python3 - <<'PY_PROJECT_INGEST' 2>/dev/null
 import json, os, sys
 
@@ -159,33 +152,12 @@ data = {
 }
 print(json.dumps({"ok": True, "data": data}))
 PY_PROJECT_INGEST
-  ) || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
-
-  if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
-    split_warnings "$_data"
-    emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-    printf '%s' "$MJ_DATA_JSON"
-    emit_success_end
-    return 0
-  fi
-  # The python envelope already describes the failure; surface it as an error.
-  _code=$(printf '%s' "$_pyout" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("code","INGEST_FAILED"))' 2>/dev/null || printf 'INGEST_FAILED')
-  set_error "$_code" "Scrape file failed validation (see ingest rules)."
-  emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
-  return 65
 }
 
-handle_expression_lint() {
-  local _path=""
-  local _pyout=""
-  local _data=""
-  local _code=""
-
-  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
-  _path="$MJ_REQUIRED_ARG_VALUE"
-  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
-
-  _pyout=$(MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
+# Runs the lint engine on a scrape; prints the engine's JSON envelope. Shared by expression.lint and project.health.
+project_run_lint() {
+  local _path="$1"
+  MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
     MJ_LINT_MAX_FINDINGS="$PROJECT_OBSERVE_MAX_FINDINGS" \
     /usr/bin/python3 - <<'PY_EXPRESSION_LINT' 2>/dev/null
 import json, os, re, sys
@@ -282,6 +254,35 @@ for comp in doc["comps"]:
                 add("W003", "warning", comp_name, layer_name, prop,
                     "Expression exceeds 2000 characters; consider splitting it across properties.")
 
+# Teaching text lives beside, not inside, the stable finding fields: codes and messages never
+# change, and scripted consumers can ignore "teach" / "teaching". The identifier is split
+# ("ev"+"al") for the same reason as the I001 rule below.
+_ev = "ev" + "al"
+TEACH = {
+    "E001": ("The expression looks up a layer by name and no layer has that name in this comp (it was renamed, deleted, or lives in another comp), so the property stops working.",
+             "Fix the name, or pick-whip the layer so the link follows renames.",
+             'thisComp.layer("Logo old").transform.position', 'thisComp.layer("Logo").transform.position   // or pick-whip it'),
+    "E002": ("effect(\"Name\") needs an effect with that exact name on this same layer; none exists (renamed, removed, or it is on another layer).",
+             "Use the name shown in the Effect Controls panel, or pick-whip the property.",
+             'effect("Speed Slider")("Slider")', 'effect("Speed")("Slider")   // name as shown in Effect Controls'),
+    "W001": ("sampleImage() reads rendered pixels; inside a loop it runs once per pass, on every frame, which is the usual cause of very slow renders.",
+             "Sample once (a wider area is fine) outside the loop and reuse the result.",
+             'for (i = 0; i < 50; i++) { s += thisComp.layer("Bg").sampleImage([i*10, 0], [1, 1], true, time); }',
+             's = thisComp.layer("Bg").sampleImage([250, 0], [250, 1], true, time);   // one sample, outside any loop'),
+    "W002": ("A path such as /Users/you/... exists only on your Mac, so the expression breaks on another machine or after a move.",
+             "Keep the file in the project and refer to it by name instead of by location.",
+             'footage("/Users/me/Desktop/data.json").sourceData', 'footage("data.json").sourceData   // imported into the project'),
+    "W003": ("A very long expression is hard to read and re-runs in full on every frame.",
+             "Split it across properties, or move repeated values into sliders on a control layer.",
+             '// one 3000-character expression doing everything', 'speed = effect("Speed")("Slider");   // small, named pieces'),
+    "I001": (_ev + "() runs text as code at render time, so neither this linter nor a colleague can tell what the expression does.",
+             "Replace it with direct property access or a simple conditional.",
+             _ev + '("thisComp.layer(" + n + ").opacity")', 'thisComp.layer(n).opacity'),
+}
+for _f in findings:
+    _t = TEACH.get(_f["code"])
+    if _t:
+        _f["teach"] = {"why": _t[0], "fix": _t[1]}
 findings.sort(key=lambda f: (f["code"], f["comp"], f["layer"], f["propertyPath"]))
 if len(findings) > max_findings:
     findings = findings[:max_findings]
@@ -299,13 +300,52 @@ data = {
     "info": infos,
     "findings": findings,
     "findingsTruncated": truncated,
+    "teaching": {c: {"before": TEACH[c][2], "after": TEACH[c][3]} for c in sorted({f["code"] for f in findings}) if c in TEACH},
     "_warnings": ([{"code": "FINDINGS_TRUNCATED", "message": "Only the first %d findings are listed." % max_findings}] if truncated else []),
     "rules": ["E001", "E002", "W001", "W002", "W003", "I001"],
     "sourceUnchanged": _ident(path) == _id0,
 }
 print(json.dumps({"ok": True, "data": data}))
 PY_EXPRESSION_LINT
-  ) || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+}
+
+handle_project_ingest() {
+  local _path=""
+  local _pyout=""
+  local _data=""
+  local _code=""
+
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path="$MJ_REQUIRED_ARG_VALUE"
+  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
+
+  _pyout=$(project_run_ingest "$_path") || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+
+  if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
+    split_warnings "$_data"
+    emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+    printf '%s' "$MJ_DATA_JSON"
+    emit_success_end
+    return 0
+  fi
+  # The python envelope already describes the failure; surface it as an error.
+  _code=$(printf '%s' "$_pyout" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("code","INGEST_FAILED"))' 2>/dev/null || printf 'INGEST_FAILED')
+  set_error "$_code" "Scrape file failed validation (see ingest rules)."
+  emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
+  return 65
+}
+
+handle_expression_lint() {
+  local _path=""
+  local _pyout=""
+  local _data=""
+  local _code=""
+
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path="$MJ_REQUIRED_ARG_VALUE"
+  project_require_scrape_file "$_path" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $?; }
+
+  _pyout=$(project_run_lint "$_path") || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
     split_warnings "$_data"

@@ -40,6 +40,8 @@ ae.render
 c4d.render
 trace.asset
 audit.plugins
+project.diff
+project.health
 report.tech
 runtime.verify
 search.candidate
