@@ -255,12 +255,12 @@ def explain_hosts(d):
 
 def explain_doctor(d):
     ops = d.get("operations") or {}
-    if not d.get("isMacOS", True):
-        return ["This is not a Mac, so most features are unavailable here."]
     g = d.get("guidance") or []
+    mac = d.get("isMacOS", True)
+    head = [] if mac else ["This is not a Mac, so some features are unavailable here.", ""]
     if not g:
-        return ["This Mac is ready. All %s operations can run." % ops.get("total", "")]
-    out = ["This Mac can run %d of %d operations. %d are blocked by missing tools:" % (ops.get("total", 0) - ops.get("unavailable", 0), ops.get("total", 0), ops.get("unavailable", 0))]
+        return head + (["This Mac is ready. All %s operations can run." % ops.get("total", "")] if mac else ["No tools are missing."])
+    out = head + ["This %s can run %d of %d operations. %d are blocked by missing tools:" % ("Mac" if mac else "machine", ops.get("total", 0) - ops.get("unavailable", 0), ops.get("total", 0), ops.get("unavailable", 0))]
     for item in g:
         out += ["", "%s is missing and blocks %s: %s." % (item["capability"], plural(len(item["unlocks"]), "operation"), names(item["unlocks"], 6)), wrap("What to do: " + item["hint"])]
     return out

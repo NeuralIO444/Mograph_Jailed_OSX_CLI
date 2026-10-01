@@ -34,7 +34,7 @@ check test "$(mjz "mj config get versions_dir")" = "$TMP/v2"
 check test "$(MJ_VERSIONS_DIR=/env/wins mjz "mj config get versions_dir")" = "/env/wins"        # env beats file
 mjz "mj config show" > "$TMP/show.txt"
 check grep -Eq 'versions_dir +\(file\) +.*/v2' "$TMP/show.txt"
-check bash -c "MJ_VERSIONS_DIR=/e MJ_CONFIG='$TMP/cfg/config' MJ_CLI='$CLI' zsh -f -c \"source '$ROOT/scripts/shell/mj-cli.zsh'; mj config show\" | grep -Eq 'versions_dir +\(env\)'"
+check test -n "$(MJ_VERSIONS_DIR=/e MJ_CONFIG="$TMP/cfg/config" MJ_CLI="$CLI" zsh -f -c "source '$ROOT/scripts/shell/mj-cli.zsh'; mj config show" | grep -E 'versions_dir +\(env\)')"
 check grep -Eq 'receipts_dir +\(default\)' "$TMP/show.txt"
 set +e; mjz "mj config set bogus x" >/dev/null 2>&1; r1=$?; mjz "mj config set versions_dir relative/path" >/dev/null 2>&1; r2=$?
 mjz "mj config set cli" >/dev/null 2>&1; r3=$?; set -e
@@ -272,14 +272,27 @@ check grep -q 'snapshot ok:' "$TMP/hk/v2/watcher.log"
 check grep -q 'hook FAILED (exit 3) (snapshot is safe)' "$TMP/hk/v2/watcher.log"
 check test "$(ls "$TMP"/hk/v2/Hooked.*.aep | wc -l | tr -d ' ')" = 1
 # a hook that hangs is stopped at the timeout, children included
-printf '#!/bin/sh\nsleep 300 &\nsleep 300\n' > "$TMP/hk/hang.sh"; chmod 700 "$TMP/hk/hang.sh"
+cat > "$TMP/hk/hang.sh" <<STUB
+#!/bin/sh
+echo \$\$ > "$TMP/hk/hang.pids"
+sleep 300 &
+echo \$! >> "$TMP/hk/hang.pids"
+sleep 300 &
+echo \$! >> "$TMP/hk/hang.pids"
+wait
+STUB
+chmod 700 "$TMP/hk/hang.sh"
 FIRE3=$(render_watcher "$TMP/hk/watch" "$TMP/hk/v3" "$CLI")
 START=$(date +%s)
 MJ_POST_SNAPSHOT_HOOK="$TMP/hk/hang.sh" MJ_HOOK_TIMEOUT=2 zsh -f "$FIRE3"; rc=$?
 check test "$rc" = 0 -a "$(( $(date +%s) - START ))" -lt 20
 check grep -q 'hook timed out after 2s' "$TMP/hk/v3/watcher.log"
 check grep -q 'snapshot ok:' "$TMP/hk/v3/watcher.log"
-sleep 1; check bash -c "! pgrep -f 'sleep 300' >/dev/null"
+sleep 1
+# exactly the processes the hook started (itself and both children) must be gone
+check test "$(wc -l < "$TMP/hk/hang.pids" | tr -d ' ')" = 3
+ALIVE=0; for pid in $(cat "$TMP/hk/hang.pids"); do kill -0 "$pid" 2>/dev/null && ALIVE=$((ALIVE+1)); done
+check test "$ALIVE" = 0
 # unsafe hooks are refused (and logged), never run
 refuse(){ # refuse <hook path> <expected reason> <dir>
   local F; F=$(render_watcher "$TMP/hk/watch" "$3" "$CLI"); MJ_POST_SNAPSHOT_HOOK="$1" zsh -f "$F"
@@ -355,7 +368,8 @@ check grep -q 'hero.20261001T090000Z' "$TMP/hd.txt"                             
 mjz "mj diff '$TMP/hv/receipts/hero.20261001T090000Z.scrape.json' '$TMP/hv/receipts/hero.20261001T103000Z.scrape.json'" | has -q 'frame rate 24 -> 30' && pass=$((pass+1)) || { echo "FAIL: diff paths" >&2; fail=$((fail+1)); }
 mjz "mj explain '$TMP/hv/receipts/hero.20261001T103000Z.scrape.json'" | has -q 'Scrape of hero.aep' && pass=$((pass+1)) || { echo "FAIL: explain file" >&2; fail=$((fail+1)); }
 # doctor in plain language, healthy and not
-mjz "mj doctor" | has -q 'This Mac is ready' && pass=$((pass+1)) || { echo "FAIL: doctor ok" >&2; fail=$((fail+1)); }
+DOC=$(mjz "mj doctor")
+if [ "$(uname -s)" = Darwin ]; then check grep -q 'This Mac is ready' <<<"$DOC"; else check grep -q 'This is not a Mac' <<<"$DOC"; fi
 MJ_TEST_MISSING_CAPS="python3" mjz "mj doctor" > "$TMP/hdoc.txt" 2>&1 || true
 # python3 itself is hidden from the runtime, but the explainer still needs a real one
 check grep -q 'python3 is missing and blocks' "$TMP/hdoc.txt"
