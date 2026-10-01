@@ -25,13 +25,16 @@ operation_names() {
     expression.lint \
     plugin.audit \
     project.snapshot \
+    loop.seams \
+    golden.record \
+    golden.check \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -79,6 +82,9 @@ operation_available() {
       ;;
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
+      ;;
+    loop.seams|golden.record|golden.check)
+      cap_available python3
       ;;
     image.stats|image.compare)
       cap_available python3 && cap_available sips && cap_available awk
@@ -132,6 +138,7 @@ operation_cost() {
     search.candidate) printf 'INDEX_DEPENDENT' ;;
     image.derivative) printf 'IO_BOUND' ;;
     image.stats|image.compare) printf 'SIZE_DEPENDENT' ;;
+    loop.seams|golden.record|golden.check) printf 'FRAME_COUNT_DEPENDENT' ;;
     media.inspect) printf 'PATH_DEPENDENT' ;;
     media.timing) printf 'BOUNDED_MEDIA_PROBE' ;;
     media.frame) printf 'FRAME_DECODE' ;;
@@ -147,8 +154,8 @@ operation_mutation() {
   case "$1" in
     temp.create) printf 'TEMP_CREATE' ;;
     temp.clean) printf 'TEMP_DELETE' ;;
-    search.candidate) printf 'INTERNAL_TEMP' ;;
-    image.derivative|media.frame|package.create|project.snapshot) printf 'DERIVATIVE_CREATE' ;;
+    search.candidate|loop.seams|golden.check) printf 'INTERNAL_TEMP' ;;
+    image.derivative|media.frame|package.create|project.snapshot|golden.record) printf 'DERIVATIVE_CREATE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -164,7 +171,7 @@ operation_authority() {
     asset.manifest|asset.verify) printf 'ASSET_IDENTITY' ;;
     search.candidate) printf 'ADVISORY_INDEX' ;;
     image.inspect) printf 'AUTHORITATIVE_IMAGE_STRUCTURE' ;;
-    image.stats|image.compare) printf 'DERIVED_IMAGE_SIGNATURE' ;;
+    image.stats|image.compare|loop.seams|golden.record|golden.check) printf 'DERIVED_IMAGE_SIGNATURE' ;;
     image.derivative|temp.create|temp.clean|package.create) printf 'AUTHORITATIVE_OPERATION' ;;
     media.inspect) printf 'ADVISORY_METADATA' ;;
     media.timing) printf 'NORMALIZED_NATIVE_MEDIA' ;;
@@ -180,14 +187,14 @@ operation_authority() {
 
 operation_interactive_safe() {
   case "$1" in
-    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot) return 1 ;;
+    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check) return 1 ;;
     *) return 0 ;;
   esac
 }
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -206,6 +213,7 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
+    loop.seams|golden.record|golden.check) printf '%s\n' python3 ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
     temp.clean) printf '%s\n' sed rm pwd ;;
@@ -225,6 +233,7 @@ operation_optional_capabilities() {
     runtime.verify) printf '%s\n' sha256 shasum ;;
     asset.manifest|asset.verify) printf '%s\n' sha256 shasum ;;
     media.inspect) printf '%s\n' mdls avmediainfo ;;
+    loop.seams|golden.record|golden.check) printf '%s\n' sips ;;
   esac
 }
 
@@ -257,7 +266,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   printf '}'

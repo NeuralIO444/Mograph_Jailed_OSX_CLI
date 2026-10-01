@@ -138,3 +138,34 @@ arg.output=<Base64 absolute versions directory path>
 ```
 
 All four are `LOCAL_ONLY`: network and unknown filesystem classes fail closed before any work runs. `project.ingest` returns schema `MJ_PROJECT_SUMMARY_1`; `expression.lint` returns `MJ_EXPRESSION_LINT_1`; `plugin.audit` returns `MJ_PLUGIN_AUDIT_1`; `project.snapshot` returns `MJ_PROJECT_SNAPSHOT_1`. Only `project.snapshot` mutates (`DERIVATIVE_CREATE`: a new hash-suffixed copy that never overwrites; unchanged sources are skipped, not re-copied). The other three are read-only, and only `project.snapshot` is excluded from interactive-safe paths.
+
+## Frame-sequence additive contract (loop seams, golden frames)
+
+Protocol v1 additionally allowlists three frame-sequence operations, growing the public surface from 27 to 30 operations. Two argument names are added: `minFrames` and `threshold`. No existing command schema is reinterpreted.
+
+Request schemas:
+
+```text
+command=loop.seams
+arg.path=<Base64 absolute directory of PNG frames>
+arg.minFrames=<optional Base64 integer; 0 or omitted = half the frame count>
+arg.maxResults=<optional Base64 integer 1-50; default 5>
+
+command=golden.record
+arg.path=<Base64 absolute directory of PNG frames>
+arg.output=<Base64 absolute existing directory for the receipt>
+arg.label=<Base64 label: letters, digits, dot, dash, underscore; max 64>
+
+command=golden.check
+arg.path=<Base64 absolute directory of PNG frames>
+arg.input=<Base64 absolute MJ_GOLDEN_1 receipt path>
+arg.threshold=<optional Base64 decimal 0-1, up to 4 places; default 0.98>
+```
+
+Frames are the regular, non-hidden `*.png` files in the directory, sorted by name (8- or 16-bit RGB/RGBA, non-interlaced; at most 2,000). When `sips` is available, frames are downscaled to a 256 px long edge in a private temp directory before signing; sources are never touched.
+
+All three are `LOCAL_ONLY`, `FRAME_COUNT_DEPENDENT`, `DERIVED_IMAGE_SIGNATURE`, require only `python3`, and list `sips` as optional.
+
+- `loop.seams` returns `MJ_LOOP_SEAMS_1`: ranked `{startFrame, endFrame, lengthFrames, score}` candidates. The loop plays `startFrame..endFrame-1`; `endFrame` is the frame that should match `startFrame`. Near-duplicate seams (both ends within 2 frames) are suppressed. Mutation `INTERNAL_TEMP`.
+- `golden.record` writes `<output>/<label>.golden.json` (`MJ_GOLDEN_1`: per-frame SHA-256 + signature) and refuses to overwrite (`OUTPUT_EXISTS`). Mutation `DERIVATIVE_CREATE`.
+- `golden.check` returns `MJ_GOLDEN_CHECK_1`: per-frame `identical` (same bytes), `pass` (score ≥ threshold), `changed`, or `missing`, plus `extraFrames`, `worstScore`, and overall `passed`. Mutation `INTERNAL_TEMP`.

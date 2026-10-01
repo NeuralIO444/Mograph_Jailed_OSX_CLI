@@ -35,6 +35,7 @@ for f in \
   src/modules/report.zsh \
   src/modules/package.zsh \
   src/modules/project.zsh \
+  src/modules/frames.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$OUT"
   /bin/cat "$ROOT/$f" >> "$OUT"

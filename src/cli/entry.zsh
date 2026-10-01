@@ -36,6 +36,9 @@ main() {
     expression.lint) handle_expression_lint ;;
     plugin.audit) handle_plugin_audit ;;
     project.snapshot) handle_project_snapshot ;;
+    loop.seams) handle_loop_seams ;;
+    golden.record) handle_golden_record ;;
+    golden.check) handle_golden_check ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

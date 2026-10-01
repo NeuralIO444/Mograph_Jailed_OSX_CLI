@@ -123,14 +123,14 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 is_safe_arg_name() {
   case "$1" in
-    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels) return 0 ;;
+    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels|minFrames|threshold) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -154,6 +154,8 @@ REQUEST_ARG_requiredBytes=""
 REQUEST_ARG_maxResults=""
 REQUEST_ARG_timeSeconds=""
 REQUEST_ARG_maxPixels=""
+REQUEST_ARG_minFrames=""
+REQUEST_ARG_threshold=""
 
 request_arg_present() {
   local _name="$1"
@@ -185,6 +187,8 @@ request_arg_set() {
     maxResults) REQUEST_ARG_maxResults="$_value" ;;
     timeSeconds) REQUEST_ARG_timeSeconds="$_value" ;;
     maxPixels) REQUEST_ARG_maxPixels="$_value" ;;
+    minFrames) REQUEST_ARG_minFrames="$_value" ;;
+    threshold) REQUEST_ARG_threshold="$_value" ;;
     *) return 1 ;;
   esac
 }
@@ -212,6 +216,8 @@ request_arg_get() {
     maxResults) printf '%s' "$REQUEST_ARG_maxResults" ;;
     timeSeconds) printf '%s' "$REQUEST_ARG_timeSeconds" ;;
     maxPixels) printf '%s' "$REQUEST_ARG_maxPixels" ;;
+    minFrames) printf '%s' "$REQUEST_ARG_minFrames" ;;
+    threshold) printf '%s' "$REQUEST_ARG_threshold" ;;
     *) return 1 ;;
   esac
 }
@@ -301,13 +307,25 @@ validate_request_schema() {
       _allowed=" path output "
       _required=" path output "
       ;;
+    loop.seams)
+      _allowed=" path maxResults minFrames "
+      _required=" path "
+      ;;
+    golden.record)
+      _allowed=" path output label "
+      _required=" path output label "
+      ;;
+    golden.check)
+      _allowed=" path input threshold "
+      _required=" path input "
+      ;;
     *)
       set_error "UNSUPPORTED_COMMAND" "Command is not allowlisted."
       return 1
       ;;
   esac
 
-  for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels; do
+  for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels minFrames threshold; do
     if request_arg_present "$_arg"; then
       case "$_allowed" in *" $_arg "*) ;; *)
         set_error "UNEXPECTED_ARGUMENT" "Argument is not valid for command: $_arg."
@@ -381,6 +399,8 @@ load_request_file() {
   REQUEST_ARG_maxResults=""
   REQUEST_ARG_timeSeconds=""
   REQUEST_ARG_maxPixels=""
+  REQUEST_ARG_minFrames=""
+  REQUEST_ARG_threshold=""
 
   if [ -z "$_file" ] || [ ! -f "$_file" ]; then
     set_error "REQUEST_NOT_FOUND" "Request file does not exist."
@@ -657,13 +677,16 @@ operation_names() {
     expression.lint \
     plugin.audit \
     project.snapshot \
+    loop.seams \
+    golden.record \
+    golden.check \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -711,6 +734,9 @@ operation_available() {
       ;;
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
+      ;;
+    loop.seams|golden.record|golden.check)
+      cap_available python3
       ;;
     image.stats|image.compare)
       cap_available python3 && cap_available sips && cap_available awk
@@ -764,6 +790,7 @@ operation_cost() {
     search.candidate) printf 'INDEX_DEPENDENT' ;;
     image.derivative) printf 'IO_BOUND' ;;
     image.stats|image.compare) printf 'SIZE_DEPENDENT' ;;
+    loop.seams|golden.record|golden.check) printf 'FRAME_COUNT_DEPENDENT' ;;
     media.inspect) printf 'PATH_DEPENDENT' ;;
     media.timing) printf 'BOUNDED_MEDIA_PROBE' ;;
     media.frame) printf 'FRAME_DECODE' ;;
@@ -779,8 +806,8 @@ operation_mutation() {
   case "$1" in
     temp.create) printf 'TEMP_CREATE' ;;
     temp.clean) printf 'TEMP_DELETE' ;;
-    search.candidate) printf 'INTERNAL_TEMP' ;;
-    image.derivative|media.frame|package.create|project.snapshot) printf 'DERIVATIVE_CREATE' ;;
+    search.candidate|loop.seams|golden.check) printf 'INTERNAL_TEMP' ;;
+    image.derivative|media.frame|package.create|project.snapshot|golden.record) printf 'DERIVATIVE_CREATE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -796,7 +823,7 @@ operation_authority() {
     asset.manifest|asset.verify) printf 'ASSET_IDENTITY' ;;
     search.candidate) printf 'ADVISORY_INDEX' ;;
     image.inspect) printf 'AUTHORITATIVE_IMAGE_STRUCTURE' ;;
-    image.stats|image.compare) printf 'DERIVED_IMAGE_SIGNATURE' ;;
+    image.stats|image.compare|loop.seams|golden.record|golden.check) printf 'DERIVED_IMAGE_SIGNATURE' ;;
     image.derivative|temp.create|temp.clean|package.create) printf 'AUTHORITATIVE_OPERATION' ;;
     media.inspect) printf 'ADVISORY_METADATA' ;;
     media.timing) printf 'NORMALIZED_NATIVE_MEDIA' ;;
@@ -812,14 +839,14 @@ operation_authority() {
 
 operation_interactive_safe() {
   case "$1" in
-    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot) return 1 ;;
+    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check) return 1 ;;
     *) return 0 ;;
   esac
 }
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -838,6 +865,7 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
+    loop.seams|golden.record|golden.check) printf '%s\n' python3 ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
     temp.clean) printf '%s\n' sed rm pwd ;;
@@ -857,6 +885,7 @@ operation_optional_capabilities() {
     runtime.verify) printf '%s\n' sha256 shasum ;;
     asset.manifest|asset.verify) printf '%s\n' sha256 shasum ;;
     media.inspect) printf '%s\n' mdls avmediainfo ;;
+    loop.seams|golden.record|golden.check) printf '%s\n' sips ;;
   esac
 }
 
@@ -889,7 +918,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   printf '}'
@@ -1393,29 +1422,23 @@ standard_library_imagekit_available() {
 
 # --- src/lib/image_stats.zsh ---
 # MJ Standard Library — ImageStats (SL-M3)
-# Deterministic, bounded image signatures for loop-seam ranking.
-# Uses only Python 3 stdlib (zlib, struct, json). No new dependencies.
+# Deterministic, bounded image signatures for loop-seam ranking and
+# golden-frame regression. Uses only Python 3 stdlib. No new dependencies.
 #
 # image.stats: 4x4x4 RGB histogram (64 bins) + 8x8 grid averages (64 cells)
 # image.compare: histogram intersection + grid similarity → 0.0-1.0 score
+# loop.seams / golden.*: same signatures over a directory of PNG frames
 
-image_stats_available() {
-  cap_available python3 && cap_available sips && cap_available awk
-}
-
-image_stats_compute() {
-  local _path="$1"
-  local _json=""
-
-  cap_available python3 || return 1
-  [ -f "$_path" ] && [ -r "$_path" ] || return 1
-
-  _json=$(MJ_IMAGE_STATS_PATH="$_path" \
-    /usr/bin/python3 - <<'PY_IMAGE_STATS' 2>/dev/null
+# Shared Python signature library. Prepended to each operation's main script.
+IFS= read -r -d '' MJ_PY_IMAGE_SIG <<'PY_IMAGE_SIG' || true
+import hashlib
 import json
 import os
+import shutil
 import struct
+import subprocess
 import sys
+import tempfile
 import zlib
 
 def error_json(code, message):
@@ -1445,7 +1468,7 @@ def decode_png(path):
         pos += 12 + length
         if chunk_type == b'IHDR':
             width, height, bit_depth, color_type, comp, filt, interlace = struct.unpack('>IIBBBBB', chunk_data)
-            if bit_depth != 8:
+            if bit_depth not in (8, 16):
                 raise ValueError("UNSUPPORTED_BIT_DEPTH")
             if color_type not in (2, 6):
                 raise ValueError("UNSUPPORTED_COLOR_TYPE")
@@ -1461,8 +1484,10 @@ def decode_png(path):
         raw = zlib.decompress(idat_data)
     except Exception:
         raise ValueError("DECOMPRESS_FAILED")
+    sample = bit_depth // 8
     channels = 3 if color_type == 2 else 4
-    stride = width * channels
+    bpp = channels * sample
+    stride = width * bpp
     pixels = []
     prev = bytearray(stride)
     pos = 0
@@ -1474,28 +1499,30 @@ def decode_png(path):
             raise ValueError("TRUNCATED_SCANLINES")
         cur = bytearray(raw[pos:pos+stride]); pos += stride
         if filt == 1:
-            for i in range(channels, stride):
-                cur[i] = (cur[i] + cur[i-channels]) & 0xff
+            for i in range(bpp, stride):
+                cur[i] = (cur[i] + cur[i-bpp]) & 0xff
         elif filt == 2:
             for i in range(stride):
                 cur[i] = (cur[i] + prev[i]) & 0xff
         elif filt == 3:
             for i in range(stride):
-                a = cur[i-channels] if i >= channels else 0
+                a = cur[i-bpp] if i >= bpp else 0
                 cur[i] = (cur[i] + ((a + prev[i]) >> 1)) & 0xff
         elif filt == 4:
             for i in range(stride):
-                a = cur[i-channels] if i >= channels else 0
+                a = cur[i-bpp] if i >= bpp else 0
                 b = prev[i]
-                c = prev[i-channels] if i >= channels else 0
+                c = prev[i-bpp] if i >= bpp else 0
                 p = a + b - c
                 pa, pb, pc = abs(p-a), abs(p-b), abs(p-c)
                 pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
                 cur[i] = (cur[i] + pr) & 0xff
         elif filt != 0:
             raise ValueError("UNKNOWN_FILTER")
+        # 16-bit samples: the high byte is the 8-bit equivalent.
         for x in range(width):
-            pixels.append((cur[x*channels], cur[x*channels+1], cur[x*channels+2]))
+            o = x * bpp
+            pixels.append((cur[o], cur[o+sample], cur[o+2*sample]))
         prev = cur
     return width, height, pixels
 
@@ -1531,6 +1558,97 @@ def compute_grid_averages(pixels, width, height, grid_size=8):
                 result.append([0, 0, 0])
     return result
 
+def histogram_similarity(h1, h2):
+    total = sum(h1)
+    if total == 0:
+        return 1.0 if sum(h2) == 0 else 0.0
+    return sum(min(a, b) for a, b in zip(h1, h2)) / total
+
+def grid_similarity(g1, g2):
+    if not g1 or not g2 or len(g1) != len(g2):
+        return 0.0
+    total_diff = 0
+    for (r1, x1, b1), (r2, x2, b2) in zip(g1, g2):
+        total_diff += abs(r1 - r2) + abs(x1 - x2) + abs(b1 - b2)
+    max_diff = len(g1) * 255 * 3
+    return 1.0 - (total_diff / max_diff) if max_diff > 0 else 1.0
+
+def signature(path):
+    w, h, px = decode_png(path)
+    return {"width": w, "height": h, "histogram": compute_histogram(px), "grid": compute_grid_averages(px, w, h)}
+
+def signature_score(a, b):
+    hs = histogram_similarity(a["histogram"], b["histogram"])
+    gs = grid_similarity(a["grid"], b["grid"])
+    return round((hs + gs) / 2.0, 4), round(hs, 4), round(gs, 4)
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1048576), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+# Frame sequences: regular, non-hidden *.png files sorted by name.
+MJ_MAX_FRAMES = 2000
+SIG_MAX_EDGE = 256
+
+def list_frames(directory):
+    names = sorted(n for n in os.listdir(directory)
+                   if n.lower().endswith('.png') and not n.startswith('.')
+                   and os.path.isfile(os.path.join(directory, n))
+                   and not os.path.islink(os.path.join(directory, n)))
+    if len(names) > MJ_MAX_FRAMES:
+        raise ValueError("TOO_MANY_FRAMES")
+    return names
+
+def signatures_for(directory, names):
+    """Signatures for frames, downscaled with sips first when available.
+    Full-resolution pure-python decoding takes seconds per HD frame."""
+    sips = "/usr/bin/sips"
+    stage = None
+    src = directory
+    downscaled = False
+    try:
+        if names and os.access(sips, os.X_OK):
+            stage = tempfile.mkdtemp(prefix="mj-sig-")
+            r = subprocess.run([sips, "-Z", str(SIG_MAX_EDGE), "-s", "format", "png"]
+                               + [os.path.join(directory, n) for n in names] + ["--out", stage],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if r.returncode == 0 and all(os.path.isfile(os.path.join(stage, n)) for n in names):
+                src = stage
+                downscaled = True
+        sigs = []
+        for n in names:
+            try:
+                sigs.append(signature(os.path.join(src, n)))
+            except ValueError as e:
+                raise ValueError("DECODE_FAILED: " + n + ": " + str(e))
+        return sigs, downscaled
+    finally:
+        if stage:
+            shutil.rmtree(stage, ignore_errors=True)
+PY_IMAGE_SIG
+
+image_stats_available() {
+  cap_available python3 && cap_available sips && cap_available awk
+}
+
+# Run the shared library plus an operation-specific main script read from stdin.
+image_sig_python() {
+  local _main=""
+  IFS= read -r -d '' _main || true
+  printf '%s\n%s' "$MJ_PY_IMAGE_SIG" "$_main" | /usr/bin/python3 - 2>/dev/null
+}
+
+image_stats_compute() {
+  local _path="$1"
+  local _json=""
+
+  cap_available python3 || return 1
+  [ -f "$_path" ] && [ -r "$_path" ] || return 1
+
+  _json=$(MJ_IMAGE_STATS_PATH="$_path" image_sig_python <<'PY_IMAGE_STATS'
 def main():
     path = os.environ.get("MJ_IMAGE_STATS_PATH", "")
     if not path:
@@ -1565,47 +1683,20 @@ PY_IMAGE_STATS
 }
 
 image_stats_compare() {
-  local _hist1="$1"
-  local _grid1="$2"
-  local _hist2="$3"
-  local _grid2="$4"
-
-  MJ_IMAGE_COMPARE_H1="$_hist1" \
-  MJ_IMAGE_COMPARE_G1="$_grid1" \
-  MJ_IMAGE_COMPARE_H2="$_hist2" \
-  MJ_IMAGE_COMPARE_G2="$_grid2" \
-  /usr/bin/python3 - <<'PY_IMAGE_COMPARE' 2>/dev/null
-import json
-import os
-
-def histogram_similarity(h1, h2):
-    total = sum(h1)
-    if total == 0:
-        return 1.0 if sum(h2) == 0 else 0.0
-    return sum(min(a, b) for a, b in zip(h1, h2)) / total
-
-def grid_similarity(g1, g2):
-    if not g1 or not g2 or len(g1) != len(g2):
-        return 0.0
-    total_diff = 0
-    for (r1, x1, b1), (r2, x2, b2) in zip(g1, g2):
-        total_diff += abs(r1 - r2) + abs(x1 - x2) + abs(b1 - b2)
-    max_diff = len(g1) * 255 * 3
-    return 1.0 - (total_diff / max_diff) if max_diff > 0 else 1.0
-
+  MJ_IMAGE_COMPARE_H1="$1" \
+  MJ_IMAGE_COMPARE_G1="$2" \
+  MJ_IMAGE_COMPARE_H2="$3" \
+  MJ_IMAGE_COMPARE_G2="$4" \
+  image_sig_python <<'PY_IMAGE_COMPARE'
 try:
-    h1 = json.loads(os.environ["MJ_IMAGE_COMPARE_H1"])
-    g1 = json.loads(os.environ["MJ_IMAGE_COMPARE_G1"])
-    h2 = json.loads(os.environ["MJ_IMAGE_COMPARE_H2"])
-    g2 = json.loads(os.environ["MJ_IMAGE_COMPARE_G2"])
-    hs = histogram_similarity(h1, h2)
-    gs = grid_similarity(g1, g2)
-    score = (hs + gs) / 2.0
+    a = {"histogram": json.loads(os.environ["MJ_IMAGE_COMPARE_H1"]), "grid": json.loads(os.environ["MJ_IMAGE_COMPARE_G1"])}
+    b = {"histogram": json.loads(os.environ["MJ_IMAGE_COMPARE_H2"]), "grid": json.loads(os.environ["MJ_IMAGE_COMPARE_G2"])}
+    score, hs, gs = signature_score(a, b)
     print(json.dumps({
         "ok": True,
-        "score": round(score, 4),
-        "histogramSimilarity": round(hs, 4),
-        "gridSimilarity": round(gs, 4),
+        "score": score,
+        "histogramSimilarity": hs,
+        "gridSimilarity": gs,
     }))
 except Exception as e:
     print(json.dumps({"ok": False, "code": "COMPARE_FAILED", "message": str(e)}))
@@ -3797,6 +3888,246 @@ PY_SNAPSHOT_RECEIPT
   emit_success_end
 }
 
+# --- src/modules/frames.zsh ---
+# Frame-sequence intelligence over a local directory of PNG frames
+# (AE/C4D render output). Built on the ImageStats signature engine.
+#
+# loop.seams     — rank start/end frame pairs for a seamless loop; read-only
+# golden.record  — write a new golden-frame receipt (hashes + signatures); never overwrites
+# golden.check   — compare a frame directory against a golden receipt; read-only
+
+# Validate a local, readable frame directory. Sets MJ_FRAMES_DIR on success.
+frames_require_dir() {
+  local _dir="$1"
+  MJ_FRAMES_DIR=""
+  is_absolute_path "$_dir" || { set_error "INVALID_PATH" "Frame directory must be absolute."; return 65; }
+  [ -d "$_dir" ] || { set_error "INVALID_TARGET" "Frame path must be a directory of PNG frames."; return 65; }
+  [ -r "$_dir" ] && [ -x "$_dir" ] || { set_error "PERMISSION_DENIED" "Frame directory is not readable."; return 77; }
+  cap_available python3 || { set_error "UNSUPPORTED" "Frame operations require python3."; return 69; }
+  mj_require_local_existing_path "$_dir" || return 73
+  MJ_FRAMES_DIR=$(canonical_existing_dir "$_dir") || { set_error "INVALID_TARGET" "Could not resolve frame directory."; return 65; }
+}
+
+# Map a python {"ok":false,"code":...} result to an error envelope, or print data.
+frames_emit_python_result() {
+  local _out="$1"
+  local _data=""
+  _data=$(project_emit_python_data "$_out") && {
+    emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+    printf '%s' "$_data"
+    emit_success_end
+    return 0
+  }
+  MJ_FRAMES_ERR_CODE=$(printf '%s' "$_out" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("code","ENGINE_FAILED"))' 2>/dev/null || printf 'ENGINE_FAILED')
+  MJ_FRAMES_ERR_MSG=$(printf '%s' "$_out" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("message","Frame engine failed."))' 2>/dev/null || printf 'Frame engine failed.')
+  set_error "$MJ_FRAMES_ERR_CODE" "$MJ_FRAMES_ERR_MSG"
+  emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
+  return 74
+}
+
+frames_uint_arg() {
+  # $1 arg name, $2 default, $3 min, $4 max. Sets MJ_FRAMES_UINT (no subshell, so set_error survives).
+  local _v="$2"
+  if request_arg_present "$1"; then
+    _v=$(request_arg_get "$1")
+    case "$_v" in ''|*[!0-9]*) set_error "INVALID_ARGUMENT" "$1 must be a non-negative integer."; return 1 ;; esac
+    [ ${#_v} -le 6 ] && [ "$_v" -ge "$3" ] && [ "$_v" -le "$4" ] || { set_error "INVALID_ARGUMENT" "$1 must be between $3 and $4."; return 1 ;}
+  fi
+  MJ_FRAMES_UINT="$_v"
+}
+
+handle_loop_seams() {
+  local _rc=0 _max="" _min="" _out=""
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  frames_require_dir "$MJ_REQUIRED_ARG_VALUE" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  frames_uint_arg maxResults 5 1 50 || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _max="$MJ_FRAMES_UINT"
+  # minFrames 0 means "half the sequence"; long loops are what motion designers want.
+  frames_uint_arg minFrames 0 0 100000 || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _min="$MJ_FRAMES_UINT"
+
+  _out=$(MJ_DIR="$MJ_FRAMES_DIR" MJ_MAX="$_max" MJ_MIN="$_min" image_sig_python <<'PY_LOOP_SEAMS'
+def main():
+    d = os.environ["MJ_DIR"]
+    try:
+        names = list_frames(d)
+        if len(names) < 3:
+            print(error_json("INSUFFICIENT_FRAMES", "loop.seams needs at least 3 PNG frames.")); return
+        n = len(names)
+        min_len = int(os.environ["MJ_MIN"]) or max(2, n // 2)
+        if min_len >= n:
+            print(error_json("INVALID_ARGUMENT", "minFrames must be smaller than the frame count.")); return
+        sigs, downscaled = signatures_for(d, names)
+    except ValueError as e:
+        code = str(e).split(":")[0]
+        print(error_json(code if code in ("TOO_MANY_FRAMES", "DECODE_FAILED") else "STATS_FAILED", str(e))); return
+    # ponytail: O(n^2) pair scan, fine to MJ_MAX_FRAMES; coarse-to-fine if renders get longer.
+    pairs = []
+    for s in range(n):
+        for e in range(s + min_len, n):
+            score, hs, gs = signature_score(sigs[s], sigs[e])
+            pairs.append((score, e - s, s, e, hs, gs))
+    pairs.sort(key=lambda p: (-p[0], -p[1], p[2]))
+    # Suppress near-duplicates: (s, e) and (s+1, e+1) are the same seam.
+    chosen = []
+    for p in pairs:
+        if any(abs(p[2] - c[2]) <= 2 and abs(p[3] - c[3]) <= 2 for c in chosen):
+            continue
+        chosen.append(p)
+        if len(chosen) >= int(os.environ["MJ_MAX"]):
+            break
+    print(json.dumps({"ok": True, "data": {
+        "schema": "MJ_LOOP_SEAMS_1",
+        "path": d,
+        "frameCount": n,
+        "minFrames": min_len,
+        "signatureDownscaled": downscaled,
+        "candidates": [{
+            "rank": i + 1,
+            "startFrame": p[2], "endFrame": p[3], "lengthFrames": p[1],
+            "startName": names[p[2]], "endName": names[p[3]],
+            "score": p[0], "histogramSimilarity": p[4], "gridSimilarity": p[5],
+        } for i, p in enumerate(chosen)],
+        "note": "Loop plays startFrame..endFrame-1; endFrame should match startFrame.",
+        "sourceUnchanged": True,
+    }}))
+
+main()
+PY_LOOP_SEAMS
+) || true
+  frames_emit_python_result "$_out"
+}
+
+handle_golden_record() {
+  local _rc=0 _outdir="" _label="" _receipt="" _out=""
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  frames_require_dir "$MJ_REQUIRED_ARG_VALUE" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  require_arg output || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _outdir="$MJ_REQUIRED_ARG_VALUE"
+  require_arg label || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _label="$MJ_REQUIRED_ARG_VALUE"
+  case "$_label" in .*|*[!A-Za-z0-9._-]*) set_error "INVALID_ARGUMENT" "label may contain only letters, digits, dot, dash and underscore."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
+  [ ${#_label} -le 64 ] || { set_error "INVALID_ARGUMENT" "label must be at most 64 characters."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  is_absolute_path "$_outdir" || { set_error "INVALID_PATH" "Output directory must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  [ -d "$_outdir" ] && [ -w "$_outdir" ] || { set_error "OUTPUT_UNAVAILABLE" "Golden output directory must exist and be writable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+  mj_require_local_existing_path "$_outdir" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+  _receipt="$(canonical_existing_dir "$_outdir")/$_label.golden.json"
+  [ ! -e "$_receipt" ] && [ ! -L "$_receipt" ] || { set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing golden receipt."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+
+  _out=$(MJ_DIR="$MJ_FRAMES_DIR" MJ_RECEIPT="$_receipt" MJ_LABEL="$_label" image_sig_python <<'PY_GOLDEN_RECORD'
+import time
+def main():
+    d = os.environ["MJ_DIR"]
+    try:
+        names = list_frames(d)
+        if not names:
+            print(error_json("INSUFFICIENT_FRAMES", "No PNG frames found.")); return
+        sigs, downscaled = signatures_for(d, names)
+        frames = [{"name": n, "sha256": sha256_file(os.path.join(d, n)),
+                   "histogram": s["histogram"], "grid": s["grid"]} for n, s in zip(names, sigs)]
+    except ValueError as e:
+        print(error_json("STATS_FAILED", str(e))); return
+    receipt = {
+        "schema": "MJ_GOLDEN_1",
+        "label": os.environ["MJ_LABEL"],
+        "sourceDir": d,
+        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "signatureDownscaled": downscaled,
+        "signatureMaxEdge": SIG_MAX_EDGE,
+        "frames": frames,
+    }
+    path = os.environ["MJ_RECEIPT"]
+    try:
+        # O_EXCL: never overwrite, even if a receipt appears after the shell check.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    except FileExistsError:
+        print(error_json("OUTPUT_EXISTS", "Refusing to overwrite an existing golden receipt.")); return
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(receipt, f, sort_keys=True, separators=(",", ":"))
+        f.write("\n")
+    print(json.dumps({"ok": True, "data": {
+        "schema": "MJ_GOLDEN_1", "label": receipt["label"], "receiptPath": path,
+        "sourceDir": d, "frameCount": len(frames), "signatureDownscaled": downscaled,
+        "sourceUnchanged": True,
+    }}))
+
+main()
+PY_GOLDEN_RECORD
+) || true
+  frames_emit_python_result "$_out"
+}
+
+handle_golden_check() {
+  local _rc=0 _receipt="" _threshold="0.98" _out=""
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  frames_require_dir "$MJ_REQUIRED_ARG_VALUE" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  require_arg input || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _receipt="$MJ_REQUIRED_ARG_VALUE"
+  is_absolute_path "$_receipt" || { set_error "INVALID_PATH" "Golden receipt path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  [ -f "$_receipt" ] && [ -r "$_receipt" ] || { set_error "INVALID_TARGET" "Golden receipt must be a readable file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  mj_require_local_existing_path "$_receipt" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+  if request_arg_present threshold; then
+    _threshold=$(request_arg_get threshold)
+    case "$_threshold" in 0|1|0.[0-9]|0.[0-9][0-9]|0.[0-9][0-9][0-9]|0.[0-9][0-9][0-9][0-9]|1.0) ;; *) set_error "INVALID_ARGUMENT" "threshold must be a decimal between 0 and 1 (up to 4 places)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
+  fi
+
+  _out=$(MJ_DIR="$MJ_FRAMES_DIR" MJ_RECEIPT="$_receipt" MJ_THRESHOLD="$_threshold" image_sig_python <<'PY_GOLDEN_CHECK'
+def main():
+    d = os.environ["MJ_DIR"]
+    threshold = float(os.environ["MJ_THRESHOLD"])
+    try:
+        if os.path.getsize(os.environ["MJ_RECEIPT"]) > 67108864:
+            raise ValueError("too large")
+        with open(os.environ["MJ_RECEIPT"], encoding="utf-8") as f:
+            golden = json.load(f)
+        assert golden.get("schema") == "MJ_GOLDEN_1" and isinstance(golden.get("frames"), list)
+        recorded = {fr["name"]: fr for fr in golden["frames"]}
+    except Exception:
+        print(error_json("INVALID_RECEIPT", "Input is not a valid MJ_GOLDEN_1 receipt.")); return
+    try:
+        names = list_frames(d)
+        present = [n for n in names if n in recorded]
+        hashes = {n: sha256_file(os.path.join(d, n)) for n in present}
+        # Only frames whose bytes changed need a signature.
+        changed = [n for n in present if hashes[n] != recorded[n].get("sha256")]
+        sigs, downscaled = signatures_for(d, changed)
+    except ValueError as e:
+        print(error_json("STATS_FAILED", str(e))); return
+    sig_by_name = dict(zip(changed, sigs))
+    results = []
+    for n in sorted(recorded):
+        if n not in hashes:
+            results.append({"name": n, "status": "missing", "score": None}); continue
+        if n not in sig_by_name:
+            results.append({"name": n, "status": "identical", "score": 1.0}); continue
+        score, hs, gs = signature_score(sig_by_name[n], recorded[n])
+        results.append({"name": n, "status": "pass" if score >= threshold else "changed",
+                        "score": score, "histogramSimilarity": hs, "gridSimilarity": gs})
+    extra = [n for n in names if n not in recorded]
+    scores = [r["score"] for r in results if r["score"] is not None]
+    failed = [r for r in results if r["status"] in ("missing", "changed")]
+    print(json.dumps({"ok": True, "data": {
+        "schema": "MJ_GOLDEN_CHECK_1",
+        "label": golden.get("label"),
+        "path": d,
+        "receiptPath": os.environ["MJ_RECEIPT"],
+        "threshold": threshold,
+        "passed": not failed,
+        "framesRecorded": len(recorded),
+        "framesFailed": len(failed),
+        "worstScore": min(scores) if scores else None,
+        "frames": results,
+        "extraFrames": extra,
+        "signatureDownscaled": downscaled if changed else golden.get("signatureDownscaled"),
+        "sourceUnchanged": True,
+    }}))
+
+main()
+PY_GOLDEN_CHECK
+) || true
+  frames_emit_python_result "$_out"
+}
+
 # --- src/cli/entry.zsh ---
 main() {
   if [ "$#" -ne 2 ] || [ "$1" != "--request" ]; then
@@ -3836,6 +4167,9 @@ main() {
     expression.lint) handle_expression_lint ;;
     plugin.audit) handle_plugin_audit ;;
     project.snapshot) handle_project_snapshot ;;
+    loop.seams) handle_loop_seams ;;
+    golden.record) handle_golden_record ;;
+    golden.check) handle_golden_check ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

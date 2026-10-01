@@ -1,27 +1,21 @@
 # MJ Standard Library — ImageStats (SL-M3)
-# Deterministic, bounded image signatures for loop-seam ranking.
-# Uses only Python 3 stdlib (zlib, struct, json). No new dependencies.
+# Deterministic, bounded image signatures for loop-seam ranking and
+# golden-frame regression. Uses only Python 3 stdlib. No new dependencies.
 #
 # image.stats: 4x4x4 RGB histogram (64 bins) + 8x8 grid averages (64 cells)
 # image.compare: histogram intersection + grid similarity → 0.0-1.0 score
+# loop.seams / golden.*: same signatures over a directory of PNG frames
 
-image_stats_available() {
-  cap_available python3 && cap_available sips && cap_available awk
-}
-
-image_stats_compute() {
-  local _path="$1"
-  local _json=""
-
-  cap_available python3 || return 1
-  [ -f "$_path" ] && [ -r "$_path" ] || return 1
-
-  _json=$(MJ_IMAGE_STATS_PATH="$_path" \
-    /usr/bin/python3 - <<'PY_IMAGE_STATS' 2>/dev/null
+# Shared Python signature library. Prepended to each operation's main script.
+IFS= read -r -d '' MJ_PY_IMAGE_SIG <<'PY_IMAGE_SIG' || true
+import hashlib
 import json
 import os
+import shutil
 import struct
+import subprocess
 import sys
+import tempfile
 import zlib
 
 def error_json(code, message):
@@ -51,7 +45,7 @@ def decode_png(path):
         pos += 12 + length
         if chunk_type == b'IHDR':
             width, height, bit_depth, color_type, comp, filt, interlace = struct.unpack('>IIBBBBB', chunk_data)
-            if bit_depth != 8:
+            if bit_depth not in (8, 16):
                 raise ValueError("UNSUPPORTED_BIT_DEPTH")
             if color_type not in (2, 6):
                 raise ValueError("UNSUPPORTED_COLOR_TYPE")
@@ -67,8 +61,10 @@ def decode_png(path):
         raw = zlib.decompress(idat_data)
     except Exception:
         raise ValueError("DECOMPRESS_FAILED")
+    sample = bit_depth // 8
     channels = 3 if color_type == 2 else 4
-    stride = width * channels
+    bpp = channels * sample
+    stride = width * bpp
     pixels = []
     prev = bytearray(stride)
     pos = 0
@@ -80,28 +76,30 @@ def decode_png(path):
             raise ValueError("TRUNCATED_SCANLINES")
         cur = bytearray(raw[pos:pos+stride]); pos += stride
         if filt == 1:
-            for i in range(channels, stride):
-                cur[i] = (cur[i] + cur[i-channels]) & 0xff
+            for i in range(bpp, stride):
+                cur[i] = (cur[i] + cur[i-bpp]) & 0xff
         elif filt == 2:
             for i in range(stride):
                 cur[i] = (cur[i] + prev[i]) & 0xff
         elif filt == 3:
             for i in range(stride):
-                a = cur[i-channels] if i >= channels else 0
+                a = cur[i-bpp] if i >= bpp else 0
                 cur[i] = (cur[i] + ((a + prev[i]) >> 1)) & 0xff
         elif filt == 4:
             for i in range(stride):
-                a = cur[i-channels] if i >= channels else 0
+                a = cur[i-bpp] if i >= bpp else 0
                 b = prev[i]
-                c = prev[i-channels] if i >= channels else 0
+                c = prev[i-bpp] if i >= bpp else 0
                 p = a + b - c
                 pa, pb, pc = abs(p-a), abs(p-b), abs(p-c)
                 pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
                 cur[i] = (cur[i] + pr) & 0xff
         elif filt != 0:
             raise ValueError("UNKNOWN_FILTER")
+        # 16-bit samples: the high byte is the 8-bit equivalent.
         for x in range(width):
-            pixels.append((cur[x*channels], cur[x*channels+1], cur[x*channels+2]))
+            o = x * bpp
+            pixels.append((cur[o], cur[o+sample], cur[o+2*sample]))
         prev = cur
     return width, height, pixels
 
@@ -137,6 +135,97 @@ def compute_grid_averages(pixels, width, height, grid_size=8):
                 result.append([0, 0, 0])
     return result
 
+def histogram_similarity(h1, h2):
+    total = sum(h1)
+    if total == 0:
+        return 1.0 if sum(h2) == 0 else 0.0
+    return sum(min(a, b) for a, b in zip(h1, h2)) / total
+
+def grid_similarity(g1, g2):
+    if not g1 or not g2 or len(g1) != len(g2):
+        return 0.0
+    total_diff = 0
+    for (r1, x1, b1), (r2, x2, b2) in zip(g1, g2):
+        total_diff += abs(r1 - r2) + abs(x1 - x2) + abs(b1 - b2)
+    max_diff = len(g1) * 255 * 3
+    return 1.0 - (total_diff / max_diff) if max_diff > 0 else 1.0
+
+def signature(path):
+    w, h, px = decode_png(path)
+    return {"width": w, "height": h, "histogram": compute_histogram(px), "grid": compute_grid_averages(px, w, h)}
+
+def signature_score(a, b):
+    hs = histogram_similarity(a["histogram"], b["histogram"])
+    gs = grid_similarity(a["grid"], b["grid"])
+    return round((hs + gs) / 2.0, 4), round(hs, 4), round(gs, 4)
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1048576), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+# Frame sequences: regular, non-hidden *.png files sorted by name.
+MJ_MAX_FRAMES = 2000
+SIG_MAX_EDGE = 256
+
+def list_frames(directory):
+    names = sorted(n for n in os.listdir(directory)
+                   if n.lower().endswith('.png') and not n.startswith('.')
+                   and os.path.isfile(os.path.join(directory, n))
+                   and not os.path.islink(os.path.join(directory, n)))
+    if len(names) > MJ_MAX_FRAMES:
+        raise ValueError("TOO_MANY_FRAMES")
+    return names
+
+def signatures_for(directory, names):
+    """Signatures for frames, downscaled with sips first when available.
+    Full-resolution pure-python decoding takes seconds per HD frame."""
+    sips = "/usr/bin/sips"
+    stage = None
+    src = directory
+    downscaled = False
+    try:
+        if names and os.access(sips, os.X_OK):
+            stage = tempfile.mkdtemp(prefix="mj-sig-")
+            r = subprocess.run([sips, "-Z", str(SIG_MAX_EDGE), "-s", "format", "png"]
+                               + [os.path.join(directory, n) for n in names] + ["--out", stage],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if r.returncode == 0 and all(os.path.isfile(os.path.join(stage, n)) for n in names):
+                src = stage
+                downscaled = True
+        sigs = []
+        for n in names:
+            try:
+                sigs.append(signature(os.path.join(src, n)))
+            except ValueError as e:
+                raise ValueError("DECODE_FAILED: " + n + ": " + str(e))
+        return sigs, downscaled
+    finally:
+        if stage:
+            shutil.rmtree(stage, ignore_errors=True)
+PY_IMAGE_SIG
+
+image_stats_available() {
+  cap_available python3 && cap_available sips && cap_available awk
+}
+
+# Run the shared library plus an operation-specific main script read from stdin.
+image_sig_python() {
+  local _main=""
+  IFS= read -r -d '' _main || true
+  printf '%s\n%s' "$MJ_PY_IMAGE_SIG" "$_main" | /usr/bin/python3 - 2>/dev/null
+}
+
+image_stats_compute() {
+  local _path="$1"
+  local _json=""
+
+  cap_available python3 || return 1
+  [ -f "$_path" ] && [ -r "$_path" ] || return 1
+
+  _json=$(MJ_IMAGE_STATS_PATH="$_path" image_sig_python <<'PY_IMAGE_STATS'
 def main():
     path = os.environ.get("MJ_IMAGE_STATS_PATH", "")
     if not path:
@@ -171,47 +260,20 @@ PY_IMAGE_STATS
 }
 
 image_stats_compare() {
-  local _hist1="$1"
-  local _grid1="$2"
-  local _hist2="$3"
-  local _grid2="$4"
-
-  MJ_IMAGE_COMPARE_H1="$_hist1" \
-  MJ_IMAGE_COMPARE_G1="$_grid1" \
-  MJ_IMAGE_COMPARE_H2="$_hist2" \
-  MJ_IMAGE_COMPARE_G2="$_grid2" \
-  /usr/bin/python3 - <<'PY_IMAGE_COMPARE' 2>/dev/null
-import json
-import os
-
-def histogram_similarity(h1, h2):
-    total = sum(h1)
-    if total == 0:
-        return 1.0 if sum(h2) == 0 else 0.0
-    return sum(min(a, b) for a, b in zip(h1, h2)) / total
-
-def grid_similarity(g1, g2):
-    if not g1 or not g2 or len(g1) != len(g2):
-        return 0.0
-    total_diff = 0
-    for (r1, x1, b1), (r2, x2, b2) in zip(g1, g2):
-        total_diff += abs(r1 - r2) + abs(x1 - x2) + abs(b1 - b2)
-    max_diff = len(g1) * 255 * 3
-    return 1.0 - (total_diff / max_diff) if max_diff > 0 else 1.0
-
+  MJ_IMAGE_COMPARE_H1="$1" \
+  MJ_IMAGE_COMPARE_G1="$2" \
+  MJ_IMAGE_COMPARE_H2="$3" \
+  MJ_IMAGE_COMPARE_G2="$4" \
+  image_sig_python <<'PY_IMAGE_COMPARE'
 try:
-    h1 = json.loads(os.environ["MJ_IMAGE_COMPARE_H1"])
-    g1 = json.loads(os.environ["MJ_IMAGE_COMPARE_G1"])
-    h2 = json.loads(os.environ["MJ_IMAGE_COMPARE_H2"])
-    g2 = json.loads(os.environ["MJ_IMAGE_COMPARE_G2"])
-    hs = histogram_similarity(h1, h2)
-    gs = grid_similarity(g1, g2)
-    score = (hs + gs) / 2.0
+    a = {"histogram": json.loads(os.environ["MJ_IMAGE_COMPARE_H1"]), "grid": json.loads(os.environ["MJ_IMAGE_COMPARE_G1"])}
+    b = {"histogram": json.loads(os.environ["MJ_IMAGE_COMPARE_H2"]), "grid": json.loads(os.environ["MJ_IMAGE_COMPARE_G2"])}
+    score, hs, gs = signature_score(a, b)
     print(json.dumps({
         "ok": True,
-        "score": round(score, 4),
-        "histogramSimilarity": round(hs, 4),
-        "gridSimilarity": round(gs, 4),
+        "score": score,
+        "histogramSimilarity": hs,
+        "gridSimilarity": gs,
     }))
 except Exception as e:
     print(json.dumps({"ok": False, "code": "COMPARE_FAILED", "message": str(e)}))

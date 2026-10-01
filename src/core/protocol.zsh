@@ -16,14 +16,14 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 is_safe_arg_name() {
   case "$1" in
-    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels) return 0 ;;
+    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels|minFrames|threshold) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -47,6 +47,8 @@ REQUEST_ARG_requiredBytes=""
 REQUEST_ARG_maxResults=""
 REQUEST_ARG_timeSeconds=""
 REQUEST_ARG_maxPixels=""
+REQUEST_ARG_minFrames=""
+REQUEST_ARG_threshold=""
 
 request_arg_present() {
   local _name="$1"
@@ -78,6 +80,8 @@ request_arg_set() {
     maxResults) REQUEST_ARG_maxResults="$_value" ;;
     timeSeconds) REQUEST_ARG_timeSeconds="$_value" ;;
     maxPixels) REQUEST_ARG_maxPixels="$_value" ;;
+    minFrames) REQUEST_ARG_minFrames="$_value" ;;
+    threshold) REQUEST_ARG_threshold="$_value" ;;
     *) return 1 ;;
   esac
 }
@@ -105,6 +109,8 @@ request_arg_get() {
     maxResults) printf '%s' "$REQUEST_ARG_maxResults" ;;
     timeSeconds) printf '%s' "$REQUEST_ARG_timeSeconds" ;;
     maxPixels) printf '%s' "$REQUEST_ARG_maxPixels" ;;
+    minFrames) printf '%s' "$REQUEST_ARG_minFrames" ;;
+    threshold) printf '%s' "$REQUEST_ARG_threshold" ;;
     *) return 1 ;;
   esac
 }
@@ -194,13 +200,25 @@ validate_request_schema() {
       _allowed=" path output "
       _required=" path output "
       ;;
+    loop.seams)
+      _allowed=" path maxResults minFrames "
+      _required=" path "
+      ;;
+    golden.record)
+      _allowed=" path output label "
+      _required=" path output label "
+      ;;
+    golden.check)
+      _allowed=" path input threshold "
+      _required=" path input "
+      ;;
     *)
       set_error "UNSUPPORTED_COMMAND" "Command is not allowlisted."
       return 1
       ;;
   esac
 
-  for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels; do
+  for _arg in path pathA pathB target label runId output input format expectedCliVersion expectedProtocolVersion expectedFilename expectedSha256 expectedSizeBytes expectedModifiedEpoch requiredBytes maxResults timeSeconds maxPixels minFrames threshold; do
     if request_arg_present "$_arg"; then
       case "$_allowed" in *" $_arg "*) ;; *)
         set_error "UNEXPECTED_ARGUMENT" "Argument is not valid for command: $_arg."
@@ -274,6 +292,8 @@ load_request_file() {
   REQUEST_ARG_maxResults=""
   REQUEST_ARG_timeSeconds=""
   REQUEST_ARG_maxPixels=""
+  REQUEST_ARG_minFrames=""
+  REQUEST_ARG_threshold=""
 
   if [ -z "$_file" ] || [ ! -f "$_file" ]; then
     set_error "REQUEST_NOT_FOUND" "Request file does not exist."

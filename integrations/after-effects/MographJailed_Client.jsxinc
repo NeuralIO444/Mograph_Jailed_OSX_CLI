@@ -58,7 +58,8 @@
             "asset.manifest", "asset.verify", "search.candidate", "image.inspect", "image.derivative", "image.stats", "image.compare", "storage.preflight",
             "volume.inspect", "temp.create", "temp.clean", "media.inspect",
             "media.timing", "media.frame", "package.create", "report.tech",
-            "project.ingest", "expression.lint", "plugin.audit", "project.snapshot"
+            "project.ingest", "expression.lint", "plugin.audit", "project.snapshot",
+            "loop.seams", "golden.record", "golden.check"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -216,7 +217,7 @@
             writeRequestLine(f, "requestId=" + requestId);
             writeRequestLine(f, "command=" + command);
             if (args) {
-                allowed = ["path", "pathA", "pathB", "target", "label", "runId", "output", "input", "format", "expectedCliVersion", "expectedProtocolVersion", "expectedFilename", "expectedSha256", "expectedSizeBytes", "expectedModifiedEpoch", "requiredBytes", "maxResults", "timeSeconds", "maxPixels"];
+                allowed = ["path", "pathA", "pathB", "target", "label", "runId", "output", "input", "format", "expectedCliVersion", "expectedProtocolVersion", "expectedFilename", "expectedSha256", "expectedSizeBytes", "expectedModifiedEpoch", "requiredBytes", "maxResults", "timeSeconds", "maxPixels", "minFrames", "threshold"];
                 for (i = 0; i < allowed.length; i++) {
                     key = allowed[i];
                     if (typeof args[key] !== "undefined" && args[key] !== null) {
@@ -368,6 +369,26 @@
 
     Client.prototype.imageCompare = function (pathA, pathB) {
         return this.call("image.compare", { pathA: pathA, pathB: pathB });
+    };
+
+    Client.prototype.loopSeams = function (frameDir, minFrames, maxResults) {
+        return this.call("loop.seams", {
+            path: frameDir,
+            minFrames: (typeof minFrames === "undefined" ? null : String(minFrames)),
+            maxResults: (typeof maxResults === "undefined" ? null : String(maxResults))
+        });
+    };
+
+    Client.prototype.goldenRecord = function (frameDir, outputDir, label) {
+        return this.call("golden.record", { path: frameDir, output: outputDir, label: label });
+    };
+
+    Client.prototype.goldenCheck = function (frameDir, receiptPath, threshold) {
+        return this.call("golden.check", {
+            path: frameDir,
+            input: receiptPath,
+            threshold: (typeof threshold === "undefined" ? null : String(threshold))
+        });
     };
 
     Client.prototype.projectIngest = function (path) {

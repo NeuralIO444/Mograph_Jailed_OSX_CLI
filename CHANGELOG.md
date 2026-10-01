@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Power CLI Phases 5–6
+
+- Added `loop.seams`, `golden.record`, `golden.check` (operations 28–30) and argument names `minFrames`, `threshold`. Protocol v1 preserved; no existing schema changed.
+- ImageStats signature engine moved into one shared Python block; PNG decoder now accepts 16-bit RGB/RGBA (common for C4D renders).
+- Frame operations downscale through `sips` when present (48 × 1080p frames in ~3 s) and fall back to direct decode otherwise; `python3` is the only hard requirement.
+- AE client: `loopSeams()`, `goldenRecord()`, `goldenCheck()`.
+- Added `tests/run_frames.sh` (29 checks).
+
 ## 0.3.0-dev.2 — 2026-09-22
 
 SL-M2 FrameKit qualification candidate for MJ_AE_Looper.

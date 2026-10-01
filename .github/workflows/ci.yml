@@ -55,3 +55,16 @@ jobs:
         run: bash tests/run_all.sh
       - name: Protocol fuzz (1000 cases)
         run: bash tests/qa_only/run_fuzz_1000.sh
+
+  macos-tests:
+    name: macOS tests
+    runs-on: macos-latest
+    # ponytail: advisory until the suite is proven green on hosted macOS; drop continue-on-error then.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Test suite (stock /bin/zsh, BSD userland)
+        run: bash tests/run_all.sh

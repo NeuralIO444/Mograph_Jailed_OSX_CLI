@@ -23,6 +23,9 @@ project.ingest
 expression.lint
 plugin.audit
 project.snapshot
+loop.seams
+golden.record
+golden.check
 report.tech
 runtime.verify
 search.candidate
