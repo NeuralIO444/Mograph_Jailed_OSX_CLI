@@ -13,6 +13,8 @@
 PROJECT_OBSERVE_MAX_SCRAPE_BYTES=8388608
 # Max plugin directory entries enumerated by plugin.audit.
 PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES=500
+# Largest single file plugin.audit will hash (bytes). ~3 s per GiB on Apple Silicon; larger files are listed unhashed.
+PROJECT_OBSERVE_MAX_PLUGIN_FILE_BYTES=2147483648
 # Max lint findings returned before truncation.
 PROJECT_OBSERVE_MAX_FINDINGS=200
 
@@ -146,6 +148,13 @@ data = {
     "layerTypes": layer_types,
     "compsTruncated": bool(doc.get("compsTruncated", False)),
     "footageTruncated": bool(doc.get("footageTruncated", False)),
+    "_warnings": (
+        ([{"code": "COMPS_TRUNCATED", "message": "The scrape holds only the first comps of a larger project; the rest are not summarized."}] if doc.get("compsTruncated") else [])
+        + ([{"code": "LAYERS_TRUNCATED", "message": "Some comps have more layers than the scraper records; their layer counts are lower bounds."}]
+           if any(isinstance(c, dict) and c.get("layersTruncated") for c in doc["comps"]) else [])
+        + ([{"code": "FOOTAGE_TRUNCATED", "message": "The scrape holds only the first footage items of a larger project."}] if doc.get("footageTruncated") else [])
+        + ([{"code": "FOOTAGE_MISSING", "message": "%d footage items are missing." % len(footage_missing)}] if footage_missing else [])
+    ),
     "sourceUnchanged": _ident(path) == _id0,
 }
 print(json.dumps({"ok": True, "data": data}))
@@ -153,8 +162,9 @@ PY_PROJECT_INGEST
   ) || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
+    split_warnings "$_data"
     emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-    printf '%s' "$_data"
+    printf '%s' "$MJ_DATA_JSON"
     emit_success_end
     return 0
   fi
@@ -289,6 +299,7 @@ data = {
     "info": infos,
     "findings": findings,
     "findingsTruncated": truncated,
+    "_warnings": ([{"code": "FINDINGS_TRUNCATED", "message": "Only the first %d findings are listed." % max_findings}] if truncated else []),
     "rules": ["E001", "E002", "W001", "W002", "W003", "I001"],
     "sourceUnchanged": _ident(path) == _id0,
 }
@@ -297,8 +308,9 @@ PY_EXPRESSION_LINT
   ) || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
+    split_warnings "$_data"
     emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-    printf '%s' "$_data"
+    printf '%s' "$MJ_DATA_JSON"
     emit_success_end
     return 0
   fi
@@ -319,6 +331,7 @@ handle_plugin_audit() {
   local _sha_value=""
   local _count=0
   local _truncated=false
+  local _skipped_big=0
   local _first=1
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
@@ -357,7 +370,10 @@ handle_plugin_audit() {
     elif [ -f "$_entry" ]; then
       _kind="file"
       _size=$(file_stat_size "$_entry" 2>/dev/null || printf '')
-      if [ -r "$_entry" ]; then
+      if [ -n "$_size" ] && [ "$_size" -gt "$PROJECT_OBSERVE_MAX_PLUGIN_FILE_BYTES" ] 2>/dev/null; then
+        # Too big to hash inside a request that should answer in seconds; listed, not hashed.
+        _skipped_big=$((_skipped_big + 1))
+      elif [ -r "$_entry" ]; then
         hash_sha256_file "$_entry" 2>/dev/null
         _sha_source="$MJ_HASH_SOURCE"; _sha_value="$MJ_HASH_VALUE"
       fi
@@ -376,6 +392,8 @@ handle_plugin_audit() {
   printf '],"numEntries":'
   if $_truncated; then printf '%s' "$PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES"; else printf '%s' "$_count"; fi
   if $_truncated; then printf ',"truncated":true'; else printf ',"truncated":false'; fi
+  if $_truncated; then add_warning "ENTRY_LIMIT_REACHED" "Only the first $PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES entries were audited."; fi
+  if [ "$_skipped_big" -gt 0 ]; then add_warning "FILE_TOO_LARGE_TO_HASH" "$_skipped_big files over $((PROJECT_OBSERVE_MAX_PLUGIN_FILE_BYTES / 1048576)) MB were listed without a SHA-256."; fi
   printf ',"entryBound":%s' "$PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES"
   # Directory-level check: entries added or removed while the scan ran change this.
   printf ',"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_dir")"

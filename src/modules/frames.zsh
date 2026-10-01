@@ -22,8 +22,9 @@ frames_emit_python_result() {
   local _out="$1"
   local _data=""
   _data=$(project_emit_python_data "$_out") && {
+    split_warnings "$_data"
     emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-    printf '%s' "$_data"
+    printf '%s' "$MJ_DATA_JSON"
     emit_success_end
     return 0
   }
@@ -231,6 +232,7 @@ def main():
         "frames": results,
         "extraFrames": extra,
         "signatureDownscaled": downscaled if changed else golden.get("signatureDownscaled"),
+        "_warnings": ([{"code": "EXTRA_FRAMES", "message": "%d frames are not in the golden record and were not checked." % len(extra)}] if extra else []),
         "sourceUnchanged": tree_id(d) == id0,
     }}))
 

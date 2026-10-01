@@ -270,6 +270,8 @@ print(json.dumps({"ok": True, "data": {
     "singlePointsOfFailure": spof,
     "note": "Fonts are project-wide in MJ_PROJECT_SCRAPE_1; comps with usesText depend on them. Footage on network or unknown storage is not checked.",
     "sourceUnchanged": tree_id(os.environ["MJ_SCRAPE"]) == id0,
+    "_warnings": ([{"code": "MISSING_FOOTAGE", "message": "%d footage files are missing." % len(missing)}] if missing else [])
+                 + ([{"code": "FOOTAGE_UNVERIFIED", "message": "%d footage files are on network or unknown storage and were not checked." % len(unverified)}] if unverified else []),
 }}))
 PY_DEPS
 ) || true
@@ -409,6 +411,9 @@ print(json.dumps({"ok": True, "data": {
     "effectCount": len(manifest["effects"]),
     "projectMatchesScrape": manifest["project"]["matchesScrape"],
     "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
+    "_warnings": ([{"code": "MISSING_FOOTAGE", "message": "%d footage files are missing and were not included." % len(missing)}] if missing else [])
+                 + ([{"code": "FOOTAGE_NOT_COLLECTED", "message": "%d footage files are on network or unknown storage and were not copied." % len(skipped)}] if skipped else [])
+                 + ([{"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape was taken from a different project name than the .aep being packaged."}] if not manifest["project"]["matchesScrape"] else []),
 }}))
 PY_HANDOFF
 ) || true

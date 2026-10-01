@@ -19,7 +19,8 @@ _mj_color_enabled() {
 }
 
 _mj_b64() {
-    printf '%s' "$1" | /usr/bin/base64
+    # macOS base64 wraps at 76 columns; the request format is line-based, so join the lines.
+    printf '%s' "$1" | /usr/bin/base64 | /usr/bin/tr -d '\n'
 }
 
 _mj_cli() {

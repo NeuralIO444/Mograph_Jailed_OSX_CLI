@@ -175,3 +175,27 @@ These appear inside the message of `FRAME_EXTRACTION_FAILED`, not as the error c
 | `PNG_WRITE_FAILED` | 74 | The PNG file could not be written. | Check the output folder. |
 | `BRIDGE_LOAD_FAILED` | 74 | System frameworks could not be loaded. | Report with the macOS version. |
 | `PYCTYPES_EXCEPTION` | 74 | The Python/ctypes bridge failed. | Report with the macOS version. |
+
+## Warnings
+
+A successful response can still carry `warnings`: a list of `{ "code", "message" }`. A warning means the result is correct but incomplete or needs attention; it never fails the request. `"warnings": []` means nothing to report.
+
+| Code | What it means | What to do |
+|---|---|---|
+| `COMPS_TRUNCATED` | The scrape holds only the first comps of a larger project. | Counts are lower bounds. |
+| `LAYERS_TRUNCATED` | Some comps have more layers than the scraper records. | Layer counts for those comps are lower bounds. |
+| `FOOTAGE_TRUNCATED` | The scrape holds only the first footage items of a larger project. | Footage lists are partial. |
+| `FOOTAGE_MISSING` | Footage items are marked missing. | Relink in After Effects, or see `trace.asset format=missing`. |
+| `FINDINGS_TRUNCATED` | `expression.lint` found more issues than it lists. | Fix the listed ones and run it again. |
+| `ENTRY_LIMIT_REACHED` | `plugin.audit` stopped at its entry limit. | Audit sub-folders separately. |
+| `FILE_TOO_LARGE_TO_HASH` | Plug-in files over 2 GB were listed without a SHA-256. | Hash them with `file.hash` if you need to. |
+| `MISSING_FOOTAGE` | Footage files that a project uses are missing. | Find or relink them before delivery. |
+| `FOOTAGE_UNVERIFIED` | Footage on network or unknown storage was not checked. | Check those files by hand. |
+| `FOOTAGE_NOT_COLLECTED` | Footage on network or unknown storage was not copied into the handoff. | Copy it separately. |
+| `PROJECT_SCRAPE_MISMATCH` | The scrape was taken from a differently named project than the `.aep` packaged. | Check you passed matching files. |
+| `FILES_UNREADABLE` | Some receipts could not be indexed. | See `problems` in the result. |
+| `RESULTS_TRUNCATED` | More results exist than were returned. | Raise `maxResults` or narrow the query. |
+| `STALE_RECEIPTS` | Indexed receipts no longer exist on disk. | Re-run `index.add` on the current folder. |
+| `PRESET_BLOB_CORRUPT` | Stored presets failed their hash check. | Re-add them from their source files. |
+| `EXTRA_FRAMES` | Frames not in the golden record were not checked. | Record a new golden set if they belong. |
+| `SOURCE_CHANGED_DURING_RENDER` | The project or scene changed while rendering. | The frames may mix two versions; re-render. |

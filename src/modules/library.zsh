@@ -271,6 +271,7 @@ print(json.dumps({"ok": True, "data": dict(counts, **{
     "schema": "MJ_INDEX_ADD_1", "path": root, "store": os.environ["MJ_STORE"],
     "filesExamined": len(candidates), "indexedBySchema": by_schema, "problems": problems,
     "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
+    "_warnings": ([{"code": "FILES_UNREADABLE", "message": "%d files could not be indexed (see problems)." % len(problems)}] if problems else []),
 })}))
 PY_INDEX_ADD
 ) || true
@@ -302,6 +303,7 @@ print(json.dumps({"ok": True, "data": {
     "schema": "MJ_INDEX_SEARCH_1", "query": query, "terms": words,
     "results": [{"kind": k, "name": n, "detail": d, "source": p, "sourceSchema": sc, "sourceTitle": t,
                  "score": round(-r, 4)} for k, n, d, p, sc, t, r in rows],
+    "_warnings": ([{"code": "RESULTS_TRUNCATED", "message": "Only the first %d results are shown; raise maxResults to see more." % len(rows)}] if len(rows) >= int(os.environ["MJ_MAX"]) else []),
 }}))
 PY_INDEX_SEARCH
 ) || true
@@ -340,6 +342,8 @@ print(json.dumps({"ok": True, "data": {
     "projects": count("SELECT count(*) FROM projects"),
     "presetVersions": count("SELECT count(*) FROM presets"), "presetBlobs": len(blobs),
     "staleDocs": stale[:100], "corruptPresetBlobs": corrupt,
+    "_warnings": ([{"code": "STALE_RECEIPTS", "message": "%d indexed receipts no longer exist on disk." % len(stale)}] if stale else [])
+                 + ([{"code": "PRESET_BLOB_CORRUPT", "message": "%d stored presets failed their hash check." % len(corrupt)}] if corrupt else []),
 }}))
 PY_INDEX_VERIFY
 ) || true
@@ -555,6 +559,7 @@ print(json.dumps({"ok": True, "data": {
     "schema": "MJ_TRACE_1", "query": {"format": kind, "target": target or None, "project": proj_filter or None},
     "projects": results, "matchCount": total, "truncated": total >= limit,
     "note": "Paths run from a root composition down to the composition that holds the layer; a missing-footage layer in a precomp reports every comp chain that nests it.",
+    "_warnings": ([{"code": "RESULTS_TRUNCATED", "message": "Stopped after %d matches; raise maxResults or narrow with path." % total}] if total >= limit else []),
 }}))
 PY_TRACE_ASSET
 ) || true
@@ -588,6 +593,7 @@ if target:
         "projects": [{"projectPath": r[0], "projectName": r[1], "scrapedAt": r[2], "layerUses": r[3],
                       "compositions": r[4], "effectName": r[5]} for r in rows],
         "note": "Each project's newest indexed scrape is used; projects never scraped are not covered.",
+        "_warnings": ([{"code": "RESULTS_TRUNCATED", "message": "Only the first %d projects are listed." % len(rows)}] if len(rows) >= limit else []),
     }}))
 else:
     rows = db.execute("""SELECT pl.match_name, min(pl.name), count(DISTINCT pl.project_id), count(*)
@@ -596,6 +602,7 @@ else:
         "schema": "MJ_PLUGIN_INVENTORY_1", "distinctEffects": len(rows), "truncated": len(rows) >= limit,
         "effects": [{"matchName": r[0], "effectName": r[1], "projects": r[2], "layerUses": r[3]} for r in rows],
         "projectsIndexed": db.execute("SELECT count(*) FROM projects").fetchone()[0],
+        "_warnings": ([{"code": "RESULTS_TRUNCATED", "message": "Only the first %d effects are listed." % len(rows)}] if len(rows) >= limit else []),
     }}))
 PY_AUDIT_PLUGINS
 ) || true

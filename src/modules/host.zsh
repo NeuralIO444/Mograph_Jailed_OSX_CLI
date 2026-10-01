@@ -220,6 +220,8 @@ def finish_render(receipt, job, rng, status, code, tail, source_path, sha_before
     if status in codes:
         code_name, msg = codes[status]
         err(code_name, "%s Receipt: %s" % (msg, path))
+    if not receipt["source"]["unchanged"]:
+        receipt["_warnings"] = [{"code": "SOURCE_CHANGED_DURING_RENDER", "message": "The project or scene file changed while it was rendering; the frames may mix two versions."}]
     print(json.dumps({"ok": True, "data": receipt}))
 PY_HOST_LIB
 

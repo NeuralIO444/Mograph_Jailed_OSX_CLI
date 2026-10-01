@@ -83,8 +83,20 @@ handle_image_derivative() {
   emit_success_end
 }
 
+# Extract and validate one signature array (64 numbers, or 64 RGB triples) from the stats JSON.
+image_sig_field() {
+  printf '%s' "$1" | /usr/bin/python3 -c '
+import json, sys
+v = json.load(sys.stdin)[sys.argv[1]]
+assert isinstance(v, list) and len(v) == 64
+assert all(type(x) is int or (isinstance(x, list) and len(x) == 3 and all(type(c) is int for c in x)) for x in v)
+print(json.dumps(v, separators=(",", ":")))
+' "$2" 2>/dev/null
+}
+
 handle_image_stats() {
   local _path=""
+  local _fields=""
   local _id0=""
   local _stats_json=""
   local _width=""
@@ -108,11 +120,19 @@ handle_image_stats() {
     *) set_error "STATS_FAILED" "Image stats engine returned an error."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74 ;;
   esac
 
-  _width=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['width'])")
-  _height=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['height'])")
-  _histogram=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
-  _grid=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
-
+  # Validate the engine's output once; anything unexpected is an error, never malformed JSON.
+  _fields=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+w, h, hist, grid = d["width"], d["height"], d["histogram"], d["gridAverages"]
+assert type(w) is int and type(h) is int and w > 0 and h > 0
+assert isinstance(hist, list) and len(hist) == 64 and all(type(v) is int and v >= 0 for v in hist)
+assert isinstance(grid, list) and len(grid) == 64 and all(isinstance(c, list) and len(c) == 3 and all(type(v) is int and 0 <= v <= 255 for v in c) for c in grid)
+print(w); print(h); print(json.dumps(hist, separators=(",", ":"))); print(json.dumps(grid, separators=(",", ":")))
+' 2>/dev/null) || { set_error "STATS_FAILED" "Image stats engine returned unexpected output."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  { IFS= read -r _width; IFS= read -r _height; IFS= read -r _histogram; IFS= read -r _grid; } <<EOF_FIELDS
+$_fields
+EOF_FIELDS
   emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
   printf '{"schema":"MJ_IMAGE_STATS_1","path":'; json_quote "$_path"
   printf ',"pixelWidth":%s,"pixelHeight":%s' "$_width" "$_height"
@@ -123,6 +143,7 @@ handle_image_stats() {
 }
 
 handle_image_compare() {
+  local _fields=""
   local _path_a=""
   local _id0a=""
   local _id0b=""
@@ -156,10 +177,9 @@ handle_image_compare() {
   _stats_a=$(image_stats_compute "$_path_a") || { set_error "STATS_FAILED" "Image stats computation failed for first image."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   _stats_b=$(image_stats_compute "$_path_b") || { set_error "STATS_FAILED" "Image stats computation failed for second image."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
-  _hist_a=$(printf '%s' "$_stats_a" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
-  _grid_a=$(printf '%s' "$_stats_a" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
-  _hist_b=$(printf '%s' "$_stats_b" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
-  _grid_b=$(printf '%s' "$_stats_b" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
+  _hist_a=$(image_sig_field "$_stats_a" histogram) && _grid_a=$(image_sig_field "$_stats_a" gridAverages) \
+    && _hist_b=$(image_sig_field "$_stats_b" histogram) && _grid_b=$(image_sig_field "$_stats_b" gridAverages) \
+    || { set_error "STATS_FAILED" "Image stats engine returned unexpected output."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   _compare_json=$(image_stats_compare "$_hist_a" "$_grid_a" "$_hist_b" "$_grid_b") || { set_error "COMPARE_FAILED" "Image similarity computation failed."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   case "$_compare_json" in
@@ -167,10 +187,16 @@ handle_image_compare() {
     *) set_error "COMPARE_FAILED" "Image compare engine returned an error."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74 ;;
   esac
 
-  _score=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['score'])")
-  _hist_sim=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['histogramSimilarity'])")
-  _grid_sim=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['gridSimilarity'])")
-
+  _fields=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for k in ("score", "histogramSimilarity", "gridSimilarity"):
+    assert isinstance(d[k], (int, float)) and not isinstance(d[k], bool) and 0 <= d[k] <= 1
+print(d["score"]); print(d["histogramSimilarity"]); print(d["gridSimilarity"])
+' 2>/dev/null) || { set_error "COMPARE_FAILED" "Image compare engine returned unexpected output."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  { IFS= read -r _score; IFS= read -r _hist_sim; IFS= read -r _grid_sim; } <<EOF_FIELDS
+$_fields
+EOF_FIELDS
   emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
   printf '{"schema":"MJ_IMAGE_COMPARE_1","pathA":'; json_quote "$_path_a"
   printf ',"pathB":'; json_quote "$_path_b"

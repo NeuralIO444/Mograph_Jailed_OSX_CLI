@@ -99,6 +99,35 @@ emit_error_response() {
 }
 
 # --- src/core/response.zsh ---
+# Warnings are real: handlers call add_warning, or (for operations backed by a Python
+# engine) return a reserved `_warnings` list in their data that split_warnings lifts out.
+MJ_WARNINGS=""
+MJ_DATA_JSON=""
+
+# add_warning <CODE> <message>
+add_warning() {
+  local _item="{\"code\":$(json_quote "$1"),\"message\":$(json_quote "$2")}"
+  MJ_WARNINGS="${MJ_WARNINGS:+$MJ_WARNINGS,}$_item"
+}
+
+# split_warnings <data-json>: sets MJ_DATA_JSON (data without `_warnings`) and appends the
+# warnings. If the JSON cannot be split, the data is passed through unchanged.
+split_warnings() {
+  local _out="" _w=""
+  MJ_DATA_JSON="$1"
+  _out=$(printf '%s' "$1" | /usr/bin/python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+ws = d.pop("_warnings", []) if isinstance(d, dict) else []
+print(",".join(json.dumps({"code": str(w["code"]), "message": str(w["message"])}) for w in ws if isinstance(w, dict) and "code" in w and "message" in w))
+print(json.dumps(d, sort_keys=True, separators=(",", ":")))
+' 2>/dev/null) || return 0
+  { IFS= read -r _w; IFS= read -r MJ_DATA_JSON; } <<EOF_SPLIT
+$_out
+EOF_SPLIT
+  [ -z "$_w" ] || MJ_WARNINGS="${MJ_WARNINGS:+$MJ_WARNINGS,}$_w"
+}
+
 emit_success_start() {
   local _cmd="$1"
   local _req="$2"
@@ -112,7 +141,7 @@ emit_success_start() {
 }
 
 emit_success_end() {
-  printf ',"warnings":[],"error":null}\n'
+  printf ',"warnings":[%s],"error":null}\n' "$MJ_WARNINGS"
 }
 
 # --- src/core/protocol.zsh ---
@@ -2602,6 +2631,7 @@ handle_volume_inspect() {
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  cap_available df && cap_available awk && cap_available uname || { set_error "UNSUPPORTED" "Volume inspection requires stock macOS df/awk/uname capabilities."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
   [ -e "$_path" ] || { set_error "NOT_FOUND" "Path does not exist or volume is unavailable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 66; }
 
   [ "$(/usr/bin/uname -s 2>/dev/null)" = "Darwin" ] && _darwin=true
@@ -3282,8 +3312,20 @@ handle_image_derivative() {
   emit_success_end
 }
 
+# Extract and validate one signature array (64 numbers, or 64 RGB triples) from the stats JSON.
+image_sig_field() {
+  printf '%s' "$1" | /usr/bin/python3 -c '
+import json, sys
+v = json.load(sys.stdin)[sys.argv[1]]
+assert isinstance(v, list) and len(v) == 64
+assert all(type(x) is int or (isinstance(x, list) and len(x) == 3 and all(type(c) is int for c in x)) for x in v)
+print(json.dumps(v, separators=(",", ":")))
+' "$2" 2>/dev/null
+}
+
 handle_image_stats() {
   local _path=""
+  local _fields=""
   local _id0=""
   local _stats_json=""
   local _width=""
@@ -3307,11 +3349,19 @@ handle_image_stats() {
     *) set_error "STATS_FAILED" "Image stats engine returned an error."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74 ;;
   esac
 
-  _width=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['width'])")
-  _height=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['height'])")
-  _histogram=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
-  _grid=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
-
+  # Validate the engine's output once; anything unexpected is an error, never malformed JSON.
+  _fields=$(printf '%s' "$_stats_json" | /usr/bin/python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+w, h, hist, grid = d["width"], d["height"], d["histogram"], d["gridAverages"]
+assert type(w) is int and type(h) is int and w > 0 and h > 0
+assert isinstance(hist, list) and len(hist) == 64 and all(type(v) is int and v >= 0 for v in hist)
+assert isinstance(grid, list) and len(grid) == 64 and all(isinstance(c, list) and len(c) == 3 and all(type(v) is int and 0 <= v <= 255 for v in c) for c in grid)
+print(w); print(h); print(json.dumps(hist, separators=(",", ":"))); print(json.dumps(grid, separators=(",", ":")))
+' 2>/dev/null) || { set_error "STATS_FAILED" "Image stats engine returned unexpected output."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  { IFS= read -r _width; IFS= read -r _height; IFS= read -r _histogram; IFS= read -r _grid; } <<EOF_FIELDS
+$_fields
+EOF_FIELDS
   emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
   printf '{"schema":"MJ_IMAGE_STATS_1","path":'; json_quote "$_path"
   printf ',"pixelWidth":%s,"pixelHeight":%s' "$_width" "$_height"
@@ -3322,6 +3372,7 @@ handle_image_stats() {
 }
 
 handle_image_compare() {
+  local _fields=""
   local _path_a=""
   local _id0a=""
   local _id0b=""
@@ -3355,10 +3406,9 @@ handle_image_compare() {
   _stats_a=$(image_stats_compute "$_path_a") || { set_error "STATS_FAILED" "Image stats computation failed for first image."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   _stats_b=$(image_stats_compute "$_path_b") || { set_error "STATS_FAILED" "Image stats computation failed for second image."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
-  _hist_a=$(printf '%s' "$_stats_a" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
-  _grid_a=$(printf '%s' "$_stats_a" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
-  _hist_b=$(printf '%s' "$_stats_b" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['histogram']))")
-  _grid_b=$(printf '%s' "$_stats_b" | /usr/bin/python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['gridAverages']))")
+  _hist_a=$(image_sig_field "$_stats_a" histogram) && _grid_a=$(image_sig_field "$_stats_a" gridAverages) \
+    && _hist_b=$(image_sig_field "$_stats_b" histogram) && _grid_b=$(image_sig_field "$_stats_b" gridAverages) \
+    || { set_error "STATS_FAILED" "Image stats engine returned unexpected output."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   _compare_json=$(image_stats_compare "$_hist_a" "$_grid_a" "$_hist_b" "$_grid_b") || { set_error "COMPARE_FAILED" "Image similarity computation failed."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
   case "$_compare_json" in
@@ -3366,10 +3416,16 @@ handle_image_compare() {
     *) set_error "COMPARE_FAILED" "Image compare engine returned an error."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74 ;;
   esac
 
-  _score=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['score'])")
-  _hist_sim=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['histogramSimilarity'])")
-  _grid_sim=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin)['gridSimilarity'])")
-
+  _fields=$(printf '%s' "$_compare_json" | /usr/bin/python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for k in ("score", "histogramSimilarity", "gridSimilarity"):
+    assert isinstance(d[k], (int, float)) and not isinstance(d[k], bool) and 0 <= d[k] <= 1
+print(d["score"]); print(d["histogramSimilarity"]); print(d["gridSimilarity"])
+' 2>/dev/null) || { set_error "COMPARE_FAILED" "Image compare engine returned unexpected output."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  { IFS= read -r _score; IFS= read -r _hist_sim; IFS= read -r _grid_sim; } <<EOF_FIELDS
+$_fields
+EOF_FIELDS
   emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
   printf '{"schema":"MJ_IMAGE_COMPARE_1","pathA":'; json_quote "$_path_a"
   printf ',"pathB":'; json_quote "$_path_b"
@@ -3606,6 +3662,8 @@ handle_package_create() {
 PROJECT_OBSERVE_MAX_SCRAPE_BYTES=8388608
 # Max plugin directory entries enumerated by plugin.audit.
 PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES=500
+# Largest single file plugin.audit will hash (bytes). ~3 s per GiB on Apple Silicon; larger files are listed unhashed.
+PROJECT_OBSERVE_MAX_PLUGIN_FILE_BYTES=2147483648
 # Max lint findings returned before truncation.
 PROJECT_OBSERVE_MAX_FINDINGS=200
 
@@ -3739,6 +3797,13 @@ data = {
     "layerTypes": layer_types,
     "compsTruncated": bool(doc.get("compsTruncated", False)),
     "footageTruncated": bool(doc.get("footageTruncated", False)),
+    "_warnings": (
+        ([{"code": "COMPS_TRUNCATED", "message": "The scrape holds only the first comps of a larger project; the rest are not summarized."}] if doc.get("compsTruncated") else [])
+        + ([{"code": "LAYERS_TRUNCATED", "message": "Some comps have more layers than the scraper records; their layer counts are lower bounds."}]
+           if any(isinstance(c, dict) and c.get("layersTruncated") for c in doc["comps"]) else [])
+        + ([{"code": "FOOTAGE_TRUNCATED", "message": "The scrape holds only the first footage items of a larger project."}] if doc.get("footageTruncated") else [])
+        + ([{"code": "FOOTAGE_MISSING", "message": "%d footage items are missing." % len(footage_missing)}] if footage_missing else [])
+    ),
     "sourceUnchanged": _ident(path) == _id0,
 }
 print(json.dumps({"ok": True, "data": data}))
@@ -3746,8 +3811,9 @@ PY_PROJECT_INGEST
   ) || { set_error "INGEST_FAILED" "Scrape summarizer failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
+    split_warnings "$_data"
     emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-    printf '%s' "$_data"
+    printf '%s' "$MJ_DATA_JSON"
     emit_success_end
     return 0
   fi
@@ -3882,6 +3948,7 @@ data = {
     "info": infos,
     "findings": findings,
     "findingsTruncated": truncated,
+    "_warnings": ([{"code": "FINDINGS_TRUNCATED", "message": "Only the first %d findings are listed." % max_findings}] if truncated else []),
     "rules": ["E001", "E002", "W001", "W002", "W003", "I001"],
     "sourceUnchanged": _ident(path) == _id0,
 }
@@ -3890,8 +3957,9 @@ PY_EXPRESSION_LINT
   ) || { set_error "LINT_FAILED" "Expression linter failed to run."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
 
   if _data=$(project_emit_python_data "$_pyout" 2>/dev/null); then
+    split_warnings "$_data"
     emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-    printf '%s' "$_data"
+    printf '%s' "$MJ_DATA_JSON"
     emit_success_end
     return 0
   fi
@@ -3912,6 +3980,7 @@ handle_plugin_audit() {
   local _sha_value=""
   local _count=0
   local _truncated=false
+  local _skipped_big=0
   local _first=1
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
@@ -3950,7 +4019,10 @@ handle_plugin_audit() {
     elif [ -f "$_entry" ]; then
       _kind="file"
       _size=$(file_stat_size "$_entry" 2>/dev/null || printf '')
-      if [ -r "$_entry" ]; then
+      if [ -n "$_size" ] && [ "$_size" -gt "$PROJECT_OBSERVE_MAX_PLUGIN_FILE_BYTES" ] 2>/dev/null; then
+        # Too big to hash inside a request that should answer in seconds; listed, not hashed.
+        _skipped_big=$((_skipped_big + 1))
+      elif [ -r "$_entry" ]; then
         hash_sha256_file "$_entry" 2>/dev/null
         _sha_source="$MJ_HASH_SOURCE"; _sha_value="$MJ_HASH_VALUE"
       fi
@@ -3969,6 +4041,8 @@ handle_plugin_audit() {
   printf '],"numEntries":'
   if $_truncated; then printf '%s' "$PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES"; else printf '%s' "$_count"; fi
   if $_truncated; then printf ',"truncated":true'; else printf ',"truncated":false'; fi
+  if $_truncated; then add_warning "ENTRY_LIMIT_REACHED" "Only the first $PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES entries were audited."; fi
+  if [ "$_skipped_big" -gt 0 ]; then add_warning "FILE_TOO_LARGE_TO_HASH" "$_skipped_big files over $((PROJECT_OBSERVE_MAX_PLUGIN_FILE_BYTES / 1048576)) MB were listed without a SHA-256."; fi
   printf ',"entryBound":%s' "$PROJECT_OBSERVE_MAX_PLUGIN_ENTRIES"
   # Directory-level check: entries added or removed while the scan ran change this.
   printf ',"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_dir")"
@@ -4152,8 +4226,9 @@ frames_emit_python_result() {
   local _out="$1"
   local _data=""
   _data=$(project_emit_python_data "$_out") && {
+    split_warnings "$_data"
     emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-    printf '%s' "$_data"
+    printf '%s' "$MJ_DATA_JSON"
     emit_success_end
     return 0
   }
@@ -4361,6 +4436,7 @@ def main():
         "frames": results,
         "extraFrames": extra,
         "signatureDownscaled": downscaled if changed else golden.get("signatureDownscaled"),
+        "_warnings": ([{"code": "EXTRA_FRAMES", "message": "%d frames are not in the golden record and were not checked." % len(extra)}] if extra else []),
         "sourceUnchanged": tree_id(d) == id0,
     }}))
 
@@ -4768,6 +4844,8 @@ print(json.dumps({"ok": True, "data": {
     "singlePointsOfFailure": spof,
     "note": "Fonts are project-wide in MJ_PROJECT_SCRAPE_1; comps with usesText depend on them. Footage on network or unknown storage is not checked.",
     "sourceUnchanged": tree_id(os.environ["MJ_SCRAPE"]) == id0,
+    "_warnings": ([{"code": "MISSING_FOOTAGE", "message": "%d footage files are missing." % len(missing)}] if missing else [])
+                 + ([{"code": "FOOTAGE_UNVERIFIED", "message": "%d footage files are on network or unknown storage and were not checked." % len(unverified)}] if unverified else []),
 }}))
 PY_DEPS
 ) || true
@@ -4907,6 +4985,9 @@ print(json.dumps({"ok": True, "data": {
     "effectCount": len(manifest["effects"]),
     "projectMatchesScrape": manifest["project"]["matchesScrape"],
     "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
+    "_warnings": ([{"code": "MISSING_FOOTAGE", "message": "%d footage files are missing and were not included." % len(missing)}] if missing else [])
+                 + ([{"code": "FOOTAGE_NOT_COLLECTED", "message": "%d footage files are on network or unknown storage and were not copied." % len(skipped)}] if skipped else [])
+                 + ([{"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape was taken from a different project name than the .aep being packaged."}] if not manifest["project"]["matchesScrape"] else []),
 }}))
 PY_HANDOFF
 ) || true
@@ -5187,6 +5268,7 @@ print(json.dumps({"ok": True, "data": dict(counts, **{
     "schema": "MJ_INDEX_ADD_1", "path": root, "store": os.environ["MJ_STORE"],
     "filesExamined": len(candidates), "indexedBySchema": by_schema, "problems": problems,
     "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
+    "_warnings": ([{"code": "FILES_UNREADABLE", "message": "%d files could not be indexed (see problems)." % len(problems)}] if problems else []),
 })}))
 PY_INDEX_ADD
 ) || true
@@ -5218,6 +5300,7 @@ print(json.dumps({"ok": True, "data": {
     "schema": "MJ_INDEX_SEARCH_1", "query": query, "terms": words,
     "results": [{"kind": k, "name": n, "detail": d, "source": p, "sourceSchema": sc, "sourceTitle": t,
                  "score": round(-r, 4)} for k, n, d, p, sc, t, r in rows],
+    "_warnings": ([{"code": "RESULTS_TRUNCATED", "message": "Only the first %d results are shown; raise maxResults to see more." % len(rows)}] if len(rows) >= int(os.environ["MJ_MAX"]) else []),
 }}))
 PY_INDEX_SEARCH
 ) || true
@@ -5256,6 +5339,8 @@ print(json.dumps({"ok": True, "data": {
     "projects": count("SELECT count(*) FROM projects"),
     "presetVersions": count("SELECT count(*) FROM presets"), "presetBlobs": len(blobs),
     "staleDocs": stale[:100], "corruptPresetBlobs": corrupt,
+    "_warnings": ([{"code": "STALE_RECEIPTS", "message": "%d indexed receipts no longer exist on disk." % len(stale)}] if stale else [])
+                 + ([{"code": "PRESET_BLOB_CORRUPT", "message": "%d stored presets failed their hash check." % len(corrupt)}] if corrupt else []),
 }}))
 PY_INDEX_VERIFY
 ) || true
@@ -5471,6 +5556,7 @@ print(json.dumps({"ok": True, "data": {
     "schema": "MJ_TRACE_1", "query": {"format": kind, "target": target or None, "project": proj_filter or None},
     "projects": results, "matchCount": total, "truncated": total >= limit,
     "note": "Paths run from a root composition down to the composition that holds the layer; a missing-footage layer in a precomp reports every comp chain that nests it.",
+    "_warnings": ([{"code": "RESULTS_TRUNCATED", "message": "Stopped after %d matches; raise maxResults or narrow with path." % total}] if total >= limit else []),
 }}))
 PY_TRACE_ASSET
 ) || true
@@ -5504,6 +5590,7 @@ if target:
         "projects": [{"projectPath": r[0], "projectName": r[1], "scrapedAt": r[2], "layerUses": r[3],
                       "compositions": r[4], "effectName": r[5]} for r in rows],
         "note": "Each project's newest indexed scrape is used; projects never scraped are not covered.",
+        "_warnings": ([{"code": "RESULTS_TRUNCATED", "message": "Only the first %d projects are listed." % len(rows)}] if len(rows) >= limit else []),
     }}))
 else:
     rows = db.execute("""SELECT pl.match_name, min(pl.name), count(DISTINCT pl.project_id), count(*)
@@ -5512,6 +5599,7 @@ else:
         "schema": "MJ_PLUGIN_INVENTORY_1", "distinctEffects": len(rows), "truncated": len(rows) >= limit,
         "effects": [{"matchName": r[0], "effectName": r[1], "projects": r[2], "layerUses": r[3]} for r in rows],
         "projectsIndexed": db.execute("SELECT count(*) FROM projects").fetchone()[0],
+        "_warnings": ([{"code": "RESULTS_TRUNCATED", "message": "Only the first %d effects are listed." % len(rows)}] if len(rows) >= limit else []),
     }}))
 PY_AUDIT_PLUGINS
 ) || true
@@ -5741,6 +5829,8 @@ def finish_render(receipt, job, rng, status, code, tail, source_path, sha_before
     if status in codes:
         code_name, msg = codes[status]
         err(code_name, "%s Receipt: %s" % (msg, path))
+    if not receipt["source"]["unchanged"]:
+        receipt["_warnings"] = [{"code": "SOURCE_CHANGED_DURING_RENDER", "message": "The project or scene file changed while it was rendering; the frames may mix two versions."}]
     print(json.dumps({"ok": True, "data": receipt}))
 PY_HOST_LIB
 
