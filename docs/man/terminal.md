@@ -71,6 +71,27 @@ Looks degrade gracefully: truecolor gradient when `COLORTERM=truecolor`, 256 col
 
 `mj cd` goes to the MographJailed folder (what a bare `mj` used to do).
 
+## Live progress, notifications, status line
+
+**Live render progress.** While `ae.render` or `c4d.render` runs, MographJailed counts finished frames about twice a second (host-independent: it counts PNGs in the render folder) and the dashboard shows an animated progress bar with `done/total frames`, percent, fps and ETA on the Overview and Renders tabs. With a `range` the total is known; without one you get a moving indicator and a frame count. The Terminal title also shows `MJ · rendering 42%`, so you can see it from another window or in Mission Control. A progress file left by a crashed render is ignored.
+
+**Notifications.** Opt in once:
+
+```text
+mj notify on        mj notify test        mj notify off        mj notify status
+```
+
+With notifications on, `mj` shows a native macOS notification when a render finishes (complete or failed), a golden check finishes (pass or how many frames changed), a recipe finishes or stops, or any other operation has run for 10 seconds or more. Glass sounds for success, Basso for failure. Messages reach macOS as plain arguments, never as script text, so file names and errors cannot run anything. The first time, macOS may ask you to allow notifications. `mj` only notifies for operations you start with `mj`.
+
+**Status line.** `mj status` prints one line from local files (no runtime call, instant), suitable for a shell prompt or tmux:
+
+```text
+MJ ● rendering shot_07 35% eta 0:18
+MJ ✓ last render shot_07 complete 2h ago
+```
+
+There is no menu-bar process, because that would be a permanently running daemon. If you already use SwiftBar, `integrations/swiftbar/mj.10s.sh` is an optional plugin that shows the same line in the menu bar.
+
 ## Presentation fallback
 
 - modern: ANSI color + Unicode box drawing

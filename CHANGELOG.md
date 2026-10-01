@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Phase 7 (live progress, notifications, status)
+
+- Renders write `<store>/render-progress.json` (frames counted from finished PNGs, total from `range`, fps, ETA) about twice a second; removed when the render ends. The dashboard shows an animated bar and sets the Terminal title to `MJ · rendering N%`.
+- `mj notify on|off|test|status`: opt-in native notifications for renders, golden checks, recipes and operations running 10 s or more; text passed to osascript as arguments only.
+- `mj status` (and `--swiftbar`): one-line status from local files; optional `integrations/swiftbar/mj.10s.sh`. No menu-bar process by design.
+- Fixed: a successful `mj recipe` returned non-zero when notifications were off (caught by the new tests).
+- Tests: `run_host.sh` 39, `run_mj_cli.sh` 38, `run_ui.sh` 52.
+
 ## Unreleased — Terminal experience
 
 - `mj` (bare) is now a launch screen: animated gradient wordmark and a live boot checklist (runtime, After Effects, Cinema 4D/Redshift, GPU, library, audit log, last render). `mj ui` is a full-screen dashboard with Overview / Renders / Library / Audit tabs. `mj cd` replaces the old bare-`mj` go-to-folder behavior.

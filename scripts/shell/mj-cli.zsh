@@ -42,6 +42,67 @@ _mj_run() {
     return $rc
 }
 
+# --- notifications --------------------------------------------------------
+# Opt-in (`mj notify on`): a marker file in the local store. A notification fires when a
+# render, golden check or recipe finishes, or any operation runs for 10 s or more.
+# Text reaches osascript as arguments (never spliced into script source), so nothing in a
+# path, label or error message can be interpreted as AppleScript.
+zmodload -F zsh/datetime b:strftime p:EPOCHREALTIME 2>/dev/null
+
+_mj_store() { print -r -- "${MJ_STORE_DIR:-$HOME/Library/Application Support/MographJailed}"; }
+
+_mj_notify_on() { [ -e "$(_mj_store)/notify.on" ]; }
+
+# _mj_notify_fire <title> <message> <good|bad>
+_mj_notify_fire() {
+    local osa="${MJ_OSASCRIPT:-/usr/bin/osascript}"
+    [ -x "$osa" ] || return 0
+    local sound="Glass"
+    [ "$3" = good ] || sound="Basso"
+    "$osa" -e 'on run argv' \
+           -e 'display notification (item 1 of argv) with title (item 2 of argv) sound name (item 3 of argv)' \
+           -e 'end run' -- "$2" "$1" "$sound" >/dev/null 2>&1 &!
+}
+
+# _mj_notify_op <op> <elapsed seconds> <response json>
+_mj_notify_op() {
+    _mj_notify_on || return 0
+    local op="$1" elapsed="$2" json="$3" msg good
+    case "$op" in
+        ae.render|c4d.render|golden.check) ;;
+        *) (( elapsed >= 10 )) || return 0 ;;
+    esac
+    msg=$(print -r -- "$json" | /usr/bin/jq -r '
+        if .ok != true then "failed: \(.error.code // "error")"
+        else .data
+          | if .schema == "MJ_RENDER_1" then "\(.status): \(.frames.count) frames in \(.seconds)s"
+            elif .schema == "MJ_GOLDEN_CHECK_1" then (if .passed then "golden check passed (\(.framesRecorded) frames)" else "golden check: \(.framesFailed) of \(.framesRecorded) frames changed" end)
+            else "done" end
+        end' 2>/dev/null) || msg="finished"
+    good=$(print -r -- "$json" | /usr/bin/jq -r 'if .ok == true and ((.data.status // "complete") == "complete") and ((.data.passed // true) == true) then "good" else "bad" end' 2>/dev/null) || good=bad
+    _mj_notify_fire "mj $op" "$msg" "$good"
+}
+
+_mj_notify_cmd() {
+    local store flag
+    store=$(_mj_store); flag="$store/notify.on"
+    case "${1:-status}" in
+        on)
+            [ -d "$store" ] || { /bin/mkdir -p "$store" && /bin/chmod 700 "$store"; } || { print -u2 "mj: cannot create $store"; return 73; }
+            : > "$flag" && print "notifications on"
+            ;;
+        off) /bin/rm -f "$flag"; print "notifications off" ;;
+        test)
+            local osa="${MJ_OSASCRIPT:-/usr/bin/osascript}"
+            [ -x "$osa" ] || { print -u2 "mj: osascript not available"; return 69; }
+            _mj_notify_fire "mj" "Notifications are working." good
+            print "sent a test notification (macOS may ask for permission the first time)"
+            ;;
+        status) if [ -e "$flag" ]; then print "notifications on"; else print "notifications off  (mj notify on)"; fi ;;
+        *) print -u2 "usage: mj notify on|off|test|status"; return 64 ;;
+    esac
+}
+
 _mj_print() {
     if [ -t 1 ] && [ -x /usr/bin/jq ]; then /usr/bin/jq .; else /bin/cat; fi
 }
@@ -111,8 +172,14 @@ _mj_recipe() {
         out=$(_mj_run "$op" "${args[@]}")
         rc=$?
         print -r -- "$out" | _mj_print
-        (( rc == 0 )) || { print -u2 "mj: step $step ($op) failed with exit $rc; recipe stopped"; return $rc; }
+        (( rc == 0 )) || {
+            print -u2 "mj: step $step ($op) failed with exit $rc; recipe stopped"
+            _mj_notify_on && _mj_notify_fire "mj recipe" "stopped at step $step of $total ($op)" bad
+            return $rc
+        }
     done
+    _mj_notify_on && _mj_notify_fire "mj recipe" "finished all $total steps" good
+    return 0
 }
 
 mj() {
@@ -137,6 +204,8 @@ mj <operation> [name=value ...]    run one allowlisted operation
 mj ops                             list operations and their arguments
 mj recipe <file> [name=value ...]  run a recipe file, stopping at the first failure
 mj last                            show the newest render receipt
+mj status                          one-line status (rendering progress, last render)
+mj notify on|off|test|status       macOS notifications when renders, golden checks, recipes or long operations finish
 mj open-last                       open the newest render folder in Finder
 USAGE
             return 0 ;;
@@ -145,6 +214,14 @@ USAGE
             _mj_describe | /usr/bin/jq -r '.data.operations | to_entries[] | .value.args as $g
                 | "\(.key)\t\(.value.state)\t\($g.allowed | map(. as $a | if ($g.required | index($a)) != null then $a + "*" else $a end) | join(" "))"' 2>/dev/null \
             || { print -u2 "mj: cannot read the operation registry"; return 69; }
+            return ;;
+        notify)
+            shift
+            _mj_notify_cmd "$@"
+            return ;;
+        status)
+            shift
+            _mj_ui status "$@"
             return ;;
         last|open-last)
             local store="${MJ_STORE_DIR:-$HOME/Library/Application Support/MographJailed}" dir
@@ -166,9 +243,11 @@ USAGE
     local op="$1" out rc
     shift
     _mj_check_args "$@" || return
+    local t0=$EPOCHREALTIME
     out=$(_mj_run "$op" "$@")
     rc=$?
     print -r -- "$out" | _mj_print
+    _mj_notify_op "$op" $(( EPOCHREALTIME - t0 )) "$out"
     return $rc
 }
 
@@ -179,7 +258,7 @@ _mj_complete() {
     local json
     json=$(_mj_describe) || return 1
     if (( CURRENT == 2 )); then
-        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe last open-last ui home cd)
+        items=(${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]')"} ops recipe last open-last ui home cd status notify)
         compadd -a items
     elif [[ "${words[2]}" == recipe ]]; then
         _files

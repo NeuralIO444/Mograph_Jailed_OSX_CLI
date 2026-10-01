@@ -49,10 +49,10 @@ Status: draft, nothing implemented. Targets: AE 2024 (24.x), C4D 2024 (Redshift 
 - Shipped: `golden.record` (`MJ_GOLDEN_1`, never overwrites) and `golden.check` (`MJ_GOLDEN_CHECK_1`: identical / pass / changed / missing, extra frames, `threshold`).
 - Deferred: thumbnails in the receipt, re-rendering frames itself (needs Phase 1), linking to `plugin.audit` diffs.
 
-### Phase 7 - Make it feel alive
-- Live render dashboard: extend `mj-observe-dash` with progress, ETA, GPU load, current-frame thumbnail, AE/C4D job state.
-- Native notifications and sounds on finish/fail via `osascript`.
-- Menu-bar status indicator (JXA) showing watcher and render state; no new daemon beyond the existing LaunchAgent.
+### Phase 7 - Make it feel alive — DONE (menu bar deliberately not a daemon)
+- DONE: live render dashboard (launch screen, `mj ui`, animated per-frame progress bar with fps/ETA, pulsing marker, terminal-title progress).
+- DONE: native notifications (`mj notify`) for renders, golden checks, recipes, and long operations.
+- DONE instead of a menu-bar process: `mj status` one-liner; optional SwiftBar plugin for people who already run SwiftBar. A native menu-bar item needs a permanently running process, which conflicts with the no-daemon rule.
 
 ### Phase 8 - Protect work — DONE
 - DONE: `project.restore` (hash-verified against the snapshot receipt; new file only). `project.diff` preview waits for Phase 4.

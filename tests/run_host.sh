@@ -50,11 +50,13 @@ case "\$comp" in
   Slow) echo "PROGRESS: starting"; sleep 60; exit 0;;
   Licence) echo "Enter the license method:"; echo "Please select:"; sleep 60;;
   Short) e=\$((e-1));;
+  Prog) SLEEP=0.6;;
   Mutate) printf 'x' >> "\$proj";;
 esac
 for f in \$(seq \$s \$e); do
   python3 "$TMP/png.py" "\${out/\[#####\]/\$(printf '%05d' \$f)}" \$f
   echo "PROGRESS: frame \$f"
+  [ -n "\${SLEEP:-}" ] && sleep \$SLEEP
 done
 echo "aerender version 26.5x89 Total Time Elapsed: 1 Seconds"
 STUB
@@ -119,6 +121,31 @@ run "$TMP/v4.json" ae.render "path=$TMP/proj/hero.aep" "target=Main" "output=$TM
 check jq -e '.error.code=="HOST_NOT_FOUND"' "$TMP/v4.json"
 run "$TMP/v5.json" ae.render "path=$TMP/proj/hero.aep" "output=$TMP/renders" "label=x"
 check jq -e '.error.code=="MISSING_ARGUMENT"' "$TMP/v5.json"
+
+# --- live progress: counted from finished frames, cleared when done ---
+run "$TMP/prog.json" ae.render "path=$TMP/proj/hero.aep" "target=Prog" "output=$TMP/renders" "label=prog" "range=0-7" &
+PROG=$!
+SEEN=""
+for i in $(seq 1 40); do
+  if [ -f "$TMP/store/render-progress.json" ]; then
+    SEEN="$SEEN $(jq -r '.frames' "$TMP/store/render-progress.json" 2>/dev/null)"
+  fi
+  kill -0 $PROG 2>/dev/null || break
+  sleep 0.3
+done
+wait $PROG
+check jq -e '.data.status=="complete" and .data.frames.count==8' "$TMP/prog.json"
+check test "$(echo $SEEN | wc -w | tr -d ' ')" -ge 3
+check python3 -c "import sys; v=[int(x) for x in sys.argv[1:] if x.isdigit()]; assert v==sorted(v) and v[0] < v[-1] <= 8, v" $SEEN
+check test ! -e "$TMP/store/render-progress.json"
+check bash -c "echo '$SEEN' | grep -q ' '"
+# progress document shape (taken mid-run)
+run "$TMP/prog2.json" ae.render "path=$TMP/proj/hero.aep" "target=Prog" "output=$TMP/renders" "label=prog2" "range=0-7" &
+P2=$!
+for i in $(seq 1 30); do [ -f "$TMP/store/render-progress.json" ] && jq -e '.frames>=2' "$TMP/store/render-progress.json" >/dev/null 2>&1 && break; sleep 0.2; done
+cp "$TMP/store/render-progress.json" "$TMP/prog.mid.json" 2>/dev/null || true
+wait $P2
+check jq -e '.host=="afterEffects" and .total==8 and .percent>0 and .fps>0 and (.etaSeconds==null or (.etaSeconds|type)=="number") and (.pid|type)=="number" and (.label=="prog2")' "$TMP/prog.mid.json"
 
 # --- one render at a time; timeout kills the whole process group ---
 run "$TMP/slow.json" ae.render "path=$TMP/proj/hero.aep" "target=Slow" "output=$TMP/renders" "label=slow" "timeoutSeconds=10" &

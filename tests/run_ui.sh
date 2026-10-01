@@ -79,22 +79,6 @@ for w in 60 80 100 120; do for tab in overview renders library audit; do
 done; done
 check test "$(python3 "$UI" home --plain --width 60 | maxw)" -le 60
 
-# --- a tampered audit log is shouted about ---
-cp "$TMP/audit/audit.jsonl" "$TMP/audit.good"
-python3 - "$TMP/audit/audit.jsonl" <<'PY'
-import sys; p = sys.argv[1]; L = open(p).read().splitlines(True); L[1] = L[1].replace('"exitCode":0', '"exitCode":9'); open(p, "w").writelines(L)
-PY
-python3 "$UI" ui --once --plain --width 100 --tab audit > "$TMP/au2.txt"
-check grep -q 'CHAIN BROKEN at line 3' "$TMP/au2.txt"
-cp "$TMP/audit.good" "$TMP/audit/audit.jsonl"
-
-# --- viewing is read-only ---
-BEFORE=$(find "$TMP/store" "$TMP/audit" -type f -exec cksum {} + | sort)
-python3 "$UI" home --plain >/dev/null; python3 "$UI" ui --once --plain >/dev/null
-# (the runtime itself appends audit lines for the requests the UI makes)
-check test "$(find "$TMP/store" -type f -exec cksum {} + | sort)" = "$(echo "$BEFORE" | grep "$TMP/store")"
-check bash -c "python3 '$UI' ui --tab nope --once >/dev/null 2>&1; test \$? -eq 64"
-
 # --- real terminal sessions (pty) ---
 cat > "$TMP/ptydrive.py" <<'PY'
 import os, pty, re, select, struct, sys, termios, fcntl, time
@@ -135,6 +119,11 @@ if mode == "home":
     need("\x1b[?25l" not in txt and "\x1b[38" not in txt, "dumb terminal gets no escapes")
     txt, code = session([ui, "home"], dict(base, COLORTERM="", TERM="xterm-256color"))
     need("38;5;" in txt and "38;2;" not in txt, "256-colour fallback")
+elif mode == "progress":
+    txt, code = session([ui, "ui"], base, keys=b"q", wait=3.0)
+    need("MJ · rendering 35%" in txt, "terminal title shows render progress")
+    need("42/120 frames" in txt, "progress text on the overview")
+    need("\x1b]2;\x07" in txt, "title reset on exit")
 else:
     txt, code = session([ui, "ui"], base, keys=b"3q")
     need(code == 0, "ui exits 0 after q")
@@ -147,6 +136,56 @@ else:
 print("PTY OK" if ok else "PTY BAD")
 sys.exit(0 if ok else 1)
 PY
+# --- live render progress ---
+sleep 120 & LIVE=$!
+mkdir -p "$TMP/store/locks/render.lock"; echo $LIVE > "$TMP/store/locks/render.lock/pid"
+write_progress(){ python3 - "$TMP/store/render-progress.json" "$LIVE" "$1" "$2" <<'PY'
+import json, sys
+total = None if sys.argv[4] == "null" else int(sys.argv[4]); frames = int(sys.argv[3])
+json.dump({"host": "afterEffects", "label": "shot_07", "outputDir": "/x", "pid": int(sys.argv[2]), "startedAt": "2026-10-01T00:00:00Z",
+           "elapsed": 10.0, "frames": frames, "total": total, "percent": round(100.0 * frames / total, 1) if total else None,
+           "fps": 4.2, "etaSeconds": 18 if total else None}, open(sys.argv[1], "w"))
+PY
+}
+write_progress 42 120
+python3 "$UI" ui --once --plain --width 100 --tab overview > "$TMP/pg.txt"
+check grep -q 'shot_07 . 42/120 frames . 35% . 4.2 fps . eta 0:18' "$TMP/pg.txt"
+check grep -Eq '#{5,}\.{5,} +35%' "$TMP/pg.txt"
+python3 "$UI" ui --once --plain --width 100 --tab renders > "$TMP/pg2.txt"
+check grep -q 'RENDERING' "$TMP/pg2.txt"
+check test "$(python3 "$UI" status --plain)" = "MJ * rendering shot_07 35% eta 0:18"
+check bash -c "python3 '$UI' status --plain --swiftbar | sed -n '2p' | grep -qx -- '---'"
+check test "$(python3 "$UI" ui --once --plain --width 60 --tab overview | maxw)" -le 60
+write_progress 9 null
+python3 "$UI" ui --once --plain --width 100 --tab overview > "$TMP/pg3.txt"
+check grep -q 'shot_07 . 9 frames . 4.2 fps . 0:10 elapsed' "$TMP/pg3.txt"           # no total: indeterminate
+check test "$(python3 "$UI" status --plain)" = "MJ * rendering shot_07 9 frames eta --:--"
+write_progress 42 120
+# pty sessions see the progress, the title, and the pulsing marker
+check bash -c "python3 '$TMP/ptydrive.py' '$UI' progress | tail -1 | grep -q 'PTY OK'"
+kill $LIVE; wait $LIVE 2>/dev/null || true
+# a stale progress file (render process gone) is ignored
+python3 "$UI" ui --once --plain --width 100 --tab overview > "$TMP/pg4.txt"
+check bash -c "! grep -q 'shot_07' '$TMP/pg4.txt'"
+check bash -c "python3 '$UI' status --plain | grep -q 'MJ . last render'"
+rm -rf "$TMP/store/locks" "$TMP/store/render-progress.json"
+
+# --- a tampered audit log is shouted about ---
+cp "$TMP/audit/audit.jsonl" "$TMP/audit.good"
+python3 - "$TMP/audit/audit.jsonl" <<'PY'
+import sys; p = sys.argv[1]; L = open(p).read().splitlines(True); L[1] = L[1].replace('"exitCode":0', '"exitCode":9'); open(p, "w").writelines(L)
+PY
+python3 "$UI" ui --once --plain --width 100 --tab audit > "$TMP/au2.txt"
+check grep -q 'CHAIN BROKEN at line 3' "$TMP/au2.txt"
+cp "$TMP/audit.good" "$TMP/audit/audit.jsonl"
+
+# --- viewing is read-only ---
+BEFORE=$(find "$TMP/store" "$TMP/audit" -type f -exec cksum {} + | sort)
+python3 "$UI" home --plain >/dev/null; python3 "$UI" ui --once --plain >/dev/null
+# (the runtime itself appends audit lines for the requests the UI makes)
+check test "$(find "$TMP/store" -type f -exec cksum {} + | sort)" = "$(echo "$BEFORE" | grep "$TMP/store")"
+check bash -c "python3 '$UI' ui --tab nope --once >/dev/null 2>&1; test \$? -eq 64"
+
 check bash -c "python3 '$TMP/ptydrive.py' '$UI' home | tail -1 | grep -q 'PTY OK'"
 check bash -c "python3 '$TMP/ptydrive.py' '$UI' ui | tail -1 | grep -q 'PTY OK'"
 

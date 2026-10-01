@@ -73,6 +73,8 @@ mj ops                                             # every operation; required a
 mj host.detect                                     # what is installed, ready to render
 mj ae.render path=/work/hero.aep target="Main" output=/work/renders label=hero range=0-119
 mj last                                            # newest render receipt
+mj notify on                                       # macOS notification when a render / check / recipe finishes
+mj status                                          # one line: live progress or last render
 mj loop.seams path=/work/renders/hero.<stamp> minFrames=48
 mj golden.check path=/work/renders/hero.<stamp> input=/work/golden/hero_master.golden.json
 mj index.add path=/work/receipts                   # index scrapes, snapshots, golden records

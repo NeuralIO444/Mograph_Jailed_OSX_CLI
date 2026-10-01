@@ -193,6 +193,51 @@ def render_running():
         return False
 
 
+def read_progress():
+    """Live render progress, only while a render really is running (lock owner alive)."""
+    if not render_running():
+        return None
+    try:
+        with open(os.path.join(STORE, "render-progress.json")) as f:
+            d = json.load(f)
+        os.kill(int(d["pid"]), 0)
+        return d
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def hms(seconds):
+    if seconds is None:
+        return "--:--"
+    seconds = int(seconds)
+    return "%d:%02d" % (seconds // 60, seconds % 60) if seconds < 3600 else "%d:%02d:%02d" % (seconds // 3600, seconds % 3600 // 60, seconds % 60)
+
+
+def progress_text(p):
+    if p.get("total"):
+        return "%s · %d/%d frames · %d%% · %.1f fps · eta %s" % (p["label"], p["frames"], p["total"], round(p["percent"] or 0), p.get("fps") or 0, hms(p.get("etaSeconds")))
+    return "%s · %d frames · %.1f fps · %s elapsed" % (p["label"], p["frames"], p.get("fps") or 0, hms(p.get("elapsed")))
+
+
+def progress_bar(t, p, width, tick):
+    """Determinate bar with a moving highlight when the total is known, a bouncing block otherwise."""
+    g = t.g
+    width = max(10, width)
+    if p.get("total"):
+        fill = int(width * min(1.0, p["frames"] / p["total"]))
+        cells = []
+        for i in range(width):
+            if i < fill:
+                shimmer = (i - tick) % 14 == 0 and t.color
+                rgb = (255, 255, 255) if shimmer else tuple(int(TEAL[k] + (VIOLET[k] - TEAL[k]) * i / max(width - 1, 1)) for k in range(3))
+                cells.append(t.paint(g["bar_on"], rgb))
+            else:
+                cells.append(t.paint(g["bar_off"], DIM))
+        return "".join(cells)
+    pos = abs((tick % (2 * (width - 4))) - (width - 4))
+    return "".join(t.paint(g["bar_on"], TEAL) if pos <= i < pos + 4 else t.paint(g["bar_off"], DIM) for i in range(width))
+
+
 class State:
     """Facts about this machine, each loaded independently so the UI can fill in as they land."""
     SLOTS = ("describe", "hosts", "library", "audit", "plugins")
@@ -309,7 +354,8 @@ def audit_rows(t, st):
 def render_rows(t, spin):
     hist = read_jsonl_tail(os.path.join(STORE, "renders.jsonl"), 1)
     if render_running():
-        return [("last render", "run", "rendering now")]
+        pr = read_progress()
+        return [("last render", "run", progress_text(pr) if pr else "rendering now")]
     if not hist:
         return [("last render", "off", "none yet  %s  mj ae.render … / mj c4d.render …" % t.g["arrow"])]
     h = hist[-1]
@@ -456,7 +502,7 @@ def tab_overview(t, st, w, tick):
     hosts = card(t, "HOSTS", [row_line(t, a, b, c, tick, tick) for a, b, c in hosts_rows(t, st, tick)], cw)
     lib = card(t, "LIBRARY", [row_line(t, a, b, c, tick, tick, labels=False) for a, b, c in library_rows(t, st)], cw, VIOLET)
     aud = card(t, "AUDIT LOG", [row_line(t, a, b, c, tick, tick, labels=False) for a, b, c in audit_rows(t, st)], cw, ACCENT)
-    ren = card(t, "LAST RENDER", [row_line(t, a, b, c, tick, tick, labels=False) for a, b, c in render_rows(t, tick)] + _render_spark_lines(t, cw - 4), cw, WARN)
+    ren = card(t, "LAST RENDER", [row_line(t, a, b, c, tick, tick, labels=False) for a, b, c in render_rows(t, tick)] + _progress_lines(t, cw - 4, tick) + _render_spark_lines(t, cw - 4), cw, WARN)
     k = int(time.time() // 60)
     tips = card(t, "TRY", [t.paint(t.g["arrow"] + " ", ACCENT) + t.paint(TIPS[(k + i) % len(TIPS)], TEXT) for i in range(3)], w, DIM)
     if w >= 100:
@@ -464,6 +510,14 @@ def tab_overview(t, st, w, tick):
     else:
         rows += hosts + lib + aud + ren
     return rows + tips
+
+
+def _progress_lines(t, width, tick):
+    pr = read_progress()
+    if not pr:
+        return []
+    pct = ("%3d%%" % round(pr["percent"] or 0)) if pr.get("total") else " ..."
+    return ["  " + progress_bar(t, pr, width - 10, tick) + " " + t.paint(pct, TEAL, bold=True)]
 
 
 def _render_spark_lines(t, width):
@@ -489,7 +543,7 @@ def tab_renders(t, st, w, tick):
         lines.append(t.paint("  no renders yet.  mj ae.render … / mj c4d.render …", DIM))
     out = card(t, "RENDER HISTORY (%d)" % len(hist), lines, w, WARN)
     if render_running():
-        out = card(t, "RENDERING", [row_line(t, "render", "run", "a render is running (one at a time)", tick, tick)], w, TEAL) + out
+        out = card(t, "RENDERING", [row_line(t, a, b, c, tick, tick, labels=False) for a, b, c in render_rows(t, tick)] + _progress_lines(t, w - 4, tick), w, TEAL) + out
     return out
 
 
@@ -549,7 +603,7 @@ def run_ui(t, tab, once):
     old = termios.tcgetattr(fd)
 
     def restore(*_):
-        sys.stdout.write("\x1b[?25h\x1b[?1049l")
+        sys.stdout.write("\x1b]2;\x07\x1b[?25h\x1b[?1049l")
         sys.stdout.flush()
         try: termios.tcsetattr(fd, termios.TCSADRAIN, old)
         except termios.error: pass
@@ -559,7 +613,7 @@ def run_ui(t, tab, once):
 
     signal.signal(signal.SIGTERM, bye)
     signal.signal(signal.SIGHUP, bye)
-    tick, last_full, last_frame = 0, time.time(), []
+    tick, last_full, last_frame, last_title = 0, time.time(), [], None
     try:
         tty.setcbreak(fd)
         sys.stdout.write("\x1b[?1049h\x1b[?25l")
@@ -569,6 +623,11 @@ def run_ui(t, tab, once):
             body, foot = compose(t, st, tab, tick)
             room = t.h - len(foot)
             frame = [clip(ln, t.w) for ln in (body[:room] + [""] * max(0, room - len(body)))] + foot
+            pr = read_progress()
+            title = "MJ · rendering %s" % (("%d%%" % round(pr["percent"])) if pr and pr.get("percent") is not None else "…") if pr else "MJ"
+            if title != last_title:
+                sys.stdout.write("\x1b]2;%s\x07" % title)
+                last_title = title
             if frame != last_frame:
                 sys.stdout.write("\x1b[H" + "\n".join("\x1b[2K" + ln for ln in frame[:t.h]))
                 sys.stdout.flush()
@@ -597,6 +656,20 @@ def run_ui(t, tab, once):
     return 0
 
 
+def status_line(t):
+    """One short line from files only (no runtime calls), fast enough for a shell prompt."""
+    pr = read_progress()
+    if pr:
+        pct = ("%d%%" % round(pr["percent"])) if pr.get("percent") is not None else "%d frames" % pr["frames"]
+        return "MJ %s rendering %s %s eta %s" % (t.g["dot"], pr["label"], pct, hms(pr.get("etaSeconds"))), "run"
+    hist = read_jsonl_tail(os.path.join(STORE, "renders.jsonl"), 1)
+    if hist:
+        h = hist[-1]
+        mark, kind = (t.g["ok"], "ok") if h["status"] == "complete" else (t.g["bad"], "bad")
+        return "MJ %s last render %s %s %s" % (mark, h["label"].split(".")[0], h["status"], ago(h["endedAt"])), kind
+    return "MJ %s idle" % t.g["off"], "off"
+
+
 def main(argv):
     mode = argv[1] if len(argv) > 1 else "home"
     opts = argv[2:]
@@ -606,6 +679,16 @@ def main(argv):
     t = Term(plain=plain, width=val("--width"), height=val("--height"), anim="--no-anim" not in opts)
     if mode == "home":
         run_home(t); return 0
+    if mode == "status":
+        line, kind = status_line(t)
+        if "--swiftbar" in opts:
+            print(line); print("---")
+            if kind == "run":
+                pr = read_progress()
+                if pr: print(progress_text(pr))
+        else:
+            print(line)
+        return 0
     if mode == "ui":
         tab = opts[opts.index("--tab") + 1] if "--tab" in opts else "overview"
         if tab not in TABS:

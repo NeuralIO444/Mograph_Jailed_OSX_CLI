@@ -5470,10 +5470,11 @@ def reserve_job_dir(outdir, label):
             continue
     err("OUTPUT_EXISTS", "Could not reserve a new render folder.")
 
-def run_guarded(argv, log_path, timeout):
+def run_guarded(argv, log_path, timeout, on_tick=None):
     """Run a host CLI: no stdin, own process group, streamed log, hard timeout,
     licence-prompt detection. Returns (status, exit_code, tail_lines)."""
     started = time.time()
+    last_tick = 0.0
     tail, window = [], ""
     with open(log_path, "wb") as log:
         p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -5485,6 +5486,9 @@ def run_guarded(argv, log_path, timeout):
             left = timeout - (time.time() - started)
             if left <= 0:
                 status = "timeout"; break
+            if on_tick and time.time() - last_tick >= 0.5:
+                last_tick = time.time()
+                on_tick()
             if not sel.select(timeout=min(left, 1.0)):
                 if p.poll() is not None:
                     break
@@ -5521,6 +5525,36 @@ def frame_summary(job, rng):
     out["firstSha256"] = sha256_file(os.path.join(job, frames[0])) if frames else None
     out["lastSha256"] = sha256_file(os.path.join(job, frames[-1])) if frames else None
     return out
+
+def progress_writer(store, job, host, label, rng):
+    """Returns a tick() that records how many frames exist so far. Counting finished PNGs is
+    host-independent: it needs nothing from the host's own output format."""
+    path = os.path.join(store, "render-progress.json")
+    t0 = time.time()
+    total = (rng[1] - rng[0] + 1) if rng else None
+    def tick():
+        try:
+            done = sum(1 for n in os.listdir(job) if n.lower().endswith(".png") and not n.startswith("."))
+        except OSError:
+            return
+        el = time.time() - t0
+        rate = done / el if done and el > 0 else 0.0
+        eta = (total - done) / rate if total and rate and done < total else None
+        doc = {"host": host, "label": label, "outputDir": job, "pid": os.getpid(), "startedAt": now_iso(),
+               "elapsed": round(el, 1), "frames": done, "total": total,
+               "percent": round(100.0 * done / total, 1) if total else None,
+               "fps": round(rate, 2), "etaSeconds": round(eta) if eta is not None else None}
+        tmp = path + ".%d" % os.getpid()
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(doc, f)
+        os.replace(tmp, path)
+    return tick
+
+def clear_progress(store):
+    try:
+        os.unlink(os.path.join(store, "render-progress.json"))
+    except OSError:
+        pass
 
 def write_last_render(store, receipt):
     """Pointer for `mj last` / `mj open-last`; replaced atomically, never a render output."""
@@ -5668,9 +5702,13 @@ try:
                "hostVersion": host["version"], "binary": host["aerender"], "target": os.environ["MJ_COMP"],
                "range": list(rng) if rng else None, "outputDir": job, "argv": argv,
                "startedAt": now_iso(), "_t0": time.time(), "logPath": os.path.join(job, "render.log")}
-    status, code, tail = run_guarded(argv, receipt["logPath"], int(os.environ["MJ_TIMEOUT"]))
+    tick = progress_writer(os.environ["MJ_STORE"], job, "afterEffects", label, rng)
+    tick()
+    status, code, tail = run_guarded(argv, receipt["logPath"], int(os.environ["MJ_TIMEOUT"]), tick)
+    clear_progress(os.environ["MJ_STORE"])
     finish_render(receipt, job, rng, status, code, tail, src, sha_before)
 finally:
+    clear_progress(os.environ["MJ_STORE"])
     shutil.rmtree(lock, ignore_errors=True)
 PY_AE_RENDER
 ) || true
@@ -5705,9 +5743,13 @@ try:
                "hostVersion": host["version"], "binary": host["commandline"], "redshiftInstalled": host["redshift"],
                "target": os.environ["MJ_TAKE"] or None, "range": list(rng) if rng else None, "outputDir": job,
                "argv": argv, "startedAt": now_iso(), "_t0": time.time(), "logPath": os.path.join(job, "render.log")}
-    status, code, tail = run_guarded(argv, receipt["logPath"], int(os.environ["MJ_TIMEOUT"]))
+    tick = progress_writer(os.environ["MJ_STORE"], job, "cinema4d", label, rng)
+    tick()
+    status, code, tail = run_guarded(argv, receipt["logPath"], int(os.environ["MJ_TIMEOUT"]), tick)
+    clear_progress(os.environ["MJ_STORE"])
     finish_render(receipt, job, rng, status, code, tail, src, sha_before)
 finally:
+    clear_progress(os.environ["MJ_STORE"])
     shutil.rmtree(lock, ignore_errors=True)
 PY_C4D_RENDER
 ) || true

@@ -11,6 +11,8 @@ mj <operation> name=value ...       run one operation
 mj recipe <file> name=value ...     run a recipe
 mj last                             show the newest render receipt
 mj open-last                        open the newest render folder in Finder
+mj status                           one-line status (rendering progress, last render)
+mj notify on|off|test|status        notifications when renders, golden checks, recipes finish
 ```
 
 Values with spaces need quotes: `mj file.inspect "path=/Users/me/My Project/a.aep"`.
