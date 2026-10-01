@@ -134,7 +134,7 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -367,6 +367,14 @@ request_schema_for() {
     preset.get)
       MJ_SCHEMA_ALLOWED=" label output version "
       MJ_SCHEMA_REQUIRED=" label output "
+      ;;
+    trace.asset)
+      MJ_SCHEMA_ALLOWED=" target path format maxResults "
+      MJ_SCHEMA_REQUIRED=" "
+      ;;
+    audit.plugins)
+      MJ_SCHEMA_ALLOWED=" target maxResults "
+      MJ_SCHEMA_REQUIRED=" "
       ;;
     ae.render)
       MJ_SCHEMA_ALLOWED=" path target output label range timeoutSeconds version "
@@ -761,13 +769,15 @@ operation_names() {
     host.detect \
     ae.render \
     c4d.render \
+    trace.asset \
+    audit.plugins \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -816,7 +826,7 @@ operation_available() {
     image.derivative)
       cap_available sips && cap_available awk && cap_available mktemp && cap_available mv && cap_available rm && cap_available stat && cap_available uname
       ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render)
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins)
       cap_available python3
       ;;
     project.restore|handoff.package|preset.add|preset.get)
@@ -884,6 +894,7 @@ operation_cost() {
     index.search) printf 'INDEX_DEPENDENT' ;;
     index.verify) printf 'SIZE_DEPENDENT' ;;
     host.detect) printf 'BOUNDED_PROBE' ;;
+    trace.asset|audit.plugins) printf 'INDEX_DEPENDENT' ;;
     ae.render|c4d.render) printf 'RENDER_BOUND' ;;
     plugin.audit) printf 'PATH_DEPENDENT' ;;
     project.snapshot) printf 'IO_BOUND' ;;
@@ -929,6 +940,7 @@ operation_authority() {
     deps.graph) printf 'DERIVED_PROJECT_SUMMARY' ;;
     index.add|preset.add) printf 'MJ_OWNED_STORE' ;;
     index.search) printf 'ADVISORY_INDEX' ;;
+    trace.asset|audit.plugins) printf 'DERIVED_PROJECT_SUMMARY' ;;
     index.verify) printf 'AUTHORITATIVE_STORE_INTEGRITY' ;;
     preset.get|ae.render|c4d.render) printf 'AUTHORITATIVE_OPERATION' ;;
     host.detect) printf 'AUTHORITATIVE_ENVIRONMENT' ;;
@@ -945,7 +957,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -964,7 +976,7 @@ operation_required_all() {
     image.inspect) printf '%s\n' sips awk ;;
     image.derivative) printf '%s\n' sips awk mktemp mv rm stat uname ;;
     image.stats|image.compare) printf '%s\n' python3 sips awk ;;
-    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render) printf '%s\n' python3 ;;
+    loop.seams|golden.record|golden.check|audit.verify|deps.graph|index.add|index.search|index.verify|host.detect|ae.render|c4d.render|trace.asset|audit.plugins) printf '%s\n' python3 ;;
     project.restore|handoff.package|preset.add|preset.get) printf '%s\n' python3 cp ;;
     storage.preflight|volume.inspect) printf '%s\n' df awk uname ;;
     temp.create) printf '%s\n' mktemp rm pwd ;;
@@ -1018,7 +1030,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"
@@ -4771,7 +4783,7 @@ PY_HANDOFF
 IFS= read -r -d '' MJ_PY_LIBRARY <<'PY_LIBRARY' || true
 import sqlite3
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SUPPORTED = ("MJ_PROJECT_SCRAPE_1", "MJ_PROJECT_SNAPSHOT_1", "MJ_GOLDEN_1", "MJ_HANDOFF_1")
 MAX_ENTRIES_PER_DOC = 20000
 
@@ -4801,7 +4813,83 @@ def open_db(store, create=False):
                                   bytes INTEGER NOT NULL, added_at TEXT NOT NULL, UNIQUE(label, version));
                 PRAGMA user_version = 1;
             """)
+    if v < 2:
+        # v2: normalized project tables for exact audit queries. Filled by index.add
+        # from MJ_PROJECT_SCRAPE_1 receipts (newest scrape per project path wins).
+        with db:
+            db.executescript("""
+                CREATE TABLE projects(id INTEGER PRIMARY KEY, project_path TEXT UNIQUE NOT NULL, name TEXT,
+                                  ae_version TEXT, scraped_at TEXT NOT NULL, receipt_path TEXT NOT NULL,
+                                  receipt_sha256 TEXT NOT NULL);
+                CREATE TABLE compositions(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                                  ae_id INTEGER NOT NULL, name TEXT NOT NULL, width INTEGER, height INTEGER,
+                                  fps REAL, duration REAL);
+                CREATE TABLE layers(id INTEGER PRIMARY KEY, comp_id INTEGER NOT NULL REFERENCES compositions(id) ON DELETE CASCADE,
+                                  idx INTEGER NOT NULL, name TEXT NOT NULL, type TEXT, source_ae_id INTEGER NOT NULL,
+                                  source_name TEXT, source_path TEXT, font TEXT);
+                CREATE TABLE assets(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                                  ae_id INTEGER NOT NULL, name TEXT NOT NULL, path TEXT, missing INTEGER NOT NULL);
+                CREATE TABLE fonts(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                                  name TEXT NOT NULL, UNIQUE(project_id, name));
+                CREATE TABLE plugins(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                                  comp_id INTEGER NOT NULL REFERENCES compositions(id) ON DELETE CASCADE,
+                                  layer_id INTEGER NOT NULL REFERENCES layers(id) ON DELETE CASCADE,
+                                  match_name TEXT NOT NULL, name TEXT);
+                CREATE INDEX idx_plugins_match ON plugins(match_name);
+                CREATE INDEX idx_layers_font ON layers(font);
+                CREATE INDEX idx_layers_src ON layers(source_ae_id, source_path);
+                CREATE INDEX idx_assets_missing ON assets(missing);
+                CREATE INDEX idx_comps_project ON compositions(project_id);
+                -- Receipts indexed under v1 have no relational rows; force one re-read.
+                UPDATE docs SET sha256 = '' WHERE schema = 'MJ_PROJECT_SCRAPE_1';
+                PRAGMA user_version = 2;
+            """)
+    db.execute("PRAGMA foreign_keys = ON")
     return db
+
+def to_int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+def put_project(db, doc, receipt_path, sha):
+    """Replace the relational rows of one project from a scrape. Returns False when the
+    stored scrape for this project path is newer (an older receipt never wins)."""
+    ppath = s(doc.get("projectPath")) or receipt_path
+    scraped = s(doc.get("scrapedAt"))
+    with db:
+        row = db.execute("SELECT id, scraped_at FROM projects WHERE project_path = ?", (ppath,)).fetchone()
+        if row and row[1] > scraped:
+            return False
+        if row:
+            db.execute("DELETE FROM projects WHERE id = ?", (row[0],))
+        pid = db.execute("INSERT INTO projects(project_path, name, ae_version, scraped_at, receipt_path, receipt_sha256) VALUES (?,?,?,?,?,?)",
+                         (ppath, s(doc.get("projectName")), s(doc.get("aeVersion")), scraped, receipt_path, sha)).lastrowid
+        for f in doc.get("footage") or []:
+            if isinstance(f, dict):
+                db.execute("INSERT INTO assets(project_id, ae_id, name, path, missing) VALUES (?,?,?,?,?)",
+                           (pid, to_int(f.get("id")), s(f.get("name")), s(f.get("path")), 1 if f.get("missing") else 0))
+        for name in sorted({s(x) for x in doc.get("fonts") or [] if s(x)}):
+            db.execute("INSERT INTO fonts(project_id, name) VALUES (?,?)", (pid, name))
+        for c in doc.get("comps") or []:
+            if not isinstance(c, dict):
+                continue
+            cid = db.execute("INSERT INTO compositions(project_id, ae_id, name, width, height, fps, duration) VALUES (?,?,?,?,?,?,?)",
+                             (pid, to_int(c.get("id")), s(c.get("name")), to_int(c.get("width")), to_int(c.get("height")),
+                              c.get("frameRate") if isinstance(c.get("frameRate"), (int, float)) else None,
+                              c.get("duration") if isinstance(c.get("duration"), (int, float)) else None)).lastrowid
+            for l in c.get("layers") or []:
+                if not isinstance(l, dict):
+                    continue
+                lid = db.execute("INSERT INTO layers(comp_id, idx, name, type, source_ae_id, source_name, source_path, font) VALUES (?,?,?,?,?,?,?,?)",
+                                 (cid, to_int(l.get("index")), s(l.get("name")), s(l.get("type")), to_int(l.get("sourceId")),
+                                  s(l.get("sourceName")), s(l.get("sourcePath")), s(l.get("font")))).lastrowid
+                for fx in l.get("effects") or []:
+                    if isinstance(fx, dict) and s(fx.get("matchName")):
+                        db.execute("INSERT INTO plugins(project_id, comp_id, layer_id, match_name, name) VALUES (?,?,?,?,?)",
+                                   (pid, cid, lid, s(fx.get("matchName")), s(fx.get("name"))))
+    return True
 
 def put_doc(db, path, sha, schema, title, entries):
     """Replace one document's entries atomically."""
@@ -4940,6 +5028,8 @@ for p in candidates:
             counts["unchanged"] += 1; continue
         title, entries = extract(doc)
         put_doc(db, p, sha, schema, title, entries)
+        if schema == "MJ_PROJECT_SCRAPE_1":
+            put_project(db, doc, p, sha)
         counts["updated" if row else "added"] += 1
         by_schema[schema] = by_schema.get(schema, 0) + 1
     except Exception as e:
@@ -5124,6 +5214,157 @@ if not dest:
 print(json.dumps({"ok": True, "data": {"schema": "MJ_PRESET_GET_1", "label": label, "version": version,
     "sha256": sha, "outputPath": dest, "sourceUnchanged": True}}))
 PY_PRESET_GET
+) || true
+  frames_emit_python_result "$_out"
+}
+
+# --- exact audit queries over the normalized tables (store schema v2) ---
+
+IFS= read -r -d '' MJ_PY_TRACE <<'PY_TRACE' || true
+MAX_PATHS = 20
+MAX_DEPTH = 32
+
+def project_graph(db, pid):
+    comps = {r[0]: {"id": r[0], "ae_id": r[1], "name": r[2]} for r in
+             db.execute("SELECT id, ae_id, name FROM compositions WHERE project_id = ?", (pid,))}
+    by_ae = {c["ae_id"]: c for c in comps.values() if c["ae_id"]}
+    by_name = {}
+    for c in comps.values():
+        by_name.setdefault(c["name"], []).append(c)
+    layers = {}
+    parents = {}      # child comp id -> [(parent comp id, layer idx, layer name)]
+    for lid, cid, idx, name, typ, sid, sname, spath, font in db.execute(
+            "SELECT l.id, l.comp_id, l.idx, l.name, l.type, l.source_ae_id, l.source_name, l.source_path, l.font "
+            "FROM layers l JOIN compositions c ON c.id = l.comp_id WHERE c.project_id = ?", (pid,)):
+        layers[lid] = {"id": lid, "comp": cid, "idx": idx, "name": name, "type": typ, "sid": sid,
+                       "sname": sname, "spath": spath, "font": font}
+        child = by_ae.get(sid) if sid else None
+        if child is None and not sid and not spath and sname and len(by_name.get(sname, [])) == 1:
+            child = by_name[sname][0]     # older scrapes without sourceId: unique name only
+        if child is not None:
+            parents.setdefault(child["id"], []).append((cid, idx, name))
+    return comps, layers, parents
+
+def comp_paths(comps, parents, cid):
+    """Every root-to-comp chain of comp names, nearest-to-root first. Bounded; cycle safe."""
+    out = []
+    def walk(cur, chain):
+        if len(out) >= MAX_PATHS or len(chain) > MAX_DEPTH:
+            return
+        ups = [p for p in parents.get(cur, []) if p[0] not in chain]
+        if not ups:
+            out.append(list(reversed([comps[c]["name"] for c in chain])))
+            return
+        for pcid, _, _ in ups:
+            walk(pcid, chain + [pcid])
+    walk(cid, [cid])
+    return out
+
+def describe_uses(comps, layers, parents, layer_ids):
+    uses = []
+    for lid in layer_ids[:200]:
+        l = layers[lid]
+        paths = comp_paths(comps, parents, l["comp"])
+        uses.append({"comp": comps[l["comp"]]["name"], "layer": l["name"], "layerIndex": l["idx"],
+                     "paths": [" > ".join(p) for p in paths], "pathsTruncated": len(paths) >= MAX_PATHS})
+    return uses
+PY_TRACE
+
+handle_trace_asset() {
+  local _rc=0 _target="" _kind="asset" _proj="" _out=""
+  request_arg_present format && _kind=$(request_arg_get format)
+  case "$_kind" in asset|font|missing) ;; *) set_error "INVALID_ARGUMENT" "format must be asset, font or missing."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
+  if [ "$_kind" != missing ]; then
+    require_arg target || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+    _target="$MJ_REQUIRED_ARG_VALUE"
+  fi
+  request_arg_present path && _proj=$(request_arg_get path)
+  [ -z "$_proj" ] || is_absolute_path "$_proj" || { set_error "INVALID_PATH" "Project path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  frames_uint_arg maxResults 50 1 500 || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  library_require_store existing || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+
+  _out=$(MJ_KIND="$_kind" MJ_TARGET="$_target" MJ_PROJ="$_proj" MJ_MAX="$MJ_FRAMES_UINT" MJ_STORE="$MJ_STORE" trace_python <<'PY_TRACE_ASSET'
+kind, target, proj_filter, limit = os.environ["MJ_KIND"], os.environ["MJ_TARGET"], os.environ["MJ_PROJ"], int(os.environ["MJ_MAX"])
+db = open_db(os.environ["MJ_STORE"])
+if db.execute("SELECT count(*) FROM projects").fetchone()[0] == 0:
+    err("STORE_EMPTY", "No project scrapes are indexed yet; run index.add on scrape receipts first.")
+rows = db.execute("SELECT id, project_path, name, scraped_at FROM projects" + (" WHERE project_path = ?" if proj_filter else "") +
+                  " ORDER BY project_path", (proj_filter,) if proj_filter else ()).fetchall()
+if proj_filter and not rows:
+    err("NOT_FOUND", "That project path is not indexed.")
+results, total = [], 0
+for pid, ppath, pname, scraped in rows:
+    comps, layers, parents = project_graph(db, pid)
+    matches = []
+    if kind == "font":
+        lids = [l["id"] for l in layers.values() if l["font"].lower() == target.lower()]
+        known = db.execute("SELECT count(*) FROM fonts WHERE project_id = ? AND name = ? COLLATE NOCASE", (pid, target)).fetchone()[0] > 0
+        if lids or known:
+            matches.append({"kind": "font", "name": target, "missing": None,
+                            "uses": describe_uses(comps, layers, parents, lids)})
+    else:
+        if kind == "missing":
+            assets = db.execute("SELECT ae_id, name, path, missing FROM assets WHERE project_id = ? AND missing = 1 ORDER BY path, name", (pid,)).fetchall()
+        else:
+            assets = db.execute("SELECT ae_id, name, path, missing FROM assets WHERE project_id = ? AND (name = ? OR path = ?) ORDER BY path, name",
+                                (pid, target, target)).fetchall()
+        for ae_id, name, path, missing in assets:
+            lids = [l["id"] for l in layers.values()
+                    if (ae_id and l["sid"] == ae_id) or (path and l["spath"] == path)]
+            matches.append({"kind": "asset", "name": name, "path": path, "missing": bool(missing),
+                            "uses": describe_uses(comps, layers, parents, lids)})
+    if matches:
+        results.append({"projectPath": ppath, "projectName": pname, "scrapedAt": scraped, "matches": matches})
+        total += len(matches)
+    if total >= limit:
+        break
+print(json.dumps({"ok": True, "data": {
+    "schema": "MJ_TRACE_1", "query": {"format": kind, "target": target or None, "project": proj_filter or None},
+    "projects": results, "matchCount": total, "truncated": total >= limit,
+    "note": "Paths run from a root composition down to the composition that holds the layer; a missing-footage layer in a precomp reports every comp chain that nests it.",
+}}))
+PY_TRACE_ASSET
+) || true
+  frames_emit_python_result "$_out"
+}
+
+trace_python() {
+  local _main=""
+  IFS= read -r -d '' _main || true
+  printf '%s\n%s\n%s\n%s' "$MJ_PY_PROTECT_LIB" "$MJ_PY_LIBRARY" "$MJ_PY_TRACE" "$_main" | /usr/bin/python3 - 2>/dev/null
+}
+
+handle_audit_plugins() {
+  local _rc=0 _target="" _out=""
+  request_arg_present target && _target=$(request_arg_get target)
+  frames_uint_arg maxResults 100 1 1000 || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  library_require_store existing || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+
+  _out=$(MJ_TARGET="$_target" MJ_MAX="$MJ_FRAMES_UINT" MJ_STORE="$MJ_STORE" trace_python <<'PY_AUDIT_PLUGINS'
+target, limit = os.environ["MJ_TARGET"], int(os.environ["MJ_MAX"])
+db = open_db(os.environ["MJ_STORE"])
+if db.execute("SELECT count(*) FROM projects").fetchone()[0] == 0:
+    err("STORE_EMPTY", "No project scrapes are indexed yet; run index.add on scrape receipts first.")
+if target:
+    rows = db.execute("""SELECT p.project_path, p.name, p.scraped_at, count(*) AS uses,
+                                count(DISTINCT pl.comp_id) AS comps, min(pl.name) AS fx_name
+                         FROM plugins pl JOIN projects p ON p.id = pl.project_id
+                         WHERE pl.match_name = ? GROUP BY p.id ORDER BY p.project_path LIMIT ?""", (target, limit)).fetchall()
+    print(json.dumps({"ok": True, "data": {
+        "schema": "MJ_PLUGIN_USAGE_1", "matchName": target, "projectCount": len(rows), "truncated": len(rows) >= limit,
+        "projects": [{"projectPath": r[0], "projectName": r[1], "scrapedAt": r[2], "layerUses": r[3],
+                      "compositions": r[4], "effectName": r[5]} for r in rows],
+        "note": "Each project's newest indexed scrape is used; projects never scraped are not covered.",
+    }}))
+else:
+    rows = db.execute("""SELECT pl.match_name, min(pl.name), count(DISTINCT pl.project_id), count(*)
+                         FROM plugins pl GROUP BY pl.match_name ORDER BY 3 DESC, 1 LIMIT ?""", (limit,)).fetchall()
+    print(json.dumps({"ok": True, "data": {
+        "schema": "MJ_PLUGIN_INVENTORY_1", "distinctEffects": len(rows), "truncated": len(rows) >= limit,
+        "effects": [{"matchName": r[0], "effectName": r[1], "projects": r[2], "layerUses": r[3]} for r in rows],
+        "projectsIndexed": db.execute("SELECT count(*) FROM projects").fetchone()[0],
+    }}))
+PY_AUDIT_PLUGINS
 ) || true
   frames_emit_python_result "$_out"
 }
@@ -5529,6 +5770,8 @@ dispatch_request() {
     host.detect) handle_host_detect ;;
     ae.render) handle_ae_render ;;
     c4d.render) handle_c4d_render ;;
+    trace.asset) handle_trace_asset ;;
+    audit.plugins) handle_audit_plugins ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

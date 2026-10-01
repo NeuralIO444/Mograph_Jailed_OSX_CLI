@@ -276,3 +276,28 @@ Hosts are discovered only as `/Applications/Adobe After Effects <year>/` (needs 
 - `ae.render` / `c4d.render` (`DERIVATIVE_CREATE`, `RENDER_BOUND`) render to a new PNG sequence in `<output>/<label>.<UTC>/` (a suffix is added on collision) and write `render.json` (`MJ_RENDER_1`) and `render.log` there. `ae.render` forces `-outputSettings "Format: PNG Sequence"`, never uses `-reuse`, and never saves the project. `c4d.render` uses the scene's own render settings (Redshift or Physical) and overrides only image path and format. The receipt records host year/version, exact `argv`, frame count against expected, SHA-256 of the first and last frame, and the source file's hash before and after (`source.unchanged`).
 - Status is `complete`, or the operation fails with `RENDER_FAILED`, `RENDER_INCOMPLETE` (frames missing), `RENDER_TIMEOUT`, or `LICENCE_NOT_CONFIGURED`. Every host process runs with stdin closed, in its own process group (killed whole on timeout), and a licence-choice prompt in its output stops it immediately. Receipts are written for failures too.
 - One render at a time per machine (`RENDER_BUSY`), enforced with a lock under the store whose owner pid is checked so a crashed run's lock is reclaimed. The newest receipt is recorded in `<store>/last-render.json` for `mj last` and `mj open-last`.
+
+## Project audit queries (store schema v2)
+
+Protocol v1 additionally allowlists two read-only operations, growing the public surface from 42 to 44. No existing command schema is reinterpreted.
+
+```text
+command=trace.asset
+arg.target=<Base64 exact asset name, asset path, or font name>   (not needed for format=missing)
+arg.format=<optional Base64: asset (default) | font | missing>
+arg.path=<optional Base64 absolute project path to restrict to one project>
+arg.maxResults=<optional Base64 integer 1-500; default 50>
+
+command=audit.plugins
+arg.target=<optional Base64 effect matchName, exact and case-sensitive>
+arg.maxResults=<optional Base64 integer 1-1000; default 100>
+```
+
+Both are `LOCAL_ONLY`, `NONE` mutation, `DERIVED_PROJECT_SUMMARY`, require `python3`, and fail with `STORE_EMPTY` (creating nothing) until `index.add` has indexed at least one `MJ_PROJECT_SCRAPE_1` receipt. Statements are fixed text with bound parameters.
+
+Store schema v2 adds normalized `projects`, `compositions`, `layers`, `assets`, `fonts` and `plugins` tables, filled by `index.add` from scrapes. One row set per `projectPath`; the newest `scrapedAt` wins, so an older receipt indexed later never replaces newer data. Opening a v1 store migrates it in place and marks existing scrape receipts for a one-time re-read on the next `index.add`.
+
+- `trace.asset` returns `MJ_TRACE_1`: for each matching project, each matching asset or font, and every layer that uses it with the full root-to-comp nesting chains (`"Main > Mid > Inner"`, up to 20 per layer). Precomp links use the layer's `sourceId`, so duplicate comp names resolve correctly; scrapes that lack ids fall back to a name only when the comp name is unique. `format=missing` lists every asset flagged missing. Font lookups are case-insensitive and report layers by the font recorded on each text layer; fonts present in the project but not attributed to any layer are reported with no uses.
+- `audit.plugins` with a `target` returns `MJ_PLUGIN_USAGE_1`: the unique project paths that use that exact effect `matchName`, with layer-use and composition counts. Without a `target` it returns `MJ_PLUGIN_INVENTORY_1`: every `matchName` in the index with project and layer-use counts, most widely used first. Only each project's newest indexed scrape is counted.
+
+`MJ_PROJECT_SCRAPE_1` gains three optional fields (layer `sourceId`, text-layer `font`, footage `id`); consumers that do not know them are unaffected.

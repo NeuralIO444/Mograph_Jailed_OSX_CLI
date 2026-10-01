@@ -60,6 +60,8 @@ dispatch_request() {
     host.detect) handle_host_detect ;;
     ae.render) handle_ae_render ;;
     c4d.render) handle_c4d_render ;;
+    trace.asset) handle_trace_asset ;;
+    audit.plugins) handle_audit_plugins ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

@@ -158,24 +158,29 @@
             }
         } catch (ew) {}
 
-        /* Fonts from text layers. */
+        /* Fonts from text layers (first character's font; per-layer, so a
+           missing font can be traced to the comps and layers that use it). */
+        var layerFont = "";
         if (mj_layerType(layer) === "TextLayer") {
             try {
                 var td = layer.property("ADBE Text Properties")
                               .property("ADBE Text Document").value;
                 var f = td.font;
                 if (f !== null && f !== undefined && String(f).length > 0) {
-                    fontSeen[String(f)] = true;
+                    layerFont = String(f);
+                    fontSeen[layerFont] = true;
                 }
             } catch (ef) {}
         }
 
         var sourceName = "";
         var sourcePath = "";
+        var sourceId = 0;
         try {
             var src = layer.source;
             if (src) {
                 sourceName = String(src.name);
+                try { sourceId = src.id; } catch (e0) {}
                 try { if (src.file) { sourcePath = String(src.file.fsName); } } catch (e1) {}
             }
         } catch (e2) {}
@@ -198,6 +203,8 @@
             hasAudio: hasAudio,
             sourceName: sourceName,
             sourcePath: sourcePath,
+            sourceId: sourceId,
+            font: layerFont,
             effects: mj_effects(layer),
             markers: markers,
             numProperties: acc.numProperties,
@@ -302,6 +309,7 @@
             var fpath = "";
             try { if (item.file) { fpath = String(item.file.fsName); } } catch (ef2) {}
             footage.push({
+                id: item.id,
                 name: String(item.name),
                 path: fpath,
                 missing: mj_bool(item.missing),

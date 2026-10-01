@@ -26,7 +26,7 @@ check test "$rc" = 64
 # ops listing marks required args
 mjz "mj ops" > "$TMP/ops.txt"
 check grep -q $'^golden.record\tAVAILABLE\tpath\\* output\\* label\\*$' "$TMP/ops.txt"
-check test "$(wc -l < "$TMP/ops.txt" | tr -d ' ')" = 42
+check test "$(wc -l < "$TMP/ops.txt" | tr -d ' ')" = 44
 
 # recipe: comments, quoting, placeholders with spaces
 cat > "$TMP/check.mjrecipe" <<'R'

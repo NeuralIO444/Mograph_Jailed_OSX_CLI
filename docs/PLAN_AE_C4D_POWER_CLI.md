@@ -75,6 +75,11 @@ Status: draft, nothing implemented. Targets: AE 2024 (24.x), C4D 2024 (Redshift 
 - macOS CI job; host wrappers tested with fake `aerender`/`c4dpy` stubs, real-host tests manual on the workstation.
 - Man pages and docs for every operation.
 
+## Fold-in: audit queries (from the Modules 1-3 request) — DONE
+- Scraper: per-layer `font`, `sourceId`, footage `id` (additive, read-only guard intact).
+- Store schema v2 with normalized tables; `trace.asset` (exact nested path to a missing asset or font) and `audit.plugins` (projects using an exact effect `matchName`, plus full inventory).
+- Not adopted, with reasons: running `.jsx` through `aerender` (it cannot; scripting needs AE itself), SQLite WAL on a network share (unsafe; keep one local store per workstation and merge receipts), and a Frame.io sync (needs network + third-party SDK; belongs in a separate connected tool that writes a read-only SQLite file).
+
 ## Dependencies and order
 Phase 0 -> 1 -> 2 -> 3 are the spine. Phases 5 and 6 work today on any rendered PNG folder; they gain auto-render once Phase 1 lands. Phase 9 needs Phase 1 receipts. Phase 7 can follow Phase 1. Phase 8 and 10 can land incrementally once the spine exists.
 

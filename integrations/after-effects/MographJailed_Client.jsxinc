@@ -62,7 +62,8 @@
             "loop.seams", "golden.record", "golden.check", "audit.verify",
             "project.restore", "deps.graph", "handoff.package",
             "index.add", "index.search", "index.verify", "preset.add", "preset.get",
-            "host.detect", "ae.render", "c4d.render"
+            "host.detect", "ae.render", "c4d.render",
+            "trace.asset", "audit.plugins"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -428,6 +429,14 @@
 
     Client.prototype.presetGet = function (label, outputDir, version) {
         return this.call("preset.get", { label: label, output: outputDir, version: (typeof version === "undefined" ? null : String(version)) });
+    };
+
+    Client.prototype.traceAsset = function (target, kind, projectPath) {
+        return this.call("trace.asset", { target: target, format: kind || "asset", path: projectPath || null });
+    };
+
+    Client.prototype.auditPlugins = function (matchName) {
+        return this.call("audit.plugins", { target: matchName || null });
     };
 
     Client.prototype.hostDetect = function () {

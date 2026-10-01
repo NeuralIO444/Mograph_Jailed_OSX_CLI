@@ -38,6 +38,8 @@ preset.get
 host.detect
 ae.render
 c4d.render
+trace.asset
+audit.plugins
 report.tech
 runtime.verify
 search.candidate

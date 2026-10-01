@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Project audit queries (Modules 1–3 fold-in)
+
+- Added `trace.asset` and `audit.plugins` (operations 43–44) over new normalized store tables (schema v2: projects, compositions, layers, assets, fonts, plugins) with in-place v1 migration.
+- Scraper (`MJ_PROJECT_SCRAPE_1`, additive optional fields): layer `sourceId`, text-layer `font`, footage `id`; read-only guard still passes.
+- Newest scrape per project path wins; older receipts never replace newer data.
+- AE client: `traceAsset()`, `auditPlugins()`. Added `tests/run_audit_queries.sh` (29 checks).
+
 ## Unreleased — Power CLI Phases 0–1 (hosts and rendering)
 
 - Added `host.detect`, `ae.render`, `c4d.render` (operations 40–42) and argument names `range`, `timeoutSeconds`.

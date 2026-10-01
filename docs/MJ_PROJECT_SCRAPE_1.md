@@ -43,6 +43,8 @@ Produced by `integrations/after-effects/MographJailed_ProjectScraper.jsx`
 | `hasVideo`, `hasAudio` | boolean | |
 | `sourceName` | string | Empty when no source |
 | `sourcePath` | string | Absolute file path, empty when none |
+| `sourceId` | integer | Optional. Project item id of the layer's source (a footage item or a precomp's comp `id`); `0`/absent when none. Lets consumers resolve nested comps exactly even when names repeat |
+| `font` | string | Optional. Text layers only: the font of the text document (first character); empty otherwise |
 | `effects` | array | `{"name","matchName"}` |
 | `markers` | integer | Marker count |
 | `numProperties` | integer | Total properties walked |
@@ -53,6 +55,7 @@ Produced by `integrations/after-effects/MographJailed_ProjectScraper.jsx`
 
 | Field | Type | Notes |
 |---|---|---|
+| `id` | integer | Optional. Project item id |
 | `name` | string | |
 | `path` | string | Absolute path, empty when none |
 | `missing` | boolean | As reported by AE (`footageItem.missing`) |
