@@ -33,6 +33,8 @@ mj-top --ascii
 
 The dashboard consumes `system.doctor`, `system.describe`, `runtime.verify`, and `storage.preflight` through MographJailed. It does not call media/filesystem evidence utilities directly.
 
+`mj-top` reads the repo's `VERSION` file for its version and protocol metadata (see Troubleshooting if it reports incomplete metadata).
+
 ## mj-observe-dash
 
 btop-style live dashboard for the Tier 0 Observer.

@@ -7,7 +7,7 @@
 #
 # Usage:
 #   tools/mj-observe-dash.zsh --versions ~/AE_Versions [--receipts ~/AE_Receipts]
-#                             [--cli dist/mograph-jailed.sh] [--interval 5] [--once]
+#                             [--cli dist/mograph-jailed.zsh] [--interval 5] [--once]
 #
 # Keys: q quit · r refresh now. --once renders a single frame (scripting).
 
@@ -17,7 +17,7 @@ set -u
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 VERSIONS_DIR=""
 RECEIPTS_DIR=""
-CLI_PATH="$ROOT/dist/mograph-jailed.sh"
+CLI_PATH="$ROOT/dist/mograph-jailed.zsh"
 INTERVAL=5
 ONCE=0
 
