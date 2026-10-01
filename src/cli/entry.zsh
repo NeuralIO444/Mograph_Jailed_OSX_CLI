@@ -1,7 +1,29 @@
+print_help() {
+  local _op=""
+  printf 'mograph-jailed %s (protocol %s)\n\n' "$MOGRAPHJAILED_CLI_VERSION" "$MOGRAPHJAILED_PROTOCOL_VERSION"
+  printf 'Usage:\n  mograph-jailed.zsh --request <request-file>   run one request, print one JSON response\n'
+  printf '  mograph-jailed.zsh --help | --version\n\n'
+  printf 'For everyday use, the `mj` shell command builds requests for you (docs/man/mj.md).\n'
+  printf 'Request format: PROTOCOL.md. Error codes: docs/man/errors.md.\n\n'
+  printf 'Exit codes: 0 ok, 64 usage, 65 bad request, 66 not found, 69 unsupported,\n'
+  printf '            73 output problem, 74 operation failed, 77 permission denied\n\n'
+  printf 'Operations:\n'
+  while IFS= read -r _op; do
+    [ -n "$_op" ] || continue
+    printf '  %-18s %s\n' "$_op" "$(operation_summary "$_op")"
+  done <<EOF_HELP_OPS
+$(operation_names)
+EOF_HELP_OPS
+}
+
 main() {
   local _rc=0
+  case "${1:-}" in
+    --help|-h) [ "$#" -eq 1 ] && { print_help; return 0; } ;;
+    --version|-V) [ "$#" -eq 1 ] && { printf 'mograph-jailed %s (protocol %s)\n' "$MOGRAPHJAILED_CLI_VERSION" "$MOGRAPHJAILED_PROTOCOL_VERSION"; return 0; } ;;
+  esac
   if [ "$#" -ne 2 ] || [ "$1" != "--request" ]; then
-    set_error "USAGE" "Usage: mograph-jailed.zsh --request <request-file>"
+    set_error "USAGE" "Usage: mograph-jailed.zsh --request <request-file> (see --help)"
     emit_error_response "" ""
     return 64
   fi

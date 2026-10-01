@@ -18,6 +18,7 @@ mj-man render
 mj-man frames
 mj-man audit
 mj-man library
+mj-man errors
 ```
 
 This is a project-local help system. It does not install a system man page and does not change `MANPATH`.

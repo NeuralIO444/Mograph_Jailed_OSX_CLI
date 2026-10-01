@@ -143,6 +143,56 @@ operation_available() {
   esac
 }
 
+operation_summary() {
+  case "$1" in
+    system.probe) printf 'Detect the macOS version and which native tools are available.' ;;
+    system.doctor) printf 'Check that the runtime has what it needs; says what is missing.' ;;
+    system.describe) printf 'List every operation, its arguments and availability.' ;;
+    runtime.verify) printf 'Confirm the runtime'\''s version, protocol and (optionally) SHA-256.' ;;
+    file.inspect) printf 'Read basic facts about a file.' ;;
+    file.hash) printf 'SHA-256 of a file, checking it did not change while hashing.' ;;
+    file.provenance) printf 'List a file'\''s extended-attribute names (never values).' ;;
+    asset.manifest) printf 'Identity record for one asset: size, time, type, hash.' ;;
+    asset.verify) printf 'Compare an asset with expected identity evidence.' ;;
+    search.candidate) printf 'Spotlight search for files with a given name (never relinks).' ;;
+    image.inspect) printf 'Identify an image and report its size and format.' ;;
+    image.derivative) printf 'Make a smaller copy of an image; never overwrites.' ;;
+    image.stats) printf 'Color signature of a PNG (histogram and grid).' ;;
+    image.compare) printf 'Similarity score (0-1) between two PNGs.' ;;
+    storage.preflight) printf 'Check free space and writability before a big job.' ;;
+    volume.inspect) printf 'Filesystem and volume facts for a path.' ;;
+    temp.create) printf 'Create a private temporary working folder.' ;;
+    temp.clean) printf 'Remove a temporary folder this tool made.' ;;
+    media.inspect) printf 'Fast, conservative media metadata.' ;;
+    media.timing) printf 'Duration, frame rate and codec timing of a video.' ;;
+    media.frame) printf 'Extract one exact frame from a video as a new PNG.' ;;
+    project.ingest) printf 'Summarize an After Effects scrape: comps, layers, fonts, footage.' ;;
+    expression.lint) printf 'Check scraped expressions for broken references and slow patterns.' ;;
+    plugin.audit) printf 'List and hash the files in a Plug-ins folder.' ;;
+    project.snapshot) printf 'Save a verified, hash-named copy of an .aep; never overwrites.' ;;
+    loop.seams) printf 'Rank the best loop points in a folder of PNG frames.' ;;
+    golden.record) printf 'Record hashes and signatures of key frames; never overwrites.' ;;
+    golden.check) printf 'Compare new frames with a golden record.' ;;
+    audit.verify) printf 'Check the hash-chained request log for tampering.' ;;
+    project.restore) printf 'Copy a snapshot back out as a new, verified .aep.' ;;
+    deps.graph) printf 'Per-comp dependencies, missing footage, single points of failure.' ;;
+    handoff.package) printf 'Build a delivery folder: project, footage, manifest, README.' ;;
+    index.add) printf 'Index scrapes, snapshots, golden records and handoffs.' ;;
+    index.search) printf 'Full-text search across everything indexed.' ;;
+    index.verify) printf 'Check the local index and stored presets are intact.' ;;
+    preset.add) printf 'Store a preset file as a new version of a label.' ;;
+    preset.get) printf 'Copy a stored preset out; never overwrites.' ;;
+    host.detect) printf 'Find After Effects and Cinema 4D, Redshift and the GPU.' ;;
+    ae.render) printf 'Render a comp with aerender to a new PNG-sequence folder.' ;;
+    c4d.render) printf 'Render a Cinema 4D scene to a new PNG-sequence folder.' ;;
+    trace.asset) printf 'Exact nested comp path to an asset, missing asset or font.' ;;
+    audit.plugins) printf 'Projects using an effect matchName, or the plugin inventory.' ;;
+    report.tech) printf 'Native diagnostic receipt for support.' ;;
+    package.create) printf 'Zip a file or folder with ditto; never overwrites.' ;;
+    *) printf '' ;;
+  esac
+}
+
 operation_state() {
   if operation_available "$1"; then printf 'AVAILABLE'; else printf 'UNAVAILABLE'; fi
 }
@@ -296,6 +346,7 @@ emit_operation_descriptor() {
 
   printf '{"available":'; $_available && printf 'true' || printf 'false'
   printf ',"state":'; json_quote "$(operation_state "$_name")"
+  printf ',"summary":'; json_quote "$(operation_summary "$_name")"
   printf ',"cost":'; json_quote "$(operation_cost "$_name")"
   printf ',"mutation":'; json_quote "$(operation_mutation "$_name")"
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"

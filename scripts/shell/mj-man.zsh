@@ -27,6 +27,7 @@ mj-man() {
         troubleshooting|trouble|debug) file="$manroot/troubleshooting.md" ;;
         recovery|rollback) file="$manroot/recovery.md" ;;
         mj|cli) file="$manroot/mj.md" ;;
+        errors|error|codes) file="$manroot/errors.md" ;;
         render|hosts|ae|c4d) file="$manroot/render.md" ;;
         frames|loop|golden) file="$manroot/frames.md" ;;
         audit|protect|audits) file="$manroot/audit.md" ;;
@@ -49,6 +50,7 @@ render
 frames
 audit
 library
+errors
 LIST
             return 0
             ;;

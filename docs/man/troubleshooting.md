@@ -36,6 +36,10 @@ mj-doctor
 
 Run `system.describe` or `mj-doctor`. Do not install missing third-party dependencies. A missing optional native capability should degrade gracefully.
 
+## Error codes
+
+Every error `code` (`OUTPUT_EXISTS`, `TEMP_REFUSED`, `STAGE_CLEANUP_REFUSED`, …) is explained, with the exit code and what to do, in `mj-man errors`.
+
 ## If a new development build behaves unexpectedly
 
 Do not delete the timestamped updater backup. Use `mj-man recovery`.
