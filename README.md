@@ -28,7 +28,7 @@ printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=hello\ncommand=system.probe\n' > /tmp
 zsh -f dist/mograph-jailed.zsh --request /tmp/mj-request.txt
 ```
 
-You get one JSON envelope on stdout. `system.describe` lists all 49 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
+You get one JSON envelope on stdout. `system.describe` lists all 56 allowlisted operations plus the capability registry. See `PROTOCOL.md` for the request format and `docs/man/` for the terminal UX (`mj-man`, `mj-top`, `mj-observe-dash`).
 
 ## Production rules
 
@@ -53,7 +53,7 @@ Ruby/Perl, Xcode tools, Node, and GNU utilities may be used by isolated developm
 
 ## What it is
 
-A local, zero-daemon toolkit for motion-design pipelines on managed Macs. It looks at After Effects and Cinema 4D work, renders it, checks it, searches it and packages it — and never edits your projects. Everything is an allowlisted operation with a structured request and a JSON response. **49 operations**, no network, no sudo, and no background process unless you turn on the optional watcher (a user-level LaunchAgent you can remove with one command).
+A local, zero-daemon toolkit for motion-design pipelines on managed Macs. It looks at After Effects and Cinema 4D work, renders it, checks it, searches it and packages it — and never edits your projects. Everything is an allowlisted operation with a structured request and a JSON response. **56 operations**, no network, no sudo, and no background process unless you turn on the optional watcher (a user-level LaunchAgent you can remove with one command).
 
 | Area | Operations | What you get |
 |---|---|---|
@@ -103,7 +103,9 @@ Every one of these is a thin wrapper over an operation and prints sentences, not
 
 ## Guides
 
-New here? Follow the [tutorials](docs/guides/README.md): first hour, automatic versions, find and fix problems, render and verify, Cinema 4D into After Effects, client handoff. Task lookups are in the [how-to page](docs/guides/howto.md). Cinema 4D scenes get `mj scene` (inspect and lint), `mj bridge` (scene against an After Effects project) and `.c4d` snapshots; `mj batch` runs a recipe over a folder.
+New here? Follow the [tutorials](docs/guides/README.md): first hour, automatic versions, find and fix problems, render and verify, Cinema 4D into After Effects, client handoff. Task lookups are in the [how-to page](docs/guides/howto.md).
+
+**New in 0.4.0-dev.3:** `mj check` (one verdict: expressions, health, fonts, footage), `mj timeline`, `mj space` (find and safely empty After Effects, Adobe and Redshift caches), `mj qc` (a render against a delivery spec, loudness included), `mj extract` (comps into their own project) and `mj conform` (studio naming, labels, folders and expression fixes). The last two run in After Effects on a verified copy and never touch your original. Cinema 4D scenes get `mj scene` (inspect and lint), `mj bridge` (scene against an After Effects project) and `.c4d` snapshots; `mj batch` runs a recipe over a folder.
 
 ## Trust model
 
@@ -116,7 +118,7 @@ New here? Follow the [tutorials](docs/guides/README.md): first hour, automatic v
 - **Unattended hooks are fenced.** An optional `post_snapshot_hook` runs only if it is an executable you own that nobody else can write to, directly (no shell), with a time limit, and can never harm a snapshot.
 - **Stock macOS.** Runs on `/bin/zsh` plus the system `python3` (only for the Power CLI operations). See `DEPENDENCY_AUDIT.md`.
 
-Protocol v1 is preserved and the public surface has grown additively: 20 → 23 → 27 → 46 → 49 operations. The full request and response contracts are in `PROTOCOL.md`; the roadmap is `docs/PLAN_AE_C4D_POWER_CLI.md` and the GitHub milestones. Scraper schema: `docs/MJ_PROJECT_SCRAPE_1.md`; observer tiers: `docs/TIER0_OBSERVER.md`.
+Protocol v1 is preserved and the public surface has grown additively: 20 → 23 → 27 → 46 → 49 → 56 operations. The full request and response contracts are in `PROTOCOL.md`; the roadmap is `docs/PLAN_AE_C4D_POWER_CLI.md` and the GitHub milestones. Scraper schema: `docs/MJ_PROJECT_SCRAPE_1.md`; observer tiers: `docs/TIER0_OBSERVER.md`.
 
 ## Existing asset intelligence
 

@@ -9,6 +9,7 @@ mkdir -p "$HOME/AE/hold" "$HOME/AE/versions" "$HOME/AE/out"
 mv "$HOME/AE/receipts"/summer.* "$HOME/AE/receipts"/logo.* "$HOME/AE/hold/"
 touch -t 202610010900 "$HOME/AE/receipts/spring.20261001T090000Z.scrape.json"
 touch -t 202610011630 "$HOME/AE/receipts/spring.20261001T163000Z.scrape.json"
+export MJ_FONT_DIRS="$HOME/Fonts" MJ_FONT_DIRS_ONLY=1    # fonts found only in a sandbox folder, so the output is the same on every machine
 export MJ_CONFIG="$HOME/.config/mograph-jailed/config" MJ_STORE_DIR="$HOME/Library/Application Support/MographJailed" MJ_AUDIT_DIR="$HOME/Library/Logs/MographJailed" MJ_CLI="$RUNTIME"
 source "$R/scripts/shell/mj-cli.zsh"
 sec() { print -r -- "##### $1"; }
@@ -45,6 +46,13 @@ run 'mj bridge last last'
 sec handoff
 run 'mj handoff.package path="$HOME/AE/projects/Spring Promo/Spring Promo.aep" input="$HOME/AE/receipts/spring.20261001T163000Z.scrape.json" output="$HOME/AE/out" label=spring_v2 > ~/AE/handoff.json; mj explain ~/AE/handoff.json'
 run 'ls ~/AE/out/spring_v2.handoff | LC_ALL=C sort'
+sec studio
+run 'mj check "Spring Promo"'
+run 'mj timeline "Spring Promo"'
+run 'mj conform "Spring Promo"'
+run 'mj extract "Spring Promo" "Lower Third" --label lower-third'
+run 'mj ae verify ~/AE/versions/lower-third.mjjob'
+run 'mj space'
 sec status
 run 'mj status'
 run 'mj notify status'

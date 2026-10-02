@@ -17,7 +17,7 @@ REQ
 "$CLI" --request "$TMP/describe.req" > "$TMP/describe.json"
 
 # Registry serialization must be true JSON arrays with one capability per element.
-check jq -e '.cliVersion=="0.4.0-dev.2"' "$TMP/describe.json"
+check jq -e '.cliVersion=="0.4.0-dev.3"' "$TMP/describe.json"
 check jq -e '.data.operations["file.inspect"].requires.all == ["stat","file","uname"]' "$TMP/describe.json"
 check jq -e '.data.operations["image.derivative"].requires.all == ["sips","awk","mktemp","mv","rm","stat","uname"]' "$TMP/describe.json"
 check jq -e '.data.operations["package.create"].requires.all == ["ditto","mktemp","rm","mv","stat","uname"]' "$TMP/describe.json"
@@ -34,7 +34,7 @@ check grep -q 'operation_required_all "\$_name" | emit_string_array_lines' "$ROO
 check grep -q 'operation_optional_capabilities "\$_name" | emit_string_array_lines' "$ROOT/src/core/operations.zsh"
 
 # Local help topics and render assets exist.
-for topic in overview commands protocol safety looper organize terminal troubleshooting recovery mj render frames audit library errors; do
+for topic in overview commands protocol safety looper organize terminal troubleshooting recovery mj render frames audit library studio qc space errors; do
   check test -r "$ROOT/docs/man/$topic.md"
 done
 check test -r "$ROOT/scripts/terminal/mj-md-render.awk"
@@ -109,7 +109,7 @@ check test -d "$FAKEROOT/config/shell"
 
 # Distribution remains the CLI only; terminal UX is intentionally outside the bundled runtime.
 "$ROOT/scripts/build.zsh" >/dev/null
-check grep -q 'MOGRAPHJAILED_CLI_VERSION="0.4.0-dev.2"' "$ROOT/dist/mograph-jailed.zsh"
+check grep -q 'MOGRAPHJAILED_CLI_VERSION="0.4.0-dev.3"' "$ROOT/dist/mograph-jailed.zsh"
 check_not grep -q 'mj-top' "$ROOT/dist/mograph-jailed.zsh"
 check_not grep -q 'mj-man' "$ROOT/dist/mograph-jailed.zsh"
 

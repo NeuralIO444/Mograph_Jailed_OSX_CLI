@@ -78,16 +78,16 @@ def make_case(i: int, root: Path, canary: Path):
         lines.append("command=system.describe"); expect_ok = True
     elif kind == 20:
         lines.append("command=runtime.verify")
-        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.2"))
+        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.3"))
         lines.append("arg.expectedProtocolVersion=" + b64(b"1"))
         lines.append("arg.expectedFilename=" + b64(cli.name.encode("utf-8")))
         expect_ok = True
     elif kind == 21:
         lines.append("command=runtime.verify")  # missing expectedProtocolVersion
-        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.2"))
+        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.3"))
     elif kind == 22:
         lines.append("command=runtime.verify")
-        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.2"))
+        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.3"))
         lines.append("arg.expectedProtocolVersion=" + b64(b"1"))
         lines.append("arg.expectedSha256=" + b64(b"not-a-sha"))
     else:

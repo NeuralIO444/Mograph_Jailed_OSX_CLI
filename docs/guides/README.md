@@ -10,7 +10,8 @@ Every command output below was captured by running the commands for real (`tests
 4. [Render and verify](04-render-and-verify.md): render safely, check loops and frames.
 5. [Cinema 4D into After Effects](05-cinema4d-to-after-effects.md): scene check and the bridge.
 6. [Client handoff](06-client-handoff.md): package a project with fonts and footage.
+7. [Studio tools](07-studio-tools.md): mj check, project history, studio naming, comp extract.
 
 ## How-to guides (look up one task)
 
-[How-to index](howto.md): find projects by plugin, trace a missing font or file, notifications and status line, recipes and batches, hooks, verifying the install, reading error codes.
+[How-to index](howto.md): check a render against a delivery spec, free disk space, find projects by plugin, trace a missing font or file, notifications and status line, recipes and batches, hooks, verifying the install, reading error codes.

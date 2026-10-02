@@ -15,7 +15,8 @@ GOLDEN="$ROOT/docs/guides/walkthrough.golden"
 "$ROOT/scripts/build-linux-test.sh" >/dev/null
 printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=g\ncommand=system.describe\n' > "$TMP/d.req"
 MJ_STORE_DIR="$TMP/s" "$ROOT/dist/mograph-jailed-linux-test.sh" --request "$TMP/d.req" | jq -r '.data.operations|keys[]' | sort > "$TMP/ops.txt"
-VERBS="snapshot versions lint health diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help"
+VERBS=$(sed -n 's/^ *local -a verbs; verbs=(\(.*\))$/\1/p' "$ROOT/scripts/shell/mj-cli.zsh")   # the front end's own list
+[ -n "$VERBS" ] || { echo "FAIL: could not read the verb list from mj-cli.zsh" >&2; exit 1; }
 python3 "$ROOT/tests/support/check_guides.py" "$ROOT" "$TMP/ops.txt" "$VERBS"
 check true
 [ -d "$ROOT/docs/guides" ] && check test "$(ls "$ROOT"/docs/guides/*.md | wc -l | tr -d ' ')" -ge 8

@@ -2,7 +2,7 @@
 
 MographJailed is the zero-install native macOS capability layer for MJ tools.
 
-Current development line: Power CLI (After Effects + Cinema 4D), 49 operations
+Current development line: Power CLI (After Effects + Cinema 4D), 56 operations
 Protocol: MOGRAPHJAILED v1
 Capability Registry: v2
 Standard Library: 1.0

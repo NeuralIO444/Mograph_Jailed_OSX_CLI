@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0-dev.3 — 2026-10-02
+
+Operations grew from 49 to 56. Protocol v1 is unchanged.
+
+- **mj check** — one verdict from lint, health and the new `project.preflight` (fonts used vs installed, with After Effects' own missing-font report from scraper 1.1; footage missing or gone; third-party effects).
+- **mj timeline** — every scrape and snapshot of a project, with its health score and what changed.
+- **mj space** — `cache.inspect` / `cache.clean`: After Effects disk and 3D caches (including a custom folder from AE's preferences), Adobe media cache, Redshift caches per Cinema 4D version; caches from uninstalled versions flagged as left over. Ids only, never paths; refuses while the owning app runs.
+- **mj qc** — `media.qc`: a render against a delivery spec (built-ins for US and EU broadcast, web, social vertical, ProRes master, or a spec file). Integrated loudness (BS.1770-4 / EBU R128) measured in Python on audio decoded by stock `afconvert`; agrees with ffmpeg within 0.1 LU. Exits 1 on a failed check.
+- **mj extract / mj conform / mj ae run|verify** — `project.extract`, `project.conform`, `project.jobcheck`: After Effects jobs that work only on a verified copy. Extract keeps chosen comps and what they use; conform applies a studio spec (names, labels, folders, expressions that refer to renamed things, close-match fixes for broken references). A fixed runner script, guarded in CI, opens only the copy and saves only a new result file.
+- Scraper 1.1 (additive): labels, project-panel folders, layer source kind, adjustment flag, `missingFonts`; can run unattended.
+- Engine errors exit with their documented codes rather than 74 for everything.
+- Fixed: the health explainer showed an unmeasured component as points lost.
+- Not yet qualified in a real After Effects: the job runner and scraper 1.1 (After Effects on the test Mac was blocked by a dialog).
+
 ## 0.4.0-dev.2 — 2026-10-02
 
 Operations grew from 46 to 49. Protocol v1 is unchanged.

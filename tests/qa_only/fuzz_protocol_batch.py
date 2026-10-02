@@ -33,7 +33,7 @@ def make_case(i: int, root: Path):
     elif slot == 2:
         lines += [
             'command=runtime.verify',
-            'arg.expectedCliVersion=' + b64(b'0.4.0-dev.2'),
+            'arg.expectedCliVersion=' + b64(b'0.4.0-dev.3'),
             'arg.expectedProtocolVersion=' + b64(b'1'),
         ]; want_ok = True
     elif slot == 3:
@@ -76,7 +76,7 @@ def make_case(i: int, root: Path):
     elif slot == 18:
         lines += ['command=package.create']
     elif slot == 19:
-        lines += ['command=runtime.verify', 'arg.expectedCliVersion=' + b64(b'0.4.0-dev.2')]  # missing protocol
+        lines += ['command=runtime.verify', 'arg.expectedCliVersion=' + b64(b'0.4.0-dev.3')]  # missing protocol
     elif slot == 20:
         lines += ['command=storage.preflight', 'arg.path=' + b64(str(root).encode()), 'arg.requiredBytes=' + b64(b'bananas')]
     elif slot == 21:

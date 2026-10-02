@@ -18,6 +18,9 @@ mj-man render
 mj-man frames
 mj-man audit
 mj-man library
+mj-man studio
+mj-man qc
+mj-man space
 mj-man errors
 ```
 

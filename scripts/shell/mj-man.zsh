@@ -32,6 +32,9 @@ mj-man() {
         frames|loop|golden) file="$manroot/frames.md" ;;
         audit|protect|audits) file="$manroot/audit.md" ;;
         library|index|presets|search) file="$manroot/library.md" ;;
+        studio|check|timeline|extract|conform|jobs) file="$manroot/studio.md" ;;
+        qc|delivery) file="$manroot/qc.md" ;;
+        space|cache|caches) file="$manroot/space.md" ;;
         list)
             /bin/cat <<'LIST'
 MographJailed help topics
@@ -50,6 +53,9 @@ render
 frames
 audit
 library
+studio
+qc
+space
 errors
 LIST
             return 0

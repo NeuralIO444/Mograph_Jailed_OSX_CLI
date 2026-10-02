@@ -27,7 +27,7 @@ command=system.describe
 REQ
 run_req describe
 check test "$RC" -eq 0
-check jq -e '.ok==true and .cliVersion=="0.4.0-dev.2" and .data.schema=="MOGRAPHJAILED_CAPABILITY_REGISTRY_2" and .data.registryVersion==2 and .data.protocolVersion==1' "$TMP/describe.json"
+check jq -e '.ok==true and .cliVersion=="0.4.0-dev.3" and .data.schema=="MOGRAPHJAILED_CAPABILITY_REGISTRY_2" and .data.registryVersion==2 and .data.protocolVersion==1' "$TMP/describe.json"
 check jq -e '.data.operations|length==56' "$TMP/describe.json"
 check jq -e '.data.operations["file.hash"].cost=="SIZE_DEPENDENT" and .data.operations["file.hash"].interactiveSafe==false and .data.operations["file.hash"].authority=="AUTHORITATIVE_BYTES"' "$TMP/describe.json"
 check jq -e '.data.operations["file.hash"].requires.anyOf==[["sha256","shasum"]]' "$TMP/describe.json"
@@ -62,7 +62,7 @@ cat > "$TMP/verify.req" <<REQ
 MOGRAPHJAILED_REQUEST 1
 requestId=ngm1-verify
 command=runtime.verify
-arg.expectedCliVersion=$(b64 '0.4.0-dev.2')
+arg.expectedCliVersion=$(b64 '0.4.0-dev.3')
 arg.expectedProtocolVersion=$(b64 '1')
 arg.expectedFilename=$(b64 'mograph-jailed-linux-test.sh')
 REQ
@@ -88,7 +88,7 @@ cat > "$TMP/verify-protocol-mismatch.req" <<REQ
 MOGRAPHJAILED_REQUEST 1
 requestId=ngm1-verify-protocol-mismatch
 command=runtime.verify
-arg.expectedCliVersion=$(b64 '0.4.0-dev.2')
+arg.expectedCliVersion=$(b64 '0.4.0-dev.3')
 arg.expectedProtocolVersion=$(b64 '999')
 REQ
 run_req verify-protocol-mismatch
@@ -99,7 +99,7 @@ cat > "$TMP/verify-filename-mismatch.req" <<REQ
 MOGRAPHJAILED_REQUEST 1
 requestId=ngm1-verify-filename-mismatch
 command=runtime.verify
-arg.expectedCliVersion=$(b64 '0.4.0-dev.2')
+arg.expectedCliVersion=$(b64 '0.4.0-dev.3')
 arg.expectedProtocolVersion=$(b64 '1')
 arg.expectedFilename=$(b64 'wrong-runtime.zsh')
 REQ
@@ -113,7 +113,7 @@ cat > "$TMP/verify-sha.req" <<REQ
 MOGRAPHJAILED_REQUEST 1
 requestId=ngm1-verify-sha
 command=runtime.verify
-arg.expectedCliVersion=$(b64 '0.4.0-dev.2')
+arg.expectedCliVersion=$(b64 '0.4.0-dev.3')
 arg.expectedProtocolVersion=$(b64 '1')
 arg.expectedFilename=$(b64 'mograph-jailed-linux-test.sh')
 arg.expectedSha256=$(b64 "$EXPECTED_SHA")
@@ -127,7 +127,7 @@ cat > "$TMP/verify-bad-sha.req" <<REQ
 MOGRAPHJAILED_REQUEST 1
 requestId=ngm1-verify-bad-sha
 command=runtime.verify
-arg.expectedCliVersion=$(b64 '0.4.0-dev.2')
+arg.expectedCliVersion=$(b64 '0.4.0-dev.3')
 arg.expectedProtocolVersion=$(b64 '1')
 arg.expectedSha256=$(b64 "$BAD_SHA")
 REQ
@@ -139,7 +139,7 @@ cat > "$TMP/verify-invalid-sha.req" <<REQ
 MOGRAPHJAILED_REQUEST 1
 requestId=ngm1-verify-invalid-sha
 command=runtime.verify
-arg.expectedCliVersion=$(b64 '0.4.0-dev.2')
+arg.expectedCliVersion=$(b64 '0.4.0-dev.3')
 arg.expectedProtocolVersion=$(b64 '1')
 arg.expectedSha256=$(b64 'not-a-sha')
 REQ
@@ -152,7 +152,7 @@ cat > "$TMP/verify-invalid-filename.req" <<REQ
 MOGRAPHJAILED_REQUEST 1
 requestId=ngm1-verify-invalid-filename
 command=runtime.verify
-arg.expectedCliVersion=$(b64 '0.4.0-dev.2')
+arg.expectedCliVersion=$(b64 '0.4.0-dev.3')
 arg.expectedProtocolVersion=$(b64 '1')
 arg.expectedFilename=$(b64 '/tmp/runtime.zsh')
 REQ
@@ -170,7 +170,7 @@ check grep -q '"system.describe", "runtime.verify"' "$ROOT/integrations/after-ef
 # Registry and runtime implementation are bundled into the production artifact.
 check grep -q '# --- src/core/operations.zsh ---' "$ROOT/dist/mograph-jailed.zsh"
 check grep -q '# --- src/modules/runtime.zsh ---' "$ROOT/dist/mograph-jailed.zsh"
-check grep -q 'MOGRAPHJAILED_CLI_VERSION="0.4.0-dev.2"' "$ROOT/dist/mograph-jailed.zsh"
+check grep -q 'MOGRAPHJAILED_CLI_VERSION="0.4.0-dev.3"' "$ROOT/dist/mograph-jailed.zsh"
 
 printf 'NG-M1 tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

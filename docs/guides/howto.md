@@ -1,5 +1,22 @@
 # How-to guides
 
+## Check a render before it goes out
+
+```text
+$ mj qc render.mov broadcast-us
+```
+
+It checks the codec, size, frame rate, audio and loudness, and exits 1 if a check fails. The built-in specs are broadcast-us, broadcast-eu, web, social-vertical and prores-master; you can also write your own spec file (`mj-man qc`). Set a default once with `mj config set qc_spec broadcast-us`.
+
+## Free disk space
+
+```text
+$ mj space
+$ mj space clean leftovers --yes
+```
+
+`mj space` lists After Effects, Adobe media and Redshift caches by size and flags the ones left over from versions you no longer have. Cleaning takes a cache id, never a path, and refuses while the owning app is running (`mj-man space`).
+
 ## Find projects that use a plugin or effect
 
 First index your receipts (once, and again when new ones arrive):

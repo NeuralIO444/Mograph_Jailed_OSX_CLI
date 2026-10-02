@@ -27,7 +27,7 @@ def make_case(i: int, root: Path):
         lines.append("command=system.describe"); expect_ok = True
     elif slot == 1:
         lines.append("command=runtime.verify")
-        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.2"))
+        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.3"))
         lines.append("arg.expectedProtocolVersion=" + b64(b"1"))
         expect_ok = True
     elif slot == 2:
@@ -35,7 +35,7 @@ def make_case(i: int, root: Path):
         lines.append("command=file.inspect"); lines.append("arg.path=" + b64(str(p).encode())); expect_ok = True
     elif slot == 3:
         lines.append("command=runtime.verify")
-        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.2"))
+        lines.append("arg.expectedCliVersion=" + b64(b"0.4.0-dev.3"))
         lines.append("arg.expectedProtocolVersion=" + b64(b"1"))
         lines.append("arg.expectedSha256=" + b64(b"not-a-sha"))
     elif slot == 4:

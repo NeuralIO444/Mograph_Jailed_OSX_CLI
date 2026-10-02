@@ -12,3 +12,5 @@ Built the handoff folder: .../AE/out/spring_v2.handoff
 ```
 
 The folder holds `project/`, `footage/`, `MANIFEST.json` and a plain-text `README.txt`. Paths must be absolute. Nothing is overwritten; a second run with the same label is refused.
+
+Next: [studio tools](07-studio-tools.md).

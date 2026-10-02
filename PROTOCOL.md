@@ -361,3 +361,19 @@ arg.target=<optional Base64 comp name to restrict the check to>
 - `c4d.lint` returns `MJ_C4D_LINT_1` with rules `C001` missing texture (error), `C002` absolute texture path, `C003` no camera, `C004` odd resolution, `C005` end frame before start (error), `C006` empty output path, `C007` standard materials in a Redshift scene, `C008` renderer is not Redshift or Physical (note), `C009` multi-pass on with no passes (note). Each finding carries `teach: {why, fix}`; the result carries `teaching` before/after snippets, as `expression.lint` does.
 - `bridge.check` returns `MJ_BRIDGE_CHECK_1`. It finds the After Effects layers whose source is the same `.c4d` (matched by file name, case-insensitively) and compares the comp with the scene: `B001` frame rate (error), `B002` resolution, `B003` duration (more than one frame apart), `B004` the layer points at a different path from the scene that was checked (error), `B005` After Effects reports the scene file missing (error). `consistent` is true only when something matched and nothing was found. With no matching layer it warns `NO_MATCHING_LAYER` and compares nothing.
 - Content errors in a receipt are `INVALID_JSON`, `SCHEMA_MISMATCH` and `SCRAPE_TOO_LARGE` with exit 65, as for After Effects scrapes.
+
+## Studio tools, delivery QC and After Effects jobs (0.4.0-dev.3)
+
+Seven additive operations; no existing contract changed.
+
+| Operation | Args (required*) | Writes | Schema |
+|---|---|---|---|
+| `project.preflight` | `path`* (scrape) | nothing | `MJ_PREFLIGHT_1` |
+| `cache.inspect` | none | nothing | `MJ_CACHE_INSPECT_1` |
+| `cache.clean` | `target`* (cache id), `format` (`report` default, `delete`) | empties one known cache folder | `MJ_CACHE_CLEAN_1` |
+| `media.qc` | `path`*, `format` (built-in spec) or `input` (spec file) | nothing | `MJ_MEDIA_QC_1` |
+| `project.extract` | `path`* (.aep), `input`* (scrape), `target`* (comp ids, comma separated), `output`*, `label`* | a new `<label>.mjjob` folder | `MJ_AE_JOB_PLAN_1` |
+| `project.conform` | `input`* (scrape), `spec`, `format` (`plan` default, `job`), and for a job `path`, `output`, `label` | a job only with `format=job` | `MJ_CONFORM_PLAN_1` |
+| `project.jobcheck` | `path`* (job folder) | nothing | `MJ_AE_JOB_CHECK_1` |
+
+`spec` is a new argument name. A job folder holds `before.aep`, `plan.json` (`MJ_AE_JOB_1`) and `run.jsx`; After Effects writes `result.aep` and `result.json` (`MJ_AE_JOB_RESULT_1`). `cache.clean` has the new mutation class `CACHE_DELETE`. New error codes: `INVALID_SPEC` (65), `HOST_BUSY` (74), `POLICY_DENIED` (77); new warnings are listed in `docs/man/errors.md`.

@@ -177,6 +177,60 @@ README.txt
 footage
 project
 
+##### studio
+$ mj check "Spring Promo"
+Spring Promo.aep: 4 things to fix.
+
+  !! Expressions: 1 error, 0 warnings.
+  !! Health: 80 out of 100 (needs a look).
+  !! Fonts: 2 missing (Brandon Grotesque, Inter).
+  !! Footage: 1 missing (logo.psd).
+  ?? Third-party effects to confirm: S_Glow.
+
+Details: mj lint, mj health, mj explain on the preflight (or mj check --details).
+
+$ mj timeline "Spring Promo"
+Spring Promo.aep: 2 scrapes and 1 snapshot, oldest first (times are UTC).
+  <date> <time>   health  92   first scrape
+  <date> <time>   health  80   comp "Outro" added (0 layers); comp "Main": frame rate 24 -> 30; layer "Flash" added to "Main"; and 3 more
+  <date> <time>   snapshot   26b2effec987
+
+Get a version back as a new file:  mj project.restore path=<snapshot> output=<folder>
+
+$ mj conform "Spring Promo"
+Spring Promo.aep against MographJailed studio default: 4 changes.
+  Rename comps (1):
+    Lower Third -> PRE_Lower_Third
+  Rename layers (3):
+    Main / Title -> TXT_Title
+    Main / Lower Third -> PRE_Lower_Third
+    Lower Third / Name -> TXT_Name
+
+This is a plan; nothing was changed. To make it a job:  mj conform <project> --apply   (or --run to send it to After Effects)
+
+Heads up:
+  - This scrape is from scraper 1.0; labels, folders, solids and adjustment layers need
+    scraper 1.1, so only names and expressions are planned.
+
+$ mj extract "Spring Promo" "Lower Third" --label lower-third
+Made an extract job: "Lower Third" from Spring Promo.aep.
+  The new project keeps 1 comp and 1 footage item; 2 other comps and 1 footage item go.
+  Job folder: ~/AE/versions/lower-third.mjjob
+
+Your project is not touched: After Effects works on before.aep in the job folder and saves result.aep.
+Next:  mj ae run ~/AE/versions/lower-third.mjjob
+   or  in After Effects, File > Scripts > Run Script File, and pick run.jsx in the job folder.
+Then:  mj ae verify ~/AE/versions/lower-third.mjjob
+
+$ mj ae verify ~/AE/versions/lower-third.mjjob
+The extract job "lower-third" has not been run in After Effects yet.
+  ok The original project is byte-for-byte what it was when the job was made.
+  ok before.aep is still the copy the job started from.
+  !! The job has not been run in After Effects yet.
+
+$ mj space
+No cache folders with anything in them were found.
+
 ##### status
 $ mj status
 MJ - idle

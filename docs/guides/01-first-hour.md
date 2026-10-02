@@ -6,7 +6,7 @@ You will check that the Mac is ready, tell `mj` where your folders are, and save
 
 ```text
 $ mj doctor
-This Mac is ready. All 49 operations can run.
+This Mac is ready. All 56 operations can run.
 ```
 
 If something is missing, `mj doctor` says what and how to fix it.
