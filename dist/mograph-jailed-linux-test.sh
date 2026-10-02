@@ -3890,7 +3890,7 @@ data = {
         + ([{"code": "LAYERS_TRUNCATED", "message": "Some comps have more layers than the scraper records; their layer counts are lower bounds."}]
            if any(isinstance(c, dict) and c.get("layersTruncated") for c in doc["comps"]) else [])
         + ([{"code": "FOOTAGE_TRUNCATED", "message": "The scrape holds only the first footage items of a larger project."}] if doc.get("footageTruncated") else [])
-        + ([{"code": "FOOTAGE_MISSING", "message": "%d footage items are missing." % len(footage_missing)}] if footage_missing else [])
+        + ([{"code": "FOOTAGE_MISSING", "message": "Missing footage items: %d." % len(footage_missing)}] if footage_missing else [])
     ),
     "sourceUnchanged": _ident(path) == _id0,
 }
@@ -4590,7 +4590,7 @@ def main():
         "frames": results,
         "extraFrames": extra,
         "signatureDownscaled": downscaled if changed else golden.get("signatureDownscaled"),
-        "_warnings": ([{"code": "EXTRA_FRAMES", "message": "%d frames are not in the golden record and were not checked." % len(extra)}] if extra else []),
+        "_warnings": ([{"code": "EXTRA_FRAMES", "message": "Frames not in the golden record, so not checked: %d." % len(extra)}] if extra else []),
         "sourceUnchanged": tree_id(d) == id0,
     }}))
 
@@ -5010,8 +5010,8 @@ print(json.dumps({"ok": True, "data": {
     "singlePointsOfFailure": spof,
     "note": "Fonts are project-wide in MJ_PROJECT_SCRAPE_1; comps with usesText depend on them. Footage on network or unknown storage is not checked.",
     "sourceUnchanged": tree_id(os.environ["MJ_SCRAPE"]) == id0,
-    "_warnings": ([{"code": "MISSING_FOOTAGE", "message": "%d footage files are missing." % len(missing)}] if missing else [])
-                 + ([{"code": "FOOTAGE_UNVERIFIED", "message": "%d footage files are on network or unknown storage and were not checked." % len(unverified)}] if unverified else []),
+    "_warnings": ([{"code": "MISSING_FOOTAGE", "message": "Missing footage files: %d." % len(missing)}] if missing else [])
+                 + ([{"code": "FOOTAGE_UNVERIFIED", "message": "Footage files on network or unknown storage, not checked: %d." % len(unverified)}] if unverified else []),
 }}))
 PY_DEPS
 ) || true
@@ -5151,8 +5151,8 @@ print(json.dumps({"ok": True, "data": {
     "effectCount": len(manifest["effects"]),
     "projectMatchesScrape": manifest["project"]["matchesScrape"],
     "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
-    "_warnings": ([{"code": "MISSING_FOOTAGE", "message": "%d footage files are missing and were not included." % len(missing)}] if missing else [])
-                 + ([{"code": "FOOTAGE_NOT_COLLECTED", "message": "%d footage files are on network or unknown storage and were not copied." % len(skipped)}] if skipped else [])
+    "_warnings": ([{"code": "MISSING_FOOTAGE", "message": "Missing footage files, not included: %d." % len(missing)}] if missing else [])
+                 + ([{"code": "FOOTAGE_NOT_COLLECTED", "message": "Footage files on network or unknown storage, not copied: %d." % len(skipped)}] if skipped else [])
                  + ([{"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape was taken from a different project name than the .aep being packaged."}] if not manifest["project"]["matchesScrape"] else []),
 }}))
 PY_HANDOFF
@@ -5444,7 +5444,7 @@ print(json.dumps({"ok": True, "data": dict(counts, **{
     "schema": "MJ_INDEX_ADD_1", "path": root, "store": os.environ["MJ_STORE"],
     "filesExamined": len(candidates), "indexedBySchema": by_schema, "problems": problems,
     "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
-    "_warnings": ([{"code": "FILES_UNREADABLE", "message": "%d files could not be indexed (see problems)." % len(problems)}] if problems else []),
+    "_warnings": ([{"code": "FILES_UNREADABLE", "message": "Files that could not be indexed: %d (see problems)." % len(problems)}] if problems else []),
 })}))
 PY_INDEX_ADD
 ) || true
@@ -5515,8 +5515,8 @@ print(json.dumps({"ok": True, "data": {
     "projects": count("SELECT count(*) FROM projects"),
     "presetVersions": count("SELECT count(*) FROM presets"), "presetBlobs": len(blobs),
     "staleDocs": stale[:100], "corruptPresetBlobs": corrupt,
-    "_warnings": ([{"code": "STALE_RECEIPTS", "message": "%d indexed receipts no longer exist on disk." % len(stale)}] if stale else [])
-                 + ([{"code": "PRESET_BLOB_CORRUPT", "message": "%d stored presets failed their hash check." % len(corrupt)}] if corrupt else []),
+    "_warnings": ([{"code": "STALE_RECEIPTS", "message": "Indexed receipts that no longer exist on disk: %d." % len(stale)}] if stale else [])
+                 + ([{"code": "PRESET_BLOB_CORRUPT", "message": "Stored presets that failed their hash check: %d." % len(corrupt)}] if corrupt else []),
 }}))
 PY_INDEX_VERIFY
 ) || true
@@ -6013,14 +6013,14 @@ comps = []
 # footage (35): 12 per missing item, 3 per item not linked to a file
 lost = min(35, 12 * len(missing) + 3 * len(unlinked))
 comps.append({"name": "footage", "max": 35, "points": 35 - lost, "measured": True,
-              "why": ("%d missing and %d unlinked footage items." % (len(missing), len(unlinked))) if lost else "All footage is linked and present.",
+              "why": ("Missing footage items: %d; unlinked: %d." % (len(missing), len(unlinked))) if lost else "All footage is linked and present.",
               "findings": [{"kind": "missing", "name": n} for n in missing[:20]] + [{"kind": "unlinked", "name": n} for n in unlinked[:20]]})
 
 # expressions (40): 8 per error, 3 per warning (notes cost nothing)
 errs, warns = lint.get("errors", 0), lint.get("warnings", 0)
 lost = min(40, 8 * errs + 3 * warns)
 comps.append({"name": "expressions", "max": 40, "points": 40 - lost, "measured": True,
-              "why": ("%d expression errors and %d warnings." % (errs, warns)) if lost else "No expression problems.",
+              "why": ("Expression errors: %d; warnings: %d." % (errs, warns)) if lost else "No expression problems.",
               "findings": [{"code": f["code"], "severity": f["severity"], "comp": f["comp"], "layer": f["layer"], "propertyPath": f["propertyPath"]}
                            for f in lint.get("findings", []) if f["severity"] in ("error", "warning")][:20]})
 
@@ -6149,7 +6149,7 @@ absolute = [t.get("path", "") for t in tex if t.get("absolute") and not t.get("m
 cams = [c for c in d.get("cameras", []) if isinstance(c, dict)]
 warnings = []
 if missing:
-    warnings.append({"code": "TEXTURES_MISSING", "message": "%d textures are missing." % len(missing)})
+    warnings.append({"code": "TEXTURES_MISSING", "message": "Missing textures: %d." % len(missing)})
 if d.get("truncated"):
     warnings.append({"code": "SCENE_TRUNCATED", "message": "The scene held more textures, materials or cameras than the scraper records; counts are lower bounds."})
 print(json.dumps({"ok": True, "data": {
@@ -6225,7 +6225,7 @@ if not (d.get("outputPath") or "").strip():
 mats = [m for m in d.get("materials", []) if isinstance(m, dict)]
 std = sum(1 for m in mats if m.get("type") == "standard")
 if d["renderer"] == "redshift" and std:
-    add("C007", "warning", "%d standard materials in a Redshift scene." % std)
+    add("C007", "warning", "%d standard material%s in a Redshift scene." % (std, "" if std == 1 else "s"))
 if d["renderer"] in ("standard", "other"):
     add("C008", "info", "The scene uses the %s renderer, not Redshift or Physical." % d["renderer"])
 if d.get("multipass") and not d.get("passes"):

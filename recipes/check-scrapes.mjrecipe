@@ -1,0 +1,4 @@
+# Check one scrape receipt: summarize it, then lint its expressions.
+#   mj batch recipes/check-scrapes.mjrecipe ~/AE_Receipts
+project.ingest path={{file}}
+expression.lint path={{file}}

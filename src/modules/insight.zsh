@@ -228,14 +228,14 @@ comps = []
 # footage (35): 12 per missing item, 3 per item not linked to a file
 lost = min(35, 12 * len(missing) + 3 * len(unlinked))
 comps.append({"name": "footage", "max": 35, "points": 35 - lost, "measured": True,
-              "why": ("%d missing and %d unlinked footage items." % (len(missing), len(unlinked))) if lost else "All footage is linked and present.",
+              "why": ("Missing footage items: %d; unlinked: %d." % (len(missing), len(unlinked))) if lost else "All footage is linked and present.",
               "findings": [{"kind": "missing", "name": n} for n in missing[:20]] + [{"kind": "unlinked", "name": n} for n in unlinked[:20]]})
 
 # expressions (40): 8 per error, 3 per warning (notes cost nothing)
 errs, warns = lint.get("errors", 0), lint.get("warnings", 0)
 lost = min(40, 8 * errs + 3 * warns)
 comps.append({"name": "expressions", "max": 40, "points": 40 - lost, "measured": True,
-              "why": ("%d expression errors and %d warnings." % (errs, warns)) if lost else "No expression problems.",
+              "why": ("Expression errors: %d; warnings: %d." % (errs, warns)) if lost else "No expression problems.",
               "findings": [{"code": f["code"], "severity": f["severity"], "comp": f["comp"], "layer": f["layer"], "propertyPath": f["propertyPath"]}
                            for f in lint.get("findings", []) if f["severity"] in ("error", "warning")][:20]})
 

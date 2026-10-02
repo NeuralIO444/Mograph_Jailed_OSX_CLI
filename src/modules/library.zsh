@@ -281,7 +281,7 @@ print(json.dumps({"ok": True, "data": dict(counts, **{
     "schema": "MJ_INDEX_ADD_1", "path": root, "store": os.environ["MJ_STORE"],
     "filesExamined": len(candidates), "indexedBySchema": by_schema, "problems": problems,
     "sourceUnchanged": all(tree_id(p) == v for p, v in ids0.items()),
-    "_warnings": ([{"code": "FILES_UNREADABLE", "message": "%d files could not be indexed (see problems)." % len(problems)}] if problems else []),
+    "_warnings": ([{"code": "FILES_UNREADABLE", "message": "Files that could not be indexed: %d (see problems)." % len(problems)}] if problems else []),
 })}))
 PY_INDEX_ADD
 ) || true
@@ -352,8 +352,8 @@ print(json.dumps({"ok": True, "data": {
     "projects": count("SELECT count(*) FROM projects"),
     "presetVersions": count("SELECT count(*) FROM presets"), "presetBlobs": len(blobs),
     "staleDocs": stale[:100], "corruptPresetBlobs": corrupt,
-    "_warnings": ([{"code": "STALE_RECEIPTS", "message": "%d indexed receipts no longer exist on disk." % len(stale)}] if stale else [])
-                 + ([{"code": "PRESET_BLOB_CORRUPT", "message": "%d stored presets failed their hash check." % len(corrupt)}] if corrupt else []),
+    "_warnings": ([{"code": "STALE_RECEIPTS", "message": "Indexed receipts that no longer exist on disk: %d." % len(stale)}] if stale else [])
+                 + ([{"code": "PRESET_BLOB_CORRUPT", "message": "Stored presets that failed their hash check: %d." % len(corrupt)}] if corrupt else []),
 }}))
 PY_INDEX_VERIFY
 ) || true

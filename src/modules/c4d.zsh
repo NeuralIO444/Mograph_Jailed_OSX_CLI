@@ -73,7 +73,7 @@ absolute = [t.get("path", "") for t in tex if t.get("absolute") and not t.get("m
 cams = [c for c in d.get("cameras", []) if isinstance(c, dict)]
 warnings = []
 if missing:
-    warnings.append({"code": "TEXTURES_MISSING", "message": "%d textures are missing." % len(missing)})
+    warnings.append({"code": "TEXTURES_MISSING", "message": "Missing textures: %d." % len(missing)})
 if d.get("truncated"):
     warnings.append({"code": "SCENE_TRUNCATED", "message": "The scene held more textures, materials or cameras than the scraper records; counts are lower bounds."})
 print(json.dumps({"ok": True, "data": {
@@ -149,7 +149,7 @@ if not (d.get("outputPath") or "").strip():
 mats = [m for m in d.get("materials", []) if isinstance(m, dict)]
 std = sum(1 for m in mats if m.get("type") == "standard")
 if d["renderer"] == "redshift" and std:
-    add("C007", "warning", "%d standard materials in a Redshift scene." % std)
+    add("C007", "warning", "%d standard material%s in a Redshift scene." % (std, "" if std == 1 else "s"))
 if d["renderer"] in ("standard", "other"):
     add("C008", "info", "The scene uses the %s renderer, not Redshift or Physical." % d["renderer"])
 if d.get("multipass") and not d.get("passes"):

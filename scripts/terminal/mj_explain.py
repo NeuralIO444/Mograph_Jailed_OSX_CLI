@@ -33,7 +33,9 @@ def secs(s):
 
 def mb(n):
     n = float(n or 0)
-    return "%.1f MB" % (n / 1048576) if n >= 1048576 else "%d KB" % round(n / 1024)
+    if n >= 1048576:
+        return "%.1f MB" % (n / 1048576)
+    return "%d KB" % round(n / 1024) if n >= 1024 else "%d bytes" % n
 
 
 def error_help(code):
@@ -115,8 +117,8 @@ def explain_lint(d):
         ex = teaching.get(f.get("code"))
         if ex and f.get("code") not in seen:
             seen.add(f["code"])
-            out.append("  Before:  " + ex["before"])
-            out.append("  After:   " + ex["after"])
+            out.append("  Example, before:  " + ex["before"])
+            out.append("  Example, after:   " + ex["after"])
     if d.get("findingsTruncated"):
         out += ["", "More problems exist than are listed here; fix these and run it again."]
     return out
@@ -201,7 +203,7 @@ def explain_health(d):
         out.append("  Nothing to fix.")
     if d.get("trend"):
         t = d["trend"]
-        out.append("Trend over %s: %s" % (plural(len(t), "snapshot"), "improving" if t[-1] > t[0] else "getting worse" if t[-1] < t[0] else "steady"))
+        out.append("Trend over %s: %s" % (plural(len(t), "recorded score"), "improving" if t[-1] > t[0] else "getting worse" if t[-1] < t[0] else "steady"))
     out.append("Score formula version %s." % d.get("formulaVersion"))
     return out
 
@@ -211,12 +213,15 @@ def explain_diff(d):
     s = d.get("summary", {})
     if d.get("identical"):
         return out + ["No differences."]
-    for key, label in (("compsAdded", "comps added"), ("compsRemoved", "comps removed"), ("compsChanged", "comps changed"), ("layersAdded", "layers added"),
-                       ("layersRemoved", "layers removed"), ("layersChanged", "layers changed"), ("layersMoved", "layers moved in the stack"), ("expressionsChanged", "expressions changed"),
-                       ("footageAdded", "footage added"), ("footageRemoved", "footage removed"), ("footageMissingChanged", "footage that went missing or came back"), ("footageMoved", "footage files moved"),
-                       ("fontsAdded", "fonts added"), ("fontsRemoved", "fonts removed"), ("effectsAdded", "effect types added"), ("effectsRemoved", "effect types removed")):
+    for key, one, many in (("compsAdded", "comp added", "comps added"), ("compsRemoved", "comp removed", "comps removed"), ("compsChanged", "comp changed", "comps changed"),
+                           ("layersAdded", "layer added", "layers added"), ("layersRemoved", "layer removed", "layers removed"), ("layersChanged", "layer changed", "layers changed"),
+                           ("layersMoved", "layer moved in the stack", "layers moved in the stack"), ("expressionsChanged", "expression changed", "expressions changed"),
+                           ("footageAdded", "footage item added", "footage items added"), ("footageRemoved", "footage item removed", "footage items removed"),
+                           ("footageMissingChanged", "footage item went missing or came back", "footage items went missing or came back"), ("footageMoved", "footage file moved", "footage files moved"),
+                           ("fontsAdded", "font added", "fonts added"), ("fontsRemoved", "font removed", "fonts removed"),
+                           ("effectsAdded", "effect type added", "effect types added"), ("effectsRemoved", "effect type removed", "effect types removed")):
         if s.get(key):
-            out.append("  %d %s" % (s[key], label))
+            out.append("  %d %s" % (s[key], one if s[key] == 1 else many))
     for ch in d.get("changes", [])[:12]:
         out.append("  - " + ch["text"])
     if d.get("changesTruncated"):
@@ -307,7 +312,7 @@ def explain_c4d_lint(d):
         out += ["", {"error": "Error", "warning": "Warning", "info": "Note"}[f["severity"]] + ": " + f["message"], wrap("Why it matters: " + f["teach"]["why"]), wrap("Fix: " + f["teach"]["fix"])]
         ex = (d.get("teaching") or {}).get(f["code"])
         if ex and f["code"] not in seen:
-            seen.add(f["code"]); out += ["  Before:  " + ex["before"], "  After:   " + ex["after"]]
+            seen.add(f["code"]); out += ["  Example, before:  " + ex["before"], "  Example, after:   " + ex["after"]]
     return out
 
 
@@ -361,7 +366,7 @@ def explain(doc):
         return ["I do not recognise this file (schema: %s)." % doc.get("schema", "none")], False
     lines = fn(doc)
     if warnings:
-        lines += ["", "Heads up:"] + [wrap("%s" % w["message"], "  - ") for w in warnings]
+        lines += ["", "Heads up:"] + [textwrap.fill(w["message"], width=88, initial_indent="  - ", subsequent_indent="    ") for w in warnings]
     return lines, True
 
 

@@ -146,7 +146,7 @@ data = {
         + ([{"code": "LAYERS_TRUNCATED", "message": "Some comps have more layers than the scraper records; their layer counts are lower bounds."}]
            if any(isinstance(c, dict) and c.get("layersTruncated") for c in doc["comps"]) else [])
         + ([{"code": "FOOTAGE_TRUNCATED", "message": "The scrape holds only the first footage items of a larger project."}] if doc.get("footageTruncated") else [])
-        + ([{"code": "FOOTAGE_MISSING", "message": "%d footage items are missing." % len(footage_missing)}] if footage_missing else [])
+        + ([{"code": "FOOTAGE_MISSING", "message": "Missing footage items: %d." % len(footage_missing)}] if footage_missing else [])
     ),
     "sourceUnchanged": _ident(path) == _id0,
 }

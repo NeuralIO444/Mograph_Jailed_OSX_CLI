@@ -179,7 +179,10 @@ _mj_versions() {
         [ -z "$name" ] || [[ "${(L)stem}" == *"${(L)name}"* ]] || continue
         zmodload -F zsh/stat b:zstat 2>/dev/null
         zstat -A when -F '%Y-%m-%d %H:%M' +mtime -- "$f"; zstat -A size +size -- "$f"
-        rows+=("$(printf '%-28s %s   %8.1f MB   %s' "$stem" "${when[1]}" "$(( ${size[1]} / 1048576.0 ))" "${match[3]}")")
+        local hsize
+        if (( ${size[1]} >= 1048576 )); then hsize=$(printf '%.1f MB' $(( ${size[1]} / 1048576.0 )));
+        elif (( ${size[1]} >= 1024 )); then hsize=$(printf '%d KB' $(( ${size[1]} / 1024 ))); else hsize="${size[1]} bytes"; fi
+        rows+=("$(printf '%-28s %s   %10s   %s' "$stem" "${when[1]}" "$hsize" "${match[3]}")")
     done
     [ ${#rows} -gt 0 ] || { print "No versions${name:+ matching \"$name\"} in $d yet."; return 0; }
     print "Versions in $d (newest first):"; printf '  %s\n' "${rows[@]}"
@@ -386,9 +389,14 @@ USAGE
             local da db
             if [ "${1:-last}" = last ] && [ -z "${2:-}" ]; then
                 local rd; rd=$(_mj_need_dir receipts_dir receipts) || return $?
-                local -a two; two=("$rd"/*.scrape.json(.Nom[1,2]))
-                [ ${#two} -eq 2 ] || { print -u2 "mj: need at least two scrape receipts in $rd to compare"; return 66; }
-                da="${two[2]}"; db="${two[1]}"          # older first
+                # The newest scrape, and the newest earlier scrape of the SAME project.
+                local -a all; all=("$rd"/*.scrape.json(.Nom)); local pp cand
+                [ ${#all} -ge 1 ] || { print -u2 "mj: no scrape receipts in $rd yet"; return 66; }
+                db="${all[1]}"; pp=$(/usr/bin/jq -r '.projectPath // empty' "$db" 2>/dev/null); da=""
+                for cand in "${all[@]:1}"; do
+                    [ "$(/usr/bin/jq -r '.projectPath // empty' "$cand" 2>/dev/null)" = "$pp" ] && { da="$cand"; break; }
+                done
+                [ -n "$da" ] || { print -u2 "mj: need two scrapes of the same project to compare; the newest is of ${pp:-an unknown project}, and there is no earlier one"; return 66; }
             else
                 [ -n "${2:-}" ] || { print -u2 "usage: mj diff last   |   mj diff <older scrape> <newer scrape>"; return 64; }
                 da=$(_mj_resolve_scrape "$1") || return $?; db=$(_mj_resolve_scrape "$2") || return $?

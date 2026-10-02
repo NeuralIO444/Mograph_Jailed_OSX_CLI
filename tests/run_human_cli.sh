@@ -204,7 +204,7 @@ check grep -q 'Missing: logo.psd' "$TMP/x1.txt"
 explain "$TMP/la.json" > "$TMP/x2.txt"
 check grep -q 'Found 6 problems: 2 errors, 3 warnings, 1 note' "$TMP/x2.txt"
 check grep -q 'Why it matters:' "$TMP/x2.txt"
-check grep -q 'Before:' "$TMP/x2.txt"
+check grep -q 'Example, before:' "$TMP/x2.txt"
 check bash -c "! grep -Eq '^[[:space:]]*[{\"]' '$TMP/x2.txt'"             # plain language: no JSON lines
 explain "$TMP/df.json" > "$TMP/x3.txt"
 check grep -q 'frame rate 24 -> 30' "$TMP/x3.txt"
@@ -214,7 +214,7 @@ check grep -q 'health: 73 out of 100 (needs a look)' "$TMP/x4.txt"
 check grep -q 'footage: lost 12 of 35 points' "$TMP/x4.txt"
 check grep -q 'Score formula version 1' "$TMP/x4.txt"
 explain "$TMP/r2.json" > "$TMP/x4b.txt"
-check grep -q 'Trend over 2 snapshots: getting worse' "$TMP/x4b.txt"
+check grep -q 'Trend over 2 recorded scores: getting worse' "$TMP/x4b.txt"
 explain "$TMP/dfs.json" > "$TMP/x5.txt"
 check grep -q 'No differences' "$TMP/x5.txt"
 run "$TMP/x_err.json" file.inspect "path=relative"
@@ -376,7 +376,7 @@ check grep -q 'Other_Second.aep' "$TMP/hs3.txt"
 check grep -q 'no project found for "nonexistent"' "$TMP/hs4.txt"
 # versions
 mjz "mj versions" > "$TMP/hv1.txt"
-check grep -Eq 'Spring Promo +20[0-9-]+ [0-9:]+ +[0-9.]+ MB +[0-9a-f]{12}' "$TMP/hv1.txt"
+check grep -Eq 'Spring Promo +20[0-9-]+ [0-9:]+ +[0-9]+ (bytes|KB|MB) +[0-9a-f]{12}' "$TMP/hv1.txt"
 mjz "mj versions spring" > "$TMP/hv2.txt"; check bash -c "grep -q 'Spring Promo' '$TMP/hv2.txt' && ! grep -q Other_Project '$TMP/hv2.txt'"
 mjz "mj versions nothing-like-this" | has -q 'No versions matching' && pass=$((pass+1)) || { echo "FAIL: versions none" >&2; fail=$((fail+1)); }
 # lint / health / diff / explain from remembered receipts
@@ -394,7 +394,7 @@ check test ! -e "$TMP/store/index.sqlite"                                       
 mjz "mj health last --record" > "$TMP/hh2.txt"
 check test -e "$TMP/store/index.sqlite"
 mjz "mj health '$TMP/hv/receipts/hero.20261001T090000Z.scrape.json' --record" > "$TMP/hh3.txt"
-check grep -q 'Trend over 2 snapshots' "$TMP/hh3.txt"
+check grep -q 'Trend over 2 recorded scores' "$TMP/hh3.txt"
 mjz "mj diff last" > "$TMP/hd.txt"
 check grep -q 'frame rate 24 -> 30' "$TMP/hd.txt"
 check grep -q 'hero.20261001T090000Z' "$TMP/hd.txt"                                 # older first
@@ -579,7 +579,7 @@ check jq -e '.data.summary.layersMoved>=2 and .data.identical==false' "$TMP/dm2.
 run "$TMP/dm3.json" project.diff "path=$TMP/sc/m4.json" "input=$TMP/sc/m5.json"
 check jq -e '.data.summary.footageMoved==1 and .data.identical==false and (.data.changes[0].text|test("moved"))' "$TMP/dm3.json"
 python3 "$EXPL" "$TMP/dm3.json" > "$TMP/dm3.txt"
-check bash -c "! grep -q 'No differences' '$TMP/dm3.txt' && grep -q 'footage files moved' '$TMP/dm3.txt'"
+check bash -c "! grep -q 'No differences' '$TMP/dm3.txt' && grep -q '1 footage file moved' '$TMP/dm3.txt'"
 
 # F7: a score built from a partial scrape says so
 python3 -c "
@@ -629,6 +629,38 @@ check cmp -s "$(jq -r .data.restoredPath "$TMP/c4w/rs.json")" "$TMP/c4w/watch/Lo
 mjz "mj config set versions_dir '$TMP/c4w/v'" >/dev/null; mjz "mj config set watch_dir '$TMP/c4w/watch'" >/dev/null
 mjz "mj versions" > "$TMP/c4v.txt"; check grep -Eq 'Logo Sting\.c4d +20[0-9-]+ [0-9:]+' "$TMP/c4v.txt"                  # listed with its kind
 mjz "mj snapshot 'logo sting'" > "$TMP/c4s.txt" 2>&1; check grep -q 'Nothing to save: Logo Sting.c4d has not changed' "$TMP/c4s.txt"      # found by name
+export MJ_CONFIG="$TMP/cfg/config"
+
+# ================= found by running the tutorials for real =================
+# mj diff last pairs the newest scrape with the previous scrape of the SAME project, not just the previous file
+export MJ_CONFIG="$TMP/hcfg/config"
+mkdir -p "$TMP/tut/rc"; python3 "$ROOT/tests/support/make_tutorial_fixtures.py" "$TMP/tut" >/dev/null
+rm -f "$TMP/tut/receipts/summer."* "$TMP/tut/receipts/logo."*
+mjz "mj config set receipts_dir '$TMP/tut/receipts'" >/dev/null
+cp "$TMP/tut/receipts/spring.20261001T163000Z.scrape.json" "$TMP/tut/receipts/other.20261001T170000Z.scrape.json"
+python3 - "$TMP/tut/receipts/other.20261001T170000Z.scrape.json" <<'PY'
+import json, sys; p = sys.argv[1]; d = json.load(open(p)); d["projectPath"] = "/elsewhere/Other.aep"; d["projectName"] = "Other.aep"; json.dump(d, open(p, "w"))
+PY
+touch -t 202610011630 "$TMP/tut/receipts/spring.20261001T090000Z.scrape.json" "$TMP/tut/receipts/spring.20261001T163000Z.scrape.json"; touch -t 202610011700 "$TMP/tut/receipts/other.20261001T170000Z.scrape.json"
+touch -t 202610010900 "$TMP/tut/receipts/spring.20261001T090000Z.scrape.json"
+mjz "mj diff last" > "$TMP/dl1.txt" 2>"$TMP/dl1.err" || true
+check grep -q 'need two scrapes of the same project' "$TMP/dl1.err"                         # newest is "Other": no earlier scrape of it
+rm "$TMP/tut/receipts/other.20261001T170000Z.scrape.json"
+mjz "mj diff last" > "$TMP/dl2.txt"
+check grep -q 'Comparing spring.20261001T090000Z.scrape.json with spring.20261001T163000Z.scrape.json' "$TMP/dl2.txt"
+check grep -q '1 comp added' "$TMP/dl2.txt"; check grep -q '1 comp changed' "$TMP/dl2.txt"; check bash -c "! grep -q '1 comps' '$TMP/dl2.txt'"
+check bash -c "! grep -q 'Heads up' '$TMP/dl2.txt'"                                           # same project: no warning
+cp "$TMP/tut/receipts/spring.20261001T090000Z.scrape.json" "$TMP/tut/receipts/diffproj.json"
+python3 -c "
+import json; d=json.load(open('$TMP/tut/receipts/diffproj.json')); d['projectPath']='/x/Other.aep'; json.dump(d, open('$TMP/tut/receipts/diffproj.json','w'))"
+mjz "mj diff '$TMP/tut/receipts/diffproj.json' '$TMP/tut/receipts/spring.20261001T163000Z.scrape.json'" > "$TMP/dl3.txt" 2>&1 || true
+check bash -c "sed -n '/Heads up/,\$p' '$TMP/dl3.txt' | grep -c '^  - ' | grep -qx 1"       # one bullet for the warning, not one per wrapped line
+# sizes read naturally for tiny files; counts and singular/plural in plain language
+printf 'tiny' > "$TMP/tut/projects/Tiny.aep" 2>/dev/null || { mkdir -p "$TMP/tut/projects"; printf 'tiny' > "$TMP/tut/projects/Tiny.aep"; }
+mkdir -p "$TMP/tut/versions"
+mjz "mj config set versions_dir '$TMP/tut/versions'" >/dev/null; mjz "mj config set watch_dir '$TMP/tut/projects'" >/dev/null
+mjz "mj snapshot Tiny" > "$TMP/dl4.txt"; check grep -q '4 bytes copied' "$TMP/dl4.txt"
+mjz "mj versions" > "$TMP/dl5.txt"; check grep -Eq 'Tiny +20[0-9-]+ [0-9:]+ +4 bytes' "$TMP/dl5.txt"
 export MJ_CONFIG="$TMP/cfg/config"
 
 # ================= folder-wide batches =================

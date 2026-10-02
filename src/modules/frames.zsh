@@ -235,7 +235,7 @@ def main():
         "frames": results,
         "extraFrames": extra,
         "signatureDownscaled": downscaled if changed else golden.get("signatureDownscaled"),
-        "_warnings": ([{"code": "EXTRA_FRAMES", "message": "%d frames are not in the golden record and were not checked." % len(extra)}] if extra else []),
+        "_warnings": ([{"code": "EXTRA_FRAMES", "message": "Frames not in the golden record, so not checked: %d." % len(extra)}] if extra else []),
         "sourceUnchanged": tree_id(d) == id0,
     }}))
 

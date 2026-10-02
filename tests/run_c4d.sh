@@ -106,7 +106,7 @@ check jq -e '.error.code=="SCHEMA_MISMATCH"' "$TMP/e8.json"                     
 # ---------- plain language ----------
 python3 "$EXPL" "$TMP/i1.json" > "$TMP/x1.txt";  check grep -q 'hero.c4d (Cinema 4D 2026.3, redshift renderer)' "$TMP/x1.txt"; check grep -q '1920 x 1080 at 24 fps, frames 0 to 47 (48 frames, 2.00 seconds)' "$TMP/x1.txt"
 python3 "$EXPL" "$TMP/i2.json" > "$TMP/x2.txt";  check grep -q '1 missing (tex/gone.png)' "$TMP/x2.txt"; check grep -q 'Heads up' "$TMP/x2.txt"
-python3 "$EXPL" "$TMP/l2.json" > "$TMP/x3.txt";  check grep -q 'Found 8 problems: 2 errors, 5 warnings, 1 note' "$TMP/x3.txt"; check grep -q 'Why it matters:' "$TMP/x3.txt"; check grep -q 'Before:' "$TMP/x3.txt"
+python3 "$EXPL" "$TMP/l2.json" > "$TMP/x3.txt";  check grep -q 'Found 8 problems: 2 errors, 5 warnings, 1 note' "$TMP/x3.txt"; check grep -q '2 standard materials in a Redshift scene' "$TMP/x3.txt"; check grep -q 'Why it matters:' "$TMP/x3.txt"; check grep -q 'Example, before:' "$TMP/x3.txt"
 python3 "$EXPL" "$TMP/l1.json" > "$TMP/x4.txt";  check grep -q 'No problems found' "$TMP/x4.txt"
 python3 "$EXPL" "$TMP/b1.json" > "$TMP/x5.txt";  check grep -q 'Everything matches' "$TMP/x5.txt"
 python3 "$EXPL" "$TMP/b2.json" > "$TMP/x6.txt";  check grep -q 'Comp "Main" runs at 30 fps; the scene is 24 fps' "$TMP/x6.txt"
