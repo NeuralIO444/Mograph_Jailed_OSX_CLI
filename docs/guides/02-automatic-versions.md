@@ -2,9 +2,9 @@
 
 Instead of remembering to snapshot, let the watcher do it.
 
-1. Install the watcher once with the designer tool: `zsh tools/install-designer.zsh`. It sets up a per-user LaunchAgent (no daemon, no admin rights).
-2. Make sure `watch_dir` and `versions_dir` are set ([tutorial 1](01-first-hour.md)).
-3. Check it from the terminal: `mj watch` shows what is watched; `mj status` shows the one-line state.
+1. Make sure `watch_dir` and `versions_dir` are set ([tutorial 1](01-first-hour.md)).
+2. Turn it on: `mj watch on`. This installs a per-user LaunchAgent (no daemon, no admin rights); `mj watch off` removes it.
+3. Check it: `mj watch status` shows whether it is on and the last few log lines; `mj status` shows the one-line state.
 
 ```text
 $ mj status
