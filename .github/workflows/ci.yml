@@ -78,5 +78,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Install test-fixture tooling
+        # ffmpeg only generates sample media for run_m3.sh; it is not a MographJailed runtime dependency.
+        run: brew install ffmpeg
       - name: Test suite (stock /bin/zsh, BSD userland)
         run: bash tests/run_all.sh
