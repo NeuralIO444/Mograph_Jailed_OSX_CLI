@@ -280,6 +280,50 @@ def explain_doctor(d):
     return out
 
 
+def explain_c4d_summary(d):
+    out = ["%s (Cinema 4D %s, %s renderer)" % (d["sceneName"], d["c4dVersion"], d["renderer"]), "",
+           "%d x %d at %s fps, frames %d to %d (%s, %.2f seconds)." % (d["width"], d["height"], d["fps"], d["startFrame"], d["endFrame"], plural(d["frames"], "frame"), d["seconds"])]
+    out.append("Output: %s" % (d["outputPath"] or "none set"))
+    if d.get("passes"):
+        out.append("Passes: %s." % names(d["passes"], 8))
+    out.append("%s%s." % (plural(d["cameras"], "camera"), (" (active: %s)" % d["activeCamera"]) if d.get("activeCamera") else ""))
+    m = d["materials"]
+    out.append("%s%s." % (plural(m["total"], "material"), (": " + ", ".join("%d %s" % (v, k) for k, v in sorted(m["byType"].items()))) if m["byType"] else ""))
+    t = d["textures"]
+    out.append("%s; %s." % (plural(t["total"], "texture"), ("%d missing (%s)" % (len(t["missing"]), names(t["missing"]))) if t["missing"] else "none missing"))
+    if t["absolute"]:
+        out.append("Absolute paths: %s." % names(t["absolute"]))
+    return out
+
+
+def explain_c4d_lint(d):
+    n = d["numFindings"]
+    out = ["Checked %s (%s renderer)." % (d["sceneName"], d["renderer"])]
+    if not n:
+        return out + ["No problems found."]
+    out.append("Found %s: %s, %s, %s." % (plural(n, "problem"), plural(d["errors"], "error"), plural(d["warnings"], "warning"), plural(d["info"], "note")))
+    seen = set()
+    for f in d["findings"]:
+        out += ["", {"error": "Error", "warning": "Warning", "info": "Note"}[f["severity"]] + ": " + f["message"], wrap("Why it matters: " + f["teach"]["why"]), wrap("Fix: " + f["teach"]["fix"])]
+        ex = (d.get("teaching") or {}).get(f["code"])
+        if ex and f["code"] not in seen:
+            seen.add(f["code"]); out += ["  Before:  " + ex["before"], "  After:   " + ex["after"]]
+    return out
+
+
+def explain_bridge(d):
+    s = d["scene"]
+    out = ["%s against %s: %s used in After Effects." % (d["sceneName"], d.get("projectName") or "the project", plural(d["matched"], "layer"))]
+    if not d["matched"]:
+        return out + ["Nothing was compared."]
+    out.append("The scene is %d x %d at %s fps, %s (%.2f seconds), %s." % (s["width"], s["height"], s["fps"], plural(s["frames"], "frame"), s["seconds"], s["renderer"]))
+    if d["consistent"]:
+        return out + ["Everything matches."]
+    for f in d["findings"]:
+        out += ["", {"error": "Error", "warning": "Warning", "info": "Note"}[f["severity"]] + ": " + f["message"], wrap("Why it matters: " + f["teach"]["why"]), wrap("Fix: " + f["teach"]["fix"])]
+    return out
+
+
 def explain_scrape(d):
     c, l = scrape_counts(d)
     miss = [f.get("name") for f in d.get("footage", []) if isinstance(f, dict) and f.get("missing")]
@@ -294,6 +338,7 @@ EXPLAINERS = {
     "MJ_HANDOFF_1": explain_handoff, "MJ_PROJECT_HEALTH_1": explain_health, "MJ_DIFF_1": explain_diff, "MJ_TRACE_1": explain_trace,
     "MJ_PLUGIN_USAGE_1": explain_plugins, "MJ_PLUGIN_INVENTORY_1": explain_plugins, "MJ_AUDIT_VERIFY_1": explain_audit,
     "MJ_HOST_DETECT_1": explain_hosts, "MJ_PROJECT_SCRAPE_1": explain_scrape,
+    "MJ_C4D_SUMMARY_1": explain_c4d_summary, "MJ_C4D_LINT_1": explain_c4d_lint, "MJ_BRIDGE_CHECK_1": explain_bridge,
 }
 
 

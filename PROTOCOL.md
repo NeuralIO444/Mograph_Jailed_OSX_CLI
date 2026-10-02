@@ -339,3 +339,25 @@ arg.format=<optional: score (default) | record | all>
 - `project.health` returns `MJ_PROJECT_HEALTH_1`: `score` 0-100, a `band`, and `components` that each carry their points, what was lost and why, and the findings behind it. **Formula version 1:** score = 100 x earned / measurable points, where *footage* is worth 35 (minus 12 per missing item, 3 per unlinked item), *expressions* 40 (minus 8 per lint error, 3 per warning) and *snapshots* 25 (25 if the newest snapshot is within an hour of the scrape, 15 within a day, else 0; none = 0), counted only when `input` is given. Bands: 90+ healthy, 70-89 needs a look, 40-69 at risk, below 40 unhealthy. The formula text is returned with every score and `formulaVersion` changes whenever the arithmetic does; trends only compare scores of the same version. Plug-in availability is not part of v1 (a scrape records effect names but not whether they are installed).
 - `format=record` also stores the score (keyed by project path and receipt hash, so it is idempotent) and returns the `trend`; `format=all` returns `MJ_HEALTH_TRENDS_1`, every recorded project's latest score and series. Mutation is `STORE_WRITE` for the operation as a whole; `score` and `all` never write.
 - `expression.lint` findings gain `teach: {why, fix}`, and the result gains `teaching: {code: {before, after}}` for the codes present. Codes, severities and messages are unchanged, so scripted consumers are unaffected.
+
+## Cinema 4D intelligence and the AE/C4D bridge (0.4.0-dev.2)
+
+Three read-only operations are added (46 to 49). They work on **receipts**, so they need no Cinema 4D licence and never open a scene. The receipt (`MJ_C4D_SCRAPE_1`, see `docs/MJ_C4D_SCRAPE_1.md`) is written by `integrations/cinema4d/MographJailed_C4DScraper.py` under `c4dpy`; that scraper is guarded read-only in CI but has **not yet been run against a real Cinema 4D**.
+
+```text
+command=c4d.inspect
+arg.path=<Base64 absolute MJ_C4D_SCRAPE_1 path>
+
+command=c4d.lint
+arg.path=<Base64 absolute MJ_C4D_SCRAPE_1 path>
+
+command=bridge.check
+arg.path=<Base64 absolute MJ_C4D_SCRAPE_1 path>
+arg.input=<Base64 absolute MJ_PROJECT_SCRAPE_1 path>
+arg.target=<optional Base64 comp name to restrict the check to>
+```
+
+- `c4d.inspect` returns `MJ_C4D_SUMMARY_1`: renderer, resolution, fps, frame range and seconds, output path, passes, cameras, takes, materials by type, and textures with the missing and absolute ones listed. Warnings: `TEXTURES_MISSING`, `SCENE_TRUNCATED`.
+- `c4d.lint` returns `MJ_C4D_LINT_1` with rules `C001` missing texture (error), `C002` absolute texture path, `C003` no camera, `C004` odd resolution, `C005` end frame before start (error), `C006` empty output path, `C007` standard materials in a Redshift scene, `C008` renderer is not Redshift or Physical (note), `C009` multi-pass on with no passes (note). Each finding carries `teach: {why, fix}`; the result carries `teaching` before/after snippets, as `expression.lint` does.
+- `bridge.check` returns `MJ_BRIDGE_CHECK_1`. It finds the After Effects layers whose source is the same `.c4d` (matched by file name, case-insensitively) and compares the comp with the scene: `B001` frame rate (error), `B002` resolution, `B003` duration (more than one frame apart), `B004` the layer points at a different path from the scene that was checked (error), `B005` After Effects reports the scene file missing (error). `consistent` is true only when something matched and nothing was found. With no matching layer it warns `NO_MATCHING_LAYER` and compares nothing.
+- Content errors in a receipt are `INVALID_JSON`, `SCHEMA_MISMATCH` and `SCRAPE_TOO_LARGE` with exit 65, as for After Effects scrapes.

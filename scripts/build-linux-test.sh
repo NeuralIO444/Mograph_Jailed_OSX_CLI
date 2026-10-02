@@ -39,6 +39,7 @@ for f in \
   src/modules/protect.zsh \
   src/modules/library.zsh \
   src/modules/insight.zsh \
+  src/modules/c4d.zsh \
   src/modules/host.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$OUT"

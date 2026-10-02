@@ -201,4 +201,7 @@ A successful response can still carry `warnings`: a list of `{ "code", "message"
 | `DIFFERENT_PROJECTS` | The two scrapes compared by `project.diff` come from different project paths. | Check you passed two versions of the same project. |
 | `SCRAPES_OUT_OF_ORDER` | The first scrape is newer than the second. | Swap the arguments to read the diff in time order. |
 | `CHANGES_TRUNCATED` | `project.diff` found more changes than it lists. | The summary counts are complete; narrow the comparison. |
+| `TEXTURES_MISSING` | Textures a Cinema 4D scene points at are not on disk. | See `mj scene`; relink or collect assets. |
+| `SCENE_TRUNCATED` | The scene held more textures, materials or cameras than the scraper records. | Counts are lower bounds. |
+| `NO_MATCHING_LAYER` | No layer in the After Effects project uses the Cinema 4D scene being checked. | Check the scene and project are the right pair; the layer's source must be that `.c4d` file. |
 | `SOURCE_CHANGED_DURING_RENDER` | The project or scene changed while rendering. | The frames may mix two versions; re-render. |

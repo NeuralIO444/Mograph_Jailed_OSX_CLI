@@ -138,6 +138,18 @@ _mj_resolve_project() {
     return 66
 }
 
+# Newest Cinema 4D scene receipt, or a path.
+_mj_resolve_c4d() {
+    local arg="${1:-last}" d f
+    if [ "$arg" = last ]; then
+        d=$(_mj_need_dir receipts_dir receipts) || return $?
+        f=$(_mj_newest "$d" '*.c4dscrape.json')
+        [ -n "$f" ] || { print -u2 "mj: no Cinema 4D scene receipts in $d yet (run integrations/cinema4d/MographJailed_C4DScraper.py under c4dpy)"; return 66; }
+        print -r -- "$f"
+    elif [ -f "$arg" ]; then print -r -- "${arg:A}"
+    else print -u2 "mj: no such receipt: $arg"; return 66; fi
+}
+
 # Newest scrape receipt, or a path.
 _mj_resolve_scrape() {
     local arg="${1:-last}" d f
@@ -332,6 +344,8 @@ mj snapshot <project>              save a verified version of a project (path or
 mj versions [project]              list saved versions
 mj lint [last|<scrape>]            check expressions, in plain language
 mj health [last|<scrape>] [--record]  project health score (0-100)
+mj scene [last|<c4d scrape>] [--summary]   check a Cinema 4D scene receipt, in plain language
+mj bridge <c4d scrape> [<ae scrape>|last] [comp]   does the AE comp match the C4D scene?
 mj diff last | <older> <newer>     what changed between two scrapes
 mj explain [last|<file>]           any receipt, in plain language
 mj watch on|off|status             automatic versioning of your .aep files
@@ -379,6 +393,15 @@ USAGE
                 da=$(_mj_resolve_scrape "$1") || return $?; db=$(_mj_resolve_scrape "$2") || return $?
             fi
             _mj_say project.diff "path=$da" "input=$db"; return ;;
+        scene)
+            shift
+            local cs; cs=$(_mj_resolve_c4d "${1:-last}") || return $?
+            if [ "${2:-}" = --summary ]; then _mj_say c4d.inspect "path=$cs"; else _mj_say c4d.lint "path=$cs"; fi; return ;;
+        bridge)
+            shift
+            local bc ba; bc=$(_mj_resolve_c4d "${1:-last}") || return $?
+            ba=$(_mj_resolve_scrape "${2:-last}") || return $?
+            if [ -n "${3:-}" ]; then _mj_say bridge.check "path=$bc" "input=$ba" "target=$3"; else _mj_say bridge.check "path=$bc" "input=$ba"; fi; return ;;
         explain)
             shift
             local ef="${1:-last}"
@@ -446,7 +469,7 @@ USAGE
 _mj_complete() {
     local -a items
     local json cmd="${words[2]}"
-    local -a verbs; verbs=(snapshot versions lint health diff explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
+    local -a verbs; verbs=(snapshot versions lint health diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
     if (( CURRENT == 2 )); then
         json=$(_mj_describe) || json=""
         items=($verbs ${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]' 2>/dev/null)"})
@@ -455,7 +478,7 @@ _mj_complete() {
     fi
     case "$cmd" in
         snapshot) _files -g '*.(aep|AEP)' ;;
-        lint|explain) items=(last); compadd -a items; _files ;;
+        lint|explain|scene|bridge) items=(last); compadd -a items; _files ;;
         health) items=(last --record); compadd -a items; _files ;;
         diff) items=(last); compadd -a items; _files ;;
         watch) items=(on off status); compadd -a items ;;

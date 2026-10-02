@@ -64,7 +64,8 @@
             "index.add", "index.search", "index.verify", "preset.add", "preset.get",
             "host.detect", "ae.render", "c4d.render",
             "trace.asset", "audit.plugins",
-            "project.diff", "project.health"
+            "project.diff", "project.health",
+            "c4d.inspect", "c4d.lint", "bridge.check"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -438,6 +439,18 @@
 
     Client.prototype.auditPlugins = function (matchName) {
         return this.call("audit.plugins", { target: matchName || null });
+    };
+
+    Client.prototype.c4dInspect = function (c4dScrape) {
+        return this.call("c4d.inspect", { path: c4dScrape });
+    };
+
+    Client.prototype.c4dLint = function (c4dScrape) {
+        return this.call("c4d.lint", { path: c4dScrape });
+    };
+
+    Client.prototype.bridgeCheck = function (c4dScrape, aeScrape, compName) {
+        return this.call("bridge.check", { path: c4dScrape, input: aeScrape, target: compName || null });
     };
 
     Client.prototype.projectDiff = function (beforeScrape, afterScrape) {

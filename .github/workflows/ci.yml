@@ -30,6 +30,10 @@ jobs:
         run: sh scripts/check-scraper-readonly.sh
       - name: Guard rejects every known mutation pattern
         run: bash tests/run_scraper_guard.sh
+      - name: Cinema 4D scraper must be strictly read-only
+        run: sh scripts/check-c4d-scraper-readonly.sh
+      - name: C4D guard rejects every known mutation pattern
+        run: bash tests/run_c4d_guard.sh
 
   dist-parity:
     name: dist parity

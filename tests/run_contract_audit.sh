@@ -42,6 +42,9 @@ trace.asset
 audit.plugins
 project.diff
 project.health
+c4d.inspect
+c4d.lint
+bridge.check
 report.tech
 runtime.verify
 search.candidate

@@ -227,7 +227,7 @@ command=system.describe
 REQ
 run_req describe
 check test "$RC" -eq 0
-check jq -e '.data.operations|length==46' "$TMP/describe.json"
+check jq -e '.data.operations|length==49' "$TMP/describe.json"
 check jq -e '.data.operations["asset.manifest"].cost=="MODE_DEPENDENT" and .data.operations["asset.manifest"].interactiveSafe==false and .data.operations["asset.manifest"].authority=="ASSET_IDENTITY"' "$TMP/describe.json"
 check jq -e '.data.operations["search.candidate"].authority=="ADVISORY_INDEX" and .data.operations["search.candidate"].mutation=="INTERNAL_TEMP" and .data.operations["search.candidate"].interactiveSafe==false' "$TMP/describe.json"
 check jq -e '.data.operations["image.derivative"].mutation=="DERIVATIVE_CREATE" and .data.operations["image.derivative"].interactiveSafe==false' "$TMP/describe.json"
