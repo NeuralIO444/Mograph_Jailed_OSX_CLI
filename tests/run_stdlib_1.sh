@@ -3,6 +3,9 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 "$ROOT/scripts/build-linux-test.sh" >/dev/null
 CLI="$ROOT/dist/mograph-jailed-linux-test.sh"
+# These suites assert the "native macOS tools are absent" behavior (UNSUPPORTED / UNAVAILABLE). Simulate the
+# absence so the same assertions hold on a Mac, which has them, as on a Linux runner, which does not.
+export MJ_TEST_MISSING_CAPS="ditto xattr sips mdfind avmediainfo mdls jq"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
