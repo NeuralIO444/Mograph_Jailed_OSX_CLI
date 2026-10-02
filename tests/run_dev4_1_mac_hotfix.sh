@@ -40,8 +40,8 @@ else
 fi
 
 # Release identity.
-check grep -q 'MOGRAPHJAILED_CLI_VERSION="0.4.0-dev.1"' "$ROOT/src/core/constants.zsh"
-check grep -q '^MographJailed 0.4.0-dev.1$' "$ROOT/VERSION"
+check grep -q 'MOGRAPHJAILED_CLI_VERSION="0.4.0-dev.2"' "$ROOT/src/core/constants.zsh"
+check grep -q '^MographJailed 0.4.0-dev.2$' "$ROOT/VERSION"
 
 printf 'dev.4.1 Mac hotfix tests: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -295,7 +295,7 @@
     Client.prototype.verifyRuntime = function (options) {
         options = options || {};
         return this.call("runtime.verify", {
-            expectedCliVersion: options.expectedCliVersion || "0.4.0-dev.1",
+            expectedCliVersion: options.expectedCliVersion || "0.4.0-dev.2",
             expectedProtocolVersion: String(typeof options.expectedProtocolVersion === "undefined" ? 1 : options.expectedProtocolVersion),
             expectedFilename: options.expectedFilename || "mograph-jailed.zsh",
             expectedSha256: options.expectedSha256 || null

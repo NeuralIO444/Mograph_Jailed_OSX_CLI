@@ -1,0 +1,187 @@
+##### setup
+$ mj doctor
+This Mac is ready. All 49 operations can run.
+
+$ mj config set versions_dir ~/AE/versions
+saved: versions_dir
+
+$ mj config set receipts_dir ~/AE/receipts
+saved: receipts_dir
+
+$ mj config set watch_dir ~/AE/projects
+saved: watch_dir
+
+$ mj config show
+config file: ~/.config/mograph-jailed/config
+  versions_dir         (file)    ~/AE/versions
+  receipts_dir         (file)    ~/AE/receipts
+  watch_dir            (file)    ~/AE/projects
+  cli                  (env)     <repo>/dist/mograph-jailed.zsh
+  post_snapshot_hook   (unset)   -
+
+##### snapshot
+$ mj snapshot "Spring Promo"
+Saved a verified copy of Spring Promo.aep.
+  ~/AE/versions/Spring Promo.<time>.26b2effec987.aep
+  15 bytes copied instantly (copy-on-write); the copy and the original were checked and match.
+
+$ mj snapshot "Spring Promo"
+Nothing to save: Spring Promo.aep has not changed since the last snapshot.
+
+$ mj versions
+Versions in ~/AE/versions (newest first):
+  Spring Promo                 <date> <time>     15 bytes   26b2effec987
+
+##### check
+$ mj lint last
+Checked 1 expression.
+Found 1 problem: 1 error, 0 warnings, 0 notes.
+
+Error in "Main" > Title > Transform/Position
+  Expression references layer "Logo Mark", which does not exist in comp "Main".
+  Why it matters: The expression looks up a layer by name and no layer has that name in
+  this comp (it was renamed, deleted, or lives in another comp), so the property stops
+  working.
+  Fix: Fix the name, or pick-whip the layer so the link follows renames.
+  Example, before:  thisComp.layer("Logo old").transform.position
+  Example, after:   thisComp.layer("Logo").transform.position   // or pick-whip it
+
+$ mj health ~/AE/receipts/spring.20261001T090000Z.scrape.json --record
+Spring Promo.aep health: 92 out of 100 (healthy).
+  expressions: lost 8 of 40 points. Expression errors: 1; warnings: 0.
+Trend over 1 recorded score: steady
+Score formula version 1.
+
+$ mj health last --record
+Spring Promo.aep health: 80 out of 100 (needs a look).
+  footage: lost 12 of 35 points. Missing footage items: 1; unlinked: 0.
+  expressions: lost 8 of 40 points. Expression errors: 1; warnings: 0.
+Trend over 2 recorded scores: getting worse
+Score formula version 1.
+
+Heads up:
+  - Missing footage items: 1.
+
+$ mj diff last
+Comparing spring.20261001T090000Z.scrape.json with spring.20261001T163000Z.scrape.json.
+  1 comp added
+  1 comp changed
+  1 layer added
+  1 expression changed
+  1 footage item went missing or came back
+  1 effect type added
+  - comp "Outro" added (0 layers)
+  - comp "Main": frame rate 24 -> 30
+  - layer "Flash" added to "Main"
+  - layer "Title" in "Main": expression on Transform/Position changed
+  - footage "logo.psd" went missing
+  - effect type ADBE Fast Blur now used
+
+##### batch
+$ mj batch "$R/recipes/check-scrapes.mjrecipe" ~/AE/receipts
+  ✓ spring.20261001T090000Z.scrape.json
+  ✓ spring.20261001T163000Z.scrape.json
+
+2 files: 2 ok, 0 failed  ((Ns))
+
+##### search
+$ mj index.add path="$HOME/AE/receipts" | jq -c ".data | {added, updated, unchanged}"
+{"added":2,"updated":0,"unchanged":0}
+
+$ mj trace.asset format=missing | jq -r ".data.projects[] | .projectPath, (.matches[] | \"  \" + .name, (.uses[] | \"    \" + .paths[0] + \"  (layer \" + .layer + \")\"))"
+~/AE/projects/Spring Promo/Spring Promo.aep
+  logo.psd
+    Main > Lower Third  (layer Logo)
+
+$ mj trace.asset format=font target="Brandon Grotesque" | jq -r ".data.projects[] | .projectPath, (.matches[] | (.uses[] | \"  \" + .paths[0] + \"  (layer \" + .layer + \")\"))"
+~/AE/projects/Spring Promo/Spring Promo.aep
+  Main  (layer Title)
+
+$ mj audit.plugins target=S_Glow | jq -r ".data.projects[].projectPath"
+~/AE/projects/Spring Promo/Spring Promo.aep
+
+$ mj audit.plugins | jq -r ".data.effects[] | \"\\(.matchName)  \\(.projects) project(s)\""
+ADBE Fast Blur  1 project(s)
+ADBE Glo2  1 project(s)
+S_Glow  1 project(s)
+
+##### cinema4d
+$ mj scene last --summary
+Logo Sting.c4d (Cinema 4D 2026.3, redshift renderer)
+
+1920 x 1080 at 24 fps, frames 0 to 71 (72 frames, 3.00 seconds).
+Output: none set
+Passes: Beauty, Depth.
+1 camera (active: Camera).
+2 materials: 1 redshift, 1 standard.
+2 textures; 1 missing (tex/chrome_normal.png).
+Absolute paths: /Users/ana/Desktop/env.hdr.
+
+Heads up:
+  - Missing textures: 1.
+
+$ mj scene last
+Checked Logo Sting.c4d (redshift renderer).
+Found 4 problems: 1 error, 3 warnings, 0 notes.
+
+Error: Texture "tex/chrome_normal.png" is missing.
+  Why it matters: A texture file the scene points at is not on disk, so it renders as a
+  missing-texture placeholder or black.
+  Fix: Relink it, or use File > Save Project with Assets to collect everything beside
+  the scene.
+  Example, before:  tex/wood_old.png   (not found)
+  Example, after:   tex/wood.png   (relinked, next to the scene)
+
+Warning: Texture "/Users/ana/Desktop/env.hdr" uses an absolute path.
+  Why it matters: An absolute texture path such as /Users/you/... exists only on your
+  Mac, so the scene breaks on another machine or after a move.
+  Fix: Collect assets with Save Project with Assets so paths become relative to the
+  scene.
+  Example, before:  /Users/me/Desktop/wood.png
+  Example, after:   tex/wood.png
+
+Warning: The render output path is empty.
+  Why it matters: There is no render output path, so a render finishes without saving
+  frames.
+  Fix: Set the output path and format in Render Settings > Save.
+  Example, before:  (empty)
+  Example, after:   /work/renders/shot_$frame.png
+
+Warning: 1 standard material in a Redshift scene.
+  Why it matters: This is a Redshift scene but it contains standard materials, which
+  Redshift will not shade the way you expect.
+  Fix: Convert them to Redshift materials, or switch the scene to the standard/physical
+  renderer.
+  Example, before:  12 standard materials in a Redshift scene
+  Example, after:   Redshift materials throughout
+
+$ mj bridge last last
+Logo Sting.c4d against Summer Sale.aep: 1 layer used in After Effects.
+The scene is 1920 x 1080 at 24 fps, 72 frames (3.00 seconds), redshift.
+
+Error: Comp "Sting" runs at 30 fps; the scene is 24 fps.
+  Why it matters: The After Effects comp runs at a different frame rate from the Cinema
+  4D scene, so frames are dropped or duplicated and motion stutters.
+  Fix: Set the comp's frame rate to the scene's, or re-render the scene at the comp's
+  rate.
+
+##### handoff
+$ mj handoff.package path="$HOME/AE/projects/Spring Promo/Spring Promo.aep" input="$HOME/AE/receipts/spring.20261001T163000Z.scrape.json" output="$HOME/AE/out" label=spring_v2 > ~/AE/handoff.json; mj explain ~/AE/handoff.json
+Built the handoff folder: ~/AE/out/spring_v2.handoff
+  2 files collected (2 bytes).
+  Fonts to install: Brandon Grotesque, Inter.
+  A manifest with a checksum for every file is inside.
+
+$ ls ~/AE/out/spring_v2.handoff
+MANIFEST.json
+README.txt
+footage
+project
+
+##### status
+$ mj status
+MJ - idle
+
+$ mj notify status
+notifications off  (mj notify on)
+

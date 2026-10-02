@@ -55,7 +55,7 @@ tools/mj-observe-dash.zsh --cli /path/to/mograph-jailed.zsh --versions ~/AE_Vers
 **`MJ VERSION metadata is incomplete` (mj-top exits 66)** — `mj-top` needs the repo's `VERSION` file to have both a version line and a protocol line:
 
 ```text
-MographJailed 0.4.0-dev.1
+MographJailed 0.4.0-dev.2
 Protocol 1
 ```
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0-dev.2 — 2026-10-02
+
+Operations grew from 46 to 49. Protocol v1 is unchanged.
+
+- Cinema 4D scene intelligence: `c4d.inspect`, `c4d.lint` (rules C001-C009), and `bridge.check` (rules B001-B005) comparing a scene with an After Effects project. `mj scene` and `mj bridge`.
+- `.c4d` scenes are snapshotted and versioned exactly like `.aep`; the watcher fires on both.
+- `mj batch <recipe> <folder>` runs a recipe over every receipt in a folder.
+- Guides: six tutorials and a how-to page in `docs/guides/`. `tests/run_guides.sh` re-runs their walkthrough and fails if the quoted output or any named command drifts.
+- Polish found by running the tutorials for real: diff pairs the same project, plural/singular wording, byte sizes.
+
 ## 0.4.0-dev.1 — 2026-10-01
 
 Power CLI for After Effects and Cinema 4D. Protocol v1 preserved; the public surface grew additively from 27 to 46 operations. The sections below describe the pieces.
