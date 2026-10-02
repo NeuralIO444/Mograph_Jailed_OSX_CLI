@@ -142,7 +142,7 @@ Details are in `render.json` and `render.log` in the render folder.
 |---|---|---|---|
 | `RENDER_BUSY` | 74 | Another render is running; renders run one at a time. | Wait for it, or check `mj status`. |
 | `RENDER_FAILED` | 74 | The host exited with an error. | Read `errorTail` in `render.json` and `render.log`. |
-| `RENDER_INCOMPLETE` | 74 | The host finished but fewer frames exist than expected. | Check the comp/scene range and the log; re-render. |
+| `RENDER_INCOMPLETE` | 74 | The host finished but fewer frames exist than expected. If it produced none and said nothing, it was probably waiting on a dialog (sign-in, project conversion, script permissions). | Open the application once by hand and clear any prompt; check the comp/scene range and the log; re-render. |
 | `RENDER_TIMEOUT` | 74 | The render hit its time limit and was stopped. | Raise `timeoutSeconds` or render a shorter range. |
 
 ## Library, index and presets

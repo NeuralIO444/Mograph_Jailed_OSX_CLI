@@ -243,6 +243,8 @@ _mj_recipe() {
     total=${#steps}
     (( total > 0 )) || { print -u2 "mj: recipe has no steps"; return 65; }
 
+    [ -z "${MJ_RECIPE_CHECK_ONLY:-}" ] || return 0      # validation only (used by mj batch before it touches any file)
+
     # Pass 2: run, stopping at the first failure.
     for line in "${steps[@]}"; do
         step=$((step + 1))
@@ -253,18 +255,56 @@ _mj_recipe() {
             for name in ${(k)params}; do tok="${tok//\{\{$name\}\}/${params[$name]}}"; done
             args+=("$tok")
         done
-        print -u2 "[$step/$total] $op"
+        [ -n "${MJ_RECIPE_QUIET:-}" ] || print -u2 "[$step/$total] $op"
         out=$(_mj_run "$op" "${args[@]}")
         rc=$?
-        print -r -- "$out" | _mj_print
+        [ -n "${MJ_RECIPE_QUIET:-}" ] || print -r -- "$out" | _mj_print
         (( rc == 0 )) || {
-            print -u2 "mj: step $step ($op) failed with exit $rc; recipe stopped"
-            _mj_notify_on && _mj_notify_fire "mj recipe" "stopped at step $step of $total ($op)" bad
+            local ecode; ecode=$(print -r -- "$out" | /usr/bin/jq -r '.error.code // empty' 2>/dev/null)
+            print -u2 "mj: step $step ($op) failed with exit $rc${ecode:+ ($ecode)}; recipe stopped"
+            [ -n "${MJ_RECIPE_QUIET:-}" ] || { _mj_notify_on && _mj_notify_fire "mj recipe" "stopped at step $step of $total ($op)" bad; }
             return $rc
         }
     done
-    _mj_notify_on && _mj_notify_fire "mj recipe" "finished all $total steps" good
+    [ -n "${MJ_RECIPE_QUIET:-}" ] || { _mj_notify_on && _mj_notify_fire "mj recipe" "finished all $total steps" good; }
     return 0
+}
+
+# mj batch <recipe> <folder> [--pattern GLOB] [name=value ...]
+# Runs the recipe once per matching file ({{file}} is the path), keeps going after a failure, and ends
+# with a summary. Exit status is non-zero if any file failed.
+_mj_batch() {
+    local recipe="${1:-}" dir="${2:-}" pat="*.scrape.json" i=0 ok=0 bad=0 n=0 f err t0
+    local -a files extra
+    [ -n "$recipe" ] && [ -n "$dir" ] || { print -u2 "usage: mj batch <recipe> <folder> [--pattern GLOB] [name=value ...]"; return 64; }
+    shift 2
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --pattern) [ -n "${2:-}" ] || { print -u2 "mj: --pattern needs a value"; return 64; }; pat="$2"; shift 2 ;;
+            *) extra+=("$1"); shift ;;
+        esac
+    done
+    [ -r "$recipe" ] || { print -u2 "mj: recipe not readable: $recipe"; return 66; }
+    [ -d "$dir" ] || { print -u2 "mj: folder not found: $dir"; return 66; }
+    files=("${(@f)$(/usr/bin/find "$dir" -maxdepth 3 -type f -name "$pat" 2>/dev/null | LC_ALL=C /usr/bin/sort | /usr/bin/head -500)}")
+    files=(${files:#})
+    [ ${#files} -gt 0 ] || { print "No files matching $pat under $dir."; return 0; }
+    # Check the whole recipe against the registry once, before touching any file.
+    err=$(MJ_RECIPE_CHECK_ONLY=1 _mj_recipe "$recipe" "file=${files[1]}" "${extra[@]}" 2>&1 >/dev/null) || { print -u2 -r -- "$err"; return 65; }
+    n=${#files}
+    t0=$EPOCHREALTIME
+    for f in "${files[@]}"; do
+        i=$((i + 1))
+        err=$(MJ_RECIPE_QUIET=1 _mj_recipe "$recipe" "file=$f" "${extra[@]}" 2>&1 >/dev/null)
+        if [ $? -eq 0 ]; then
+            ok=$((ok + 1)); printf '  ✓ %s\n' "${f#$dir/}"
+        else
+            bad=$((bad + 1)); printf '  ✗ %s   %s\n' "${f#$dir/}" "${err##*mj: }"
+        fi
+    done
+    printf '\n%d file%s: %d ok, %d failed  (%.0fs)\n' $n "$([ $n -eq 1 ] || print s)" $ok $bad $(( EPOCHREALTIME - t0 ))
+    _mj_notify_on && _mj_notify_fire "mj batch" "$ok of $n files ok${bad:+, $bad failed}" "$([ $bad -eq 0 ] && print good || print bad)"
+    [ $bad -eq 0 ]
 }
 
 mj() {
@@ -296,6 +336,7 @@ mj diff last | <older> <newer>     what changed between two scrapes
 mj explain [last|<file>]           any receipt, in plain language
 mj watch on|off|status             automatic versioning of your .aep files
 mj doctor                          is this Mac ready? what is missing?
+mj batch <recipe> <folder>         run a recipe over every file in a folder, with a summary
 mj last                            show the newest render receipt
 mj status                          one-line status (rendering progress, last render)
 mj notify on|off|test|status       macOS notifications when renders, golden checks, recipes or long operations finish
@@ -380,6 +421,8 @@ USAGE
                 /usr/bin/open "$dir"
             fi
             return ;;
+        batch)
+            shift; _mj_batch "$@"; return ;;
         recipe)
             shift
             [ -n "${1:-}" ] || { print -u2 "usage: mj recipe <file> [name=value ...]"; return 64; }
@@ -403,7 +446,7 @@ USAGE
 _mj_complete() {
     local -a items
     local json cmd="${words[2]}"
-    local -a verbs; verbs=(snapshot versions lint health diff explain watch doctor config notify status last open-last ui home cd ops recipe help)
+    local -a verbs; verbs=(snapshot versions lint health diff explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
     if (( CURRENT == 2 )); then
         json=$(_mj_describe) || json=""
         items=($verbs ${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]' 2>/dev/null)"})
@@ -424,6 +467,7 @@ _mj_complete() {
         ui) items=(--tab --once --plain); compadd -a items ;;
         versions) ;;
         recipe) _files ;;
+        batch) if (( CURRENT == 3 )); then _files; elif (( CURRENT == 4 )); then _files -/; else items=(--pattern); compadd -a items; fi ;;
         last|open-last|home|cd|doctor|status|ops|help) ;;
         *)
             json=$(_mj_describe) || return 1

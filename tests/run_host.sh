@@ -49,6 +49,7 @@ case "\$comp" in
   Fail) echo "aerender ERROR: No comp was found with the given name."; exit 1;;
   Slow) echo "PROGRESS: starting"; sleep 60; exit 0;;
   Licence) echo "Enter the license method:"; echo "Please select:"; sleep 60;;
+  Silent) echo "aerender version 26.5x89"; echo "PROGRESS: Launching After Effects..."; exit 0;;
   Short) e=\$((e-1));;
   Prog) SLEEP=0.6;;
   Mutate) printf 'x' >> "\$proj";;
@@ -105,6 +106,10 @@ check jq -e '.error.code=="RENDER_FAILED" and (.error.message|test("render.json"
 check bash -c "grep -q 'No comp was found' '$TMP'/renders/bad.*/render.json"
 run "$TMP/r4.json" ae.render "path=$TMP/proj/hero.aep" "target=Short" "output=$TMP/renders" "label=short" "range=0-4"
 check jq -e '.error.code=="RENDER_INCOMPLETE"' "$TMP/r4.json"
+# a host that exits 0 having rendered nothing (seen with real aerender 26.5): the receipt explains the likely cause
+run "$TMP/r4b.json" ae.render "path=$TMP/proj/hero.aep" "target=Silent" "output=$TMP/renders" "label=silent" "range=0-2"
+check jq -e '.error.code=="RENDER_INCOMPLETE" and (.error.message|test("waiting on a dialog"))' "$TMP/r4b.json"
+check bash -c "jq -e '.hint|test(\"waiting on a dialog\")' '$TMP'/renders/silent.*/render.json >/dev/null && jq -e '.status==\"incomplete\" and .source.unchanged==true' '$TMP'/renders/silent.*/render.json >/dev/null"
 run "$TMP/r5.json" ae.render "path=$TMP/proj/hero.aep" "target=Licence" "output=$TMP/renders" "label=lic"
 check jq -e '.error.code=="LICENCE_NOT_CONFIGURED"' "$TMP/r5.json"
 cp "$TMP/proj/hero.aep" "$TMP/proj/mut.aep"

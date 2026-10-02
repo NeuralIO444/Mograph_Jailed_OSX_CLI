@@ -202,6 +202,14 @@ def finish_render(receipt, job, rng, status, code, tail, source_path, sha_before
     frames = frame_summary(job, rng)
     if status == "finished":
         status = "complete" if frames["count"] and (frames["expected"] in (None, frames["count"])) else "incomplete"
+    # Observed on a real Mac: aerender launched After Effects, exited 0 and rendered nothing. The host
+    # was almost certainly waiting on a dialog (sign-in, project conversion, script permissions) that
+    # nobody could see; say so instead of leaving a bare "frames are missing".
+    silent = status == "incomplete" and frames["count"] == 0 and code == 0 and len(tail) <= 3
+    if silent:
+        receipt["hint"] = ("The host exited without error but produced no frames. After Effects may be waiting on a dialog "
+                           "(sign-in, a project-conversion or crash-recovery prompt, or script permissions). Open the application once by hand, "
+                           "clear any prompt, and try again; see the receipt's log.")
     receipt.update({
         "endedAt": now_iso(), "status": status, "exitCode": code, "frames": frames, "errorTail": tail[-10:],
         "source": {"path": source_path, "sha256Before": sha_before, "sha256After": sha_after,
@@ -219,7 +227,7 @@ def finish_render(receipt, job, rng, status, code, tail, source_path, sha_before
              "incomplete": ("RENDER_INCOMPLETE", "The host finished but frames are missing.")}
     if status in codes:
         code_name, msg = codes[status]
-        err(code_name, "%s Receipt: %s" % (msg, path))
+        err(code_name, "%s%s Receipt: %s" % (msg, (" " + receipt["hint"]) if receipt.get("hint") else "", path))
     if not receipt["source"]["unchanged"]:
         receipt["_warnings"] = [{"code": "SOURCE_CHANGED_DURING_RENDER", "message": "The project or scene file changed while it was rendering; the frames may mix two versions."}]
     print(json.dumps({"ok": True, "data": receipt}))

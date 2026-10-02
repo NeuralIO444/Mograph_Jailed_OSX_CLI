@@ -613,5 +613,37 @@ set +e; mjz "mj snapshot 'Foo*'" >/dev/null 2>&1; w1=$?; mjz "mj snapshot 'F[o]o
 check test "$w1" = 66 -a "$w2" = 66 -a "$w3" = 65
 export MJ_CONFIG="$TMP/cfg/config"
 
+# ================= folder-wide batches =================
+mkdir -p "$TMP/bt/in/sub"
+cp "$TMP/sc/v1.scrape.json" "$TMP/bt/in/a.scrape.json"
+cp "$TMP/sc/v2.scrape.json" "$TMP/bt/in/sub/b.scrape.json"
+printf 'not json at all' > "$TMP/bt/in/c.scrape.json"
+printf '{"schema":"MJ_X"}' > "$TMP/bt/in/d.other.json"
+printf 'project.ingest path={{file}}\nexpression.lint path={{file}}\n' > "$TMP/bt/check.mjrecipe"
+set +e; mjz "mj batch '$TMP/bt/check.mjrecipe' '$TMP/bt/in'" > "$TMP/bt1.txt" 2> "$TMP/bt1.err"; br=$?; set -e
+check test "$br" = 1
+check grep -q '✓ a.scrape.json' "$TMP/bt1.txt"
+check grep -q '✓ sub/b.scrape.json' "$TMP/bt1.txt"
+check grep -Eq '✗ c.scrape.json +step 1 \(project.ingest\) failed with exit 65 \(INVALID_JSON\)' "$TMP/bt1.txt"        # kept going past the failure, and says why
+check grep -q '3 files: 2 ok, 1 failed' "$TMP/bt1.txt"
+check bash -c "! grep -q 'd.other.json' '$TMP/bt1.txt'"                                                                 # default pattern is *.scrape.json
+check bash -c "! grep -q '\"ok\"' '$TMP/bt1.txt' '$TMP/bt1.err'"                                                         # one line per file, not pages of JSON
+mjz "mj batch '$TMP/bt/check.mjrecipe' '$TMP/bt/in' --pattern 'd.*.json'" > "$TMP/bt2.txt" 2>&1 || true
+check grep -q '✗ d.other.json' "$TMP/bt2.txt"
+check grep -q '1 file: 0 ok, 1 failed' "$TMP/bt2.txt"
+# the recipe is checked against the registry once, before any file is touched
+printf 'project.ingest path={{file}}\nsystem.shell cmd=rm\n' > "$TMP/bt/bad.mjrecipe"
+set +e; mjz "mj batch '$TMP/bt/bad.mjrecipe' '$TMP/bt/in'" > "$TMP/bt3.txt" 2> "$TMP/bt3.err"; br=$?; set -e
+check test "$br" = 65
+check grep -q 'unknown operation: system.shell' "$TMP/bt3.err"
+check test ! -s "$TMP/bt3.txt"
+# extra values are passed through; a folder with nothing to do is not an error; bad input is
+printf 'project.diff path={{file}} input={{other}}\n' > "$TMP/bt/diff.mjrecipe"
+mjz "mj batch '$TMP/bt/diff.mjrecipe' '$TMP/bt/in' --pattern 'a.*.json' other='$TMP/sc/v2.scrape.json'" > "$TMP/bt4.txt" 2>&1 || true
+check grep -q '✓ a.scrape.json' "$TMP/bt4.txt"
+mjz "mj batch '$TMP/bt/check.mjrecipe' '$TMP/bt/in' --pattern '*.nothing'" | grep -q 'No files matching' && pass=$((pass+1)) || { echo "FAIL: empty batch" >&2; fail=$((fail+1)); }
+set +e; mjz "mj batch" >/dev/null 2>&1; u1=$?; mjz "mj batch '$TMP/bt/check.mjrecipe' /no/such/dir" >/dev/null 2>&1; u2=$?; mjz "mj batch /no/recipe '$TMP/bt/in'" >/dev/null 2>&1; u3=$?; set -e
+check test "$u1" = 64 -a "$u2" = 66 -a "$u3" = 66
+
 echo "Human CLI tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

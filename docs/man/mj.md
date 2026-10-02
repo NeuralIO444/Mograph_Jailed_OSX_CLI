@@ -35,6 +35,17 @@ mj doctor                        is this Mac ready? what is missing, and what to
 
 `last` means the newest scrape receipt in your receipts folder (or, for `mj explain`, the newest render).
 
+## Batches
+
+Run one recipe over a whole folder:
+
+```text
+mj batch recipes/check-all.mjrecipe ~/AE_Receipts                    # every *.scrape.json, up to three folders deep
+mj batch recipes/check-all.mjrecipe ~/AE_Receipts --pattern '*.json' threshold=0.95
+```
+
+Inside the recipe, `{{file}}` is the path of the current file; any `name=value` you add is available as `{{name}}`. The recipe is checked against the runtime once, before any file is touched. A failure on one file does not stop the others: you get one line per file (a check mark, or a cross with the step and error code) and a summary, and the command exits non-zero if any file failed. Notifications, if on, fire once at the end.
+
 ## Remembered settings
 
 Set a folder once and every tool remembers it:
