@@ -47,13 +47,14 @@ operation_names() {
     c4d.inspect \
     c4d.lint \
     bridge.check \
+    project.preflight \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -144,6 +145,9 @@ operation_available() {
     package.create)
       cap_available ditto && cap_available mktemp && cap_available rm && cap_available mv && cap_available stat && cap_available uname
       ;;
+    project.preflight)
+      cap_available python3
+      ;;
     *) return 1 ;;
   esac
 }
@@ -197,6 +201,7 @@ operation_summary() {
     project.diff) printf 'What changed between two scrapes: comps, layers, expressions, footage.' ;;
     project.health) printf 'A documented 0-100 health score for a project, with its trend.' ;;
     audit.plugins) printf 'Projects using an effect matchName, or the plugin inventory.' ;;
+    project.preflight) printf '%s' 'Will this project open cleanly here? Fonts, footage, third-party effects.' ;;
     report.tech) printf 'Native diagnostic receipt for support.' ;;
     package.create) printf 'Zip a file or folder with ditto; never overwrites.' ;;
     *) printf '' ;;
@@ -231,6 +236,7 @@ operation_cost() {
     plugin.audit) printf 'PATH_DEPENDENT' ;;
     project.snapshot) printf 'IO_BOUND' ;;
     package.create) printf 'IO_BOUND' ;;
+    project.preflight) printf 'SIZE_DEPENDENT' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
@@ -276,6 +282,7 @@ operation_authority() {
     index.verify) printf 'AUTHORITATIVE_STORE_INTEGRITY' ;;
     preset.get|ae.render|c4d.render) printf 'AUTHORITATIVE_OPERATION' ;;
     host.detect) printf 'AUTHORITATIVE_ENVIRONMENT' ;;
+    project.preflight) printf 'DERIVED_PROJECT_SUMMARY' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
@@ -289,7 +296,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -320,6 +327,7 @@ operation_required_all() {
     project.ingest|expression.lint) printf '%s\n' python3 ;;
     plugin.audit) printf '%s\n' stat uname ;;
     project.snapshot) printf '%s\n' stat uname cp date rm ;;
+    project.preflight) printf '%s\n' python3 ;;
   esac
 }
 
@@ -363,7 +371,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"

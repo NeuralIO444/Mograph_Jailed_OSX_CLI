@@ -65,7 +65,7 @@
             "host.detect", "ae.render", "c4d.render",
             "trace.asset", "audit.plugins",
             "project.diff", "project.health",
-            "c4d.inspect", "c4d.lint", "bridge.check"
+            "c4d.inspect", "c4d.lint", "bridge.check", "project.preflight"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {
@@ -451,6 +451,10 @@
 
     Client.prototype.bridgeCheck = function (c4dScrape, aeScrape, compName) {
         return this.call("bridge.check", { path: c4dScrape, input: aeScrape, target: compName || null });
+    };
+
+    Client.prototype.projectPreflight = function (scrapePath) {
+        return this.call("project.preflight", { path: scrapePath });
     };
 
     Client.prototype.projectDiff = function (beforeScrape, afterScrape) {

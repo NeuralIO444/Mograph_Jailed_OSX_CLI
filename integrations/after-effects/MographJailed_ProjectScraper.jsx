@@ -20,7 +20,7 @@
 
 (function () {
 
-    var SCRAPER_VERSION = "1.0";
+    var SCRAPER_VERSION = "1.1";
     var MAX_COMPS = 200;
     var MAX_LAYERS_PER_COMP = 500;
     var MAX_EXPRESSION_CHARS = 2000;
@@ -106,6 +106,35 @@
 
     function mj_bool(v) { return v ? true : false; }
 
+    /* Folder path of a project item, "" for the root ("Comps/Precomps"). */
+    function mj_folderPath(item) {
+        var parts = [], f = null, guard = 0;
+        try { f = item.parentFolder; } catch (e0) { f = null; }
+        while (f && guard < 64) {
+            try { if (f === app.project.rootFolder) { break; } } catch (e1) { break; }
+            parts.unshift(String(f.name));
+            try { f = f.parentFolder; } catch (e2) { f = null; }
+            guard++;
+        }
+        return parts.join("/");
+    }
+
+    /* What a layer's source is: comp, solid, footage, placeholder, or "" when none. */
+    function mj_sourceKind(src) {
+        try {
+            if (!src) { return ""; }
+            if (src instanceof CompItem) { return "comp"; }
+            var ms = src.mainSource;
+            if (ms instanceof SolidSource) { return "solid"; }
+            if (ms instanceof PlaceholderSource) { return "placeholder"; }
+            return "footage";
+        } catch (e) { return ""; }
+    }
+
+    function mj_label(obj) {
+        try { return obj.label; } catch (e) { return 0; }
+    }
+
     /* Examine one property: count it, note keyframes, capture expressions. */
     function mj_examineProperty(prop, path, acc) {
         var expr = "";
@@ -177,8 +206,10 @@
         var sourceName = "";
         var sourcePath = "";
         var sourceId = 0;
+        var sourceKind = "";
         try {
             var src = layer.source;
+            sourceKind = mj_sourceKind(src);
             if (src) {
                 sourceName = String(src.name);
                 try { sourceId = src.id; } catch (e0) {}
@@ -193,6 +224,9 @@
         var markers = 0;
         try { markers = layer.marker.numKeys; } catch (e5) {}
 
+        var adjustment = false;
+        try { adjustment = mj_bool(layer.adjustmentLayer); } catch (e6) {}
+
         var rec = {
             name: String(layer.name),
             index: index,
@@ -205,6 +239,9 @@
             sourceName: sourceName,
             sourcePath: sourcePath,
             sourceId: sourceId,
+            sourceKind: sourceKind,
+            label: mj_label(layer),
+            adjustment: adjustment,
             font: layerFont,
             effects: mj_effects(layer),
             markers: markers,
@@ -226,6 +263,8 @@
         var rec = {
             name: String(comp.name),
             id: comp.id,
+            label: mj_label(comp),
+            folder: mj_folderPath(comp),
             width: comp.width,
             height: comp.height,
             pixelAspect: comp.pixelAspect,
@@ -312,6 +351,9 @@
             footage.push({
                 id: item.id,
                 name: String(item.name),
+                kind: mj_sourceKind(item),
+                label: mj_label(item),
+                folder: mj_folderPath(item),
                 path: fpath,
                 missing: mj_bool(item.missing),
                 hasVideo: mj_bool(item.hasVideo),
@@ -326,6 +368,15 @@
             }
         }
 
+        /* Fonts After Effects itself reports as missing or substituted (AE 24.0+ Font API). */
+        var missingFonts = null;
+        try {
+            var mf = app.fonts.missingOrSubstitutedFonts;
+            missingFonts = [];
+            for (i = 0; i < mf.length; i++) { missingFonts.push(String(mf[i].postScriptName)); }
+            missingFonts.sort();
+        } catch (emf) { missingFonts = null; }
+
         var topParts = [];
         topParts.push('"schema":' + mj_json("MJ_PROJECT_SCRAPE_1"));
         topParts.push('"scraperVersion":' + mj_json(SCRAPER_VERSION));
@@ -337,6 +388,7 @@
         topParts.push('"comps":[' + compsOut.join(",") + "]");
         topParts.push('"fonts":' + mj_json(fonts));
         topParts.push('"footage":' + mj_json(footage));
+        if (missingFonts !== null) { topParts.push('"missingFonts":' + mj_json(missingFonts)); }
         if (compsTruncated) { topParts.push('"compsTruncated":true'); }
         if (footageTruncated) { topParts.push('"footageTruncated":true'); }
         var json = "{" + topParts.join(",") + "}";

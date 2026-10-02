@@ -162,6 +162,20 @@ _mj_resolve_scrape() {
     else print -u2 "mj: no such receipt: $arg"; return 66; fi
 }
 
+# Newest scrape of a project given by name (or last / a receipt path). Receipts are matched on the
+# projectName inside them, so renamed receipt files still count.
+_mj_scrape_for() {
+    local arg="${1:-last}" d f stem
+    if [ "$arg" = last ] || [ -f "$arg" ]; then _mj_resolve_scrape "$arg"; return; fi
+    d=$(_mj_need_dir receipts_dir receipts) || return $?
+    stem="${(L)${arg%.[aA][eE][pP]}}"
+    for f in "$d"/*.scrape.json(.Nom[1,500]); do
+        [ "${(L)$(/usr/bin/jq -r '.projectName // empty' "$f" 2>/dev/null)%.aep}" = "$stem" ] && { print -r -- "$f"; return 0; }
+    done
+    print -u2 "mj: no scrape receipt for \"$arg\" in $d (run the After Effects scraper on it first)"
+    return 66
+}
+
 _mj_say() {   # run an operation, print it in plain language, return its exit code
     local out rc
     out=$(_mj_run "$@"); rc=$?
@@ -348,6 +362,8 @@ mj snapshot <project>              save a verified version of a project (path or
 mj versions [project]              list saved versions
 mj lint [last|<scrape>]            check expressions, in plain language
 mj health [last|<scrape>] [--record]  project health score (0-100)
+mj check [project|last|<scrape>] [--details]  one verdict: expressions, health, fonts, footage
+mj timeline <project> [--all]      every scrape and snapshot of a project, with health and what changed
 mj scene [last|<c4d scrape>] [--summary]   check a Cinema 4D scene receipt, in plain language
 mj bridge <c4d scrape> [<ae scrape>|last] [comp]   does the AE comp match the C4D scene?
 mj diff last | <older> <newer>     what changed between two scrapes
@@ -402,6 +418,48 @@ USAGE
                 da=$(_mj_resolve_scrape "$1") || return $?; db=$(_mj_resolve_scrape "$2") || return $?
             fi
             _mj_say project.diff "path=$da" "input=$db"; return ;;
+        check)
+            shift
+            local cks det=0 a ckt="last" ckd rc1 rc2 rc3
+            for a in "$@"; do [ "$a" = --details ] && det=1 || ckt="$a"; done
+            cks=$(_mj_scrape_for "$ckt") || return $?
+            ckd=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/mj-check.XXXXXX") || return 73
+            local -a hargs; hargs=("path=$cks"); [ -d "$(mj_config_get versions_dir)" ] && hargs+=("input=$(mj_config_get versions_dir)")
+            _mj_run expression.lint "path=$cks" > "$ckd/lint.json"
+            _mj_run project.health "${hargs[@]}" > "$ckd/health.json"
+            _mj_run project.preflight "path=$cks" > "$ckd/pre.json"
+            _mj_explain --check "$ckd/lint.json" "$ckd/health.json" "$ckd/pre.json"; rc1=$?
+            if (( det )); then
+                for a in lint pre health; do print; _mj_explain "$ckd/$a.json"; done
+            fi
+            /bin/rm -rf "$ckd"
+            return $rc1 ;;
+        timeline)
+            shift
+            [ -n "${1:-}" ] || { print -u2 "usage: mj timeline <project name> [--all]"; return 64; }
+            local td tn tf prev="" i=0 max=10 vd tstem; local -a trs
+            [ "${2:-}" = --all ] && max=50
+            local trd; trd=$(_mj_need_dir receipts_dir receipts) || return $?
+            tstem="${(L)${1%.[aA][eE][pP]}}"
+            for tf in "$trd"/*.scrape.json(.Nom[1,500]); do
+                [ "${(L)$(/usr/bin/jq -r '.projectName // empty' "$tf" 2>/dev/null)%.aep}" = "$tstem" ] && trs+=("$tf")
+                [ ${#trs} -ge $max ] && break
+            done
+            td=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/mj-timeline.XXXXXX") || return 73
+            for tf in "${(Oa)trs[@]}"; do     # oldest first
+                tn=$(printf '%s/%03d' "$td" $i)
+                /usr/bin/jq -c '{at: .scrapedAt, name: .projectName}' "$tf" > "$tn.scrape"
+                if [ -d "$(mj_config_get versions_dir)" ]; then _mj_run project.health "path=$tf" "input=$(mj_config_get versions_dir)" > "$tn.health.json"; else _mj_run project.health "path=$tf" > "$tn.health.json"; fi
+                [ -n "$prev" ] && _mj_run project.diff "path=$prev" "input=$tf" > "$tn.diff.json"
+                prev="$tf"; i=$((i + 1))
+            done
+            vd=$(mj_config_get versions_dir)
+            if [ -d "$vd" ]; then
+                local sf sb; for sf in "$vd"/*.(aep|c4d)(.N); do sb=${${sf:t}%.<->T<->Z.*}; [[ "${(L)sb}" == "$tstem" ]] && print -r -- "$sf"; done > "$td/snapshots.txt"
+            fi
+            _mj_explain --timeline "$td"
+            /bin/rm -rf "$td"
+            return 0 ;;
         scene)
             shift
             local cs; cs=$(_mj_resolve_c4d "${1:-last}") || return $?
@@ -478,7 +536,7 @@ USAGE
 _mj_complete() {
     local -a items
     local json cmd="${words[2]}"
-    local -a verbs; verbs=(snapshot versions lint health diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
+    local -a verbs; verbs=(snapshot versions lint health check timeline diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
     if (( CURRENT == 2 )); then
         json=$(_mj_describe) || json=""
         items=($verbs ${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]' 2>/dev/null)"})
@@ -487,6 +545,7 @@ _mj_complete() {
     fi
     case "$cmd" in
         snapshot) _files -g '*.(aep|AEP|c4d|C4D)' ;;
+        check) items=(last --details); compadd -a items; _files ;;
         lint|explain|scene|bridge) items=(last); compadd -a items; _files ;;
         health) items=(last --record); compadd -a items; _files ;;
         diff) items=(last); compadd -a items; _files ;;

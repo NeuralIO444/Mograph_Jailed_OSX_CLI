@@ -45,6 +45,7 @@ project.health
 c4d.inspect
 c4d.lint
 bridge.check
+project.preflight
 report.tech
 runtime.verify
 search.candidate

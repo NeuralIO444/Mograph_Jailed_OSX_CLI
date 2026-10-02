@@ -120,6 +120,7 @@ dispatch_request() {
     c4d.inspect) handle_c4d_inspect ;;
     c4d.lint) handle_c4d_lint ;;
     bridge.check) handle_bridge_check ;;
+    project.preflight) handle_project_preflight ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
     *)

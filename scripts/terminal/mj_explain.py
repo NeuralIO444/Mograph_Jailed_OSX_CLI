@@ -197,7 +197,9 @@ def explain_handoff(d):
 def explain_health(d):
     out = ["%s health: %d out of 100 (%s)." % (d.get("projectName", "Project"), d["score"], d["band"])]
     for c in d.get("components", []):
-        if c["points"] < c["max"]:
+        if not c.get("measured", True):
+            out.append("  %s: not measured (set a versions folder: mj config set versions_dir <folder>)." % c["name"])
+        elif c["points"] < c["max"]:
             out.append("  %s: lost %d of %d points. %s" % (c["name"], c["max"] - c["points"], c["max"], c["why"]))
     if d["score"] == 100:
         out.append("  Nothing to fix.")
@@ -337,6 +339,85 @@ def explain_scrape(d):
     return out
 
 
+FONT_STATE = {"missing": "missing (After Effects reported it)", "notFound": "not found on this Mac"}
+
+
+def explain_preflight(d):
+    out = ["%s: %s." % (d.get("projectName", "Project"), "ready to open on this Mac" if d.get("ready") else "%s before it opens cleanly" % plural(d["problems"], "thing to fix", "things to fix"))]
+    for f in d.get("fonts", []):
+        if f["state"] != "installed":
+            where = f["uses"][0] if f.get("uses") else None
+            out.append('  Font %s is %s%s.' % (f["name"], FONT_STATE.get(f["state"], f["state"]), ' (used by "%s" in %s)' % (where["layer"], where["comp"]) if where else ""))
+    for f in d.get("footage", []):
+        out.append("  Footage %s is %s." % (f["name"], "missing" if f["state"] == "missing" else "no longer on disk (it was there when the project was scraped)"))
+    if d.get("thirdPartyEffects"):
+        out.append("  Third-party effects to confirm are installed: %s." % names(["%s (%s)" % (e["name"], e["matchName"]) if e.get("name") and e["name"] != e["matchName"] else e["matchName"] for e in d["thirdPartyEffects"]]))
+    return out
+
+
+def explain_check(lint, health, pre):
+    """mj check: one verdict from expression.lint, project.health and project.preflight data."""
+    errs, warns = lint.get("errors", 0), lint.get("warnings", 0)
+    fix = errs + pre.get("problems", 0)
+    name = pre.get("projectName") or health.get("projectName") or "Project"
+    verdict = "ready" if fix == 0 and warns == 0 else ("ready, with %s to look at" % plural(warns, "warning")) if fix == 0 else plural(fix, "thing to fix", "things to fix")
+    out = ["%s: %s." % (name, verdict), ""]
+    mark = lambda ok: "  ok " if ok else "  !! "
+    out.append(mark(errs == 0) + "Expressions: %s, %s." % (plural(errs, "error"), plural(warns, "warning")))
+    out.append(mark(health.get("score", 0) >= 90) + "Health: %d out of 100 (%s)." % (health.get("score", 0), health.get("band", "?")))
+    bad_fonts = [f["name"] for f in pre.get("fonts", []) if f["state"] != "installed"]
+    out.append(mark(not bad_fonts) + ("Fonts: all %d found." % len(pre.get("fonts", [])) if not bad_fonts else "Fonts: %s missing (%s)." % (len(bad_fonts), names(bad_fonts))))
+    gone = [f["name"] for f in pre.get("footage", [])]
+    out.append(mark(not gone) + ("Footage: nothing missing." if not gone else "Footage: %s missing (%s)." % (len(gone), names(gone))))
+    tp = pre.get("thirdPartyEffects", [])
+    if tp:
+        out.append("  ?? Third-party effects to confirm: %s." % names([e["matchName"] for e in tp]))
+    if fix or warns:
+        out += ["", "Details: mj lint, mj health, mj explain on the preflight (or mj check --details)."]
+    return out, fix == 0
+
+
+def explain_timeline(folder):
+    """mj timeline: folder holds NN.scrape (path), NN.health.json, NN.diff.json and snapshots.txt."""
+    rows = []
+    i = 0
+    while os.path.exists(os.path.join(folder, "%03d.scrape" % i)):
+        base = os.path.join(folder, "%03d" % i)
+        scrape = json.load(open(base + ".scrape", encoding="utf-8"))
+        health = json.load(open(base + ".health.json", encoding="utf-8")).get("data") or {}
+        diff = None
+        if os.path.exists(base + ".diff.json"):
+            diff = json.load(open(base + ".diff.json", encoding="utf-8")).get("data") or {}
+        if diff is None:
+            what = "first scrape"
+        elif diff.get("identical"):
+            what = "no changes"
+        else:
+            what = "; ".join(ch["text"] for ch in diff.get("changes", [])[:3])
+            more = len(diff.get("changes", [])) - 3
+            if more > 0:
+                what += "; and %d more" % more
+        rows.append((scrape["at"], "  %s   health %3s   %s" % (scrape["at"].replace("T", " ")[:16], health.get("score", "?"), what), scrape))
+        i += 1
+    snaps = os.path.join(folder, "snapshots.txt")
+    if os.path.exists(snaps):
+        for line in open(snaps, encoding="utf-8"):
+            m = re.match(r"^(.*)\.(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z\.([0-9a-f]{12})\.(aep|c4d)$", os.path.basename(line.strip()))
+            if m:
+                at = "%s-%s-%sT%s:%s:%sZ" % m.group(2, 3, 4, 5, 6, 7)
+                rows.append((at, "  %s   snapshot   %s" % (at.replace("T", " ")[:16], m.group(8)), None))
+    rows.sort(key=lambda r: r[0])
+    if not rows:
+        return ["Nothing recorded for this project yet."]
+    name = next((r[2]["name"] for r in rows if r[2]), "Project")
+    n = sum(1 for r in rows if r[2])
+    out = ["%s: %s and %s, oldest first (times are UTC)." % (name, plural(n, "scrape"), plural(len(rows) - n, "snapshot"))]
+    out += [r[1] for r in rows]
+    if len(rows) - n:
+        out += ["", "Get a version back as a new file:  mj project.restore path=<snapshot> output=<folder>"]
+    return out
+
+
 EXPLAINERS = {
     "MJ_PROJECT_SUMMARY_1": explain_summary, "MJ_EXPRESSION_LINT_1": explain_lint, "MJ_PROJECT_SNAPSHOT_1": explain_snapshot,
     "MJ_RENDER_1": explain_render, "MJ_GOLDEN_CHECK_1": explain_golden, "MJ_LOOP_SEAMS_1": explain_loop, "MJ_DEPS_GRAPH_1": explain_deps,
@@ -344,6 +425,7 @@ EXPLAINERS = {
     "MJ_PLUGIN_USAGE_1": explain_plugins, "MJ_PLUGIN_INVENTORY_1": explain_plugins, "MJ_AUDIT_VERIFY_1": explain_audit,
     "MJ_HOST_DETECT_1": explain_hosts, "MJ_PROJECT_SCRAPE_1": explain_scrape,
     "MJ_C4D_SUMMARY_1": explain_c4d_summary, "MJ_C4D_LINT_1": explain_c4d_lint, "MJ_BRIDGE_CHECK_1": explain_bridge,
+    "MJ_PREFLIGHT_1": explain_preflight,
 }
 
 
@@ -371,6 +453,22 @@ def explain(doc):
 
 
 def main(argv):
+    if len(argv) == 5 and argv[1] == "--check":
+        try:
+            docs = [json.load(open(a, encoding="utf-8")) for a in argv[2:]]
+        except (OSError, ValueError):
+            print("mj: cannot read the check results", file=sys.stderr)
+            return 66
+        for doc in docs:
+            if not doc.get("ok"):
+                print("\n".join(explain_error(doc)))
+                return 65
+        lines, ok = explain_check(*[doc["data"] for doc in docs])
+        print("\n".join(lines))
+        return 0 if ok else 1
+    if len(argv) == 3 and argv[1] == "--timeline":
+        print("\n".join(explain_timeline(argv[2])))
+        return 0
     if len(argv) != 2:
         print("usage: mj_explain.py <file | ->", file=sys.stderr)
         return 64

@@ -204,4 +204,6 @@ A successful response can still carry `warnings`: a list of `{ "code", "message"
 | `TEXTURES_MISSING` | Textures a Cinema 4D scene points at are not on disk. | See `mj scene`; relink or collect assets. |
 | `SCENE_TRUNCATED` | The scene held more textures, materials or cameras than the scraper records. | Counts are lower bounds. |
 | `NO_MATCHING_LAYER` | No layer in the After Effects project uses the Cinema 4D scene being checked. | Check the scene and project are the right pair; the layer's source must be that `.c4d` file. |
+| `FONT_REPORT_UNAVAILABLE` | The scrape has no After Effects missing-font report (scraper before 1.1, or After Effects before 24.0). | Font status comes from scanning this Mac's font folders; a font manager may provide fonts it cannot see. Re-scrape with scraper 1.1 for After Effects' own answer. |
+| `FONT_SCAN_CAPPED` | The font scan stopped at its file limit. | Some installed fonts may not have been seen. |
 | `SOURCE_CHANGED_DURING_RENDER` | The project or scene changed while rendering. | The frames may mix two versions; re-render. |

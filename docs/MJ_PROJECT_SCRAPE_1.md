@@ -16,7 +16,8 @@ Produced by `integrations/after-effects/MographJailed_ProjectScraper.jsx`
 | `aeVersion` | string | yes | e.g. `"25.1.0"` |
 | `numItems` | integer | yes | `app.project.numItems` |
 | `comps` | array | yes | Comp descriptors (see below) |
-| `fonts` | array of string | yes | Unique font family names across text layers |
+| `fonts` | array of string | yes | Unique fonts across text layers (the text document's `font`, a PostScript name such as `Inter-Bold`) |
+| `missingFonts` | array of string | no | Scraper 1.1+: PostScript names After Effects itself reports as missing or substituted (`app.fonts.missingOrSubstitutedFonts`, AE 24.0+). Absent when the host has no Font API |
 | `footage` | array | yes | Footage descriptors (see below) |
 
 ## Comp descriptor
@@ -25,6 +26,8 @@ Produced by `integrations/after-effects/MographJailed_ProjectScraper.jsx`
 |---|---|---|
 | `name` | string | |
 | `id` | integer | Project item id |
+| `label` | integer | Scraper 1.1+, optional: label colour index 0-16 |
+| `folder` | string | Scraper 1.1+, optional: project-panel folder path such as `Comps/Precomps`; `""` at the root |
 | `width`, `height` | integer | |
 | `pixelAspect` | number | |
 | `frameRate` | number | |
@@ -44,6 +47,9 @@ Produced by `integrations/after-effects/MographJailed_ProjectScraper.jsx`
 | `sourceName` | string | Empty when no source |
 | `sourcePath` | string | Absolute file path, empty when none |
 | `sourceId` | integer | Optional. Project item id of the layer's source (a footage item or a precomp's comp `id`); `0`/absent when none. Lets consumers resolve nested comps exactly even when names repeat |
+| `sourceKind` | string | Scraper 1.1+, optional: `comp`, `solid`, `footage`, `placeholder`, or `""` with no source |
+| `label` | integer | Scraper 1.1+, optional: label colour index 0-16 |
+| `adjustment` | boolean | Scraper 1.1+, optional: adjustment layer |
 | `font` | string | Optional. Text layers only: the font of the text document (first character); empty otherwise |
 | `effects` | array | `{"name","matchName"}` |
 | `markers` | integer | Marker count |
@@ -57,6 +63,9 @@ Produced by `integrations/after-effects/MographJailed_ProjectScraper.jsx`
 |---|---|---|
 | `id` | integer | Optional. Project item id |
 | `name` | string | |
+| `kind` | string | Scraper 1.1+, optional: `footage`, `solid` or `placeholder` |
+| `label` | integer | Scraper 1.1+, optional |
+| `folder` | string | Scraper 1.1+, optional: project-panel folder path |
 | `path` | string | Absolute path, empty when none |
 | `missing` | boolean | As reported by AE (`footageItem.missing`) |
 | `hasVideo`, `hasAudio` | boolean | |
