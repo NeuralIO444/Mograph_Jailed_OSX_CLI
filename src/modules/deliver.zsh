@@ -228,6 +228,10 @@ handle_media_qc() {
   request_arg_present input && _spec=$(request_arg_get input)
   if [ -n "$_fmt" ] && [ -n "$_spec" ]; then set_error "INVALID_ARGUMENT" "Give either format (a built-in spec) or input (a spec file), not both."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; fi
   if [ -z "$_fmt" ] && [ -z "$_spec" ]; then set_error "MISSING_ARGUMENT" "Give format=<built-in spec> or input=<spec file>."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; fi
+  if [ -n "$_fmt" ]; then   # a bad argument is reported before a missing tool, on any machine
+    case "$_fmt" in broadcast-us|broadcast-eu|web|social-vertical|prores-master) ;;
+      *) set_error "INVALID_ARGUMENT" "Unknown spec; built-in specs: broadcast-eu, broadcast-us, prores-master, social-vertical, web."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
+  fi
   if [ -n "$_spec" ]; then
     is_absolute_path "$_spec" || { set_error "INVALID_PATH" "Spec path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
     [ -f "$_spec" ] || { set_error "NOT_FOUND" "Spec file not found."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 66; }

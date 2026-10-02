@@ -176,6 +176,9 @@ for v in '$(touch '"$CANARY"')' '`touch '"$CANARY"'`' "; touch $CANARY" "| touch
   horror "inject comp ids: $v" "INVALID_ARGUMENT" project.extract path="$TMP/AE/projects/Spring Promo/Spring Promo.aep" input="$GOOD" target="$v" output="$TMP/out" label=x
 done
 
+# Bad arguments are named before missing tools, so the answer is the same on a Mac and on Linux CI.
+MJ_TEST_MISSING_CAPS="avmediainfo afconvert" horror "bad spec without media tools" INVALID_ARGUMENT media.qc path="$GOOD" format="; touch $CANARY"
+
 # ---------------------------------------------------------------- odd environments
 mkdir -p "$TMP/tmp dir 'q'"
 TMPDIR="$TMP/tmp dir 'q'" horror "env: TMPDIR with spaces and quotes" OK temp.create
