@@ -33,6 +33,8 @@ def secs(s):
 
 def mb(n):
     n = float(n or 0)
+    if n >= 1073741824:
+        return "%.1f GB" % (n / 1073741824)
     if n >= 1048576:
         return "%.1f MB" % (n / 1048576)
     return "%d KB" % round(n / 1024) if n >= 1024 else "%d bytes" % n
@@ -418,6 +420,38 @@ def explain_timeline(folder):
     return out
 
 
+def cache_title(c):
+    who = c["app"] + (" " + c["version"] if c.get("version") and c["app"] != "Cinema 4D" else "")
+    if c["app"] == "Cinema 4D" and c.get("version"):
+        who = "Cinema 4D %s" % c["version"]
+    return "%s %s" % (who, c["kind"])
+
+
+def explain_cache_inspect(d):
+    shown = [c for c in d["caches"] if c["bytes"] > 0]
+    out = ["Caches on this Mac: %s (%s can be emptied safely; %s is left over from versions that are no longer installed)." % (mb(d["totalBytes"]), mb(d["cleanableBytes"]), mb(d["leftOverBytes"]))]
+    if not shown:
+        return ["No cache folders with anything in them were found."]
+    for c in shown:
+        tag = "left over, not installed" if c["leftOver"] and c["cleanable"] else ("managed by the app" if not c["cleanable"] else "")
+        out.append("  %9s  %-42s %-26s %s" % (mb(c["bytes"]), cache_title(c), tag, c["id"] if c["cleanable"] else ""))
+    out += ["", "See what one would free:   mj space clean <id>", "Empty it (app must be closed):   mj space clean <id> --yes"]
+    if d["leftOverBytes"]:
+        out.append("Empty everything left over from old versions:   mj space clean leftovers --yes")
+    return out
+
+
+def explain_cache_clean(d):
+    title = cache_title(d)
+    if not d["deleted"]:
+        return ["Emptying the %s would free %s (%s)." % (title, mb(d["wouldFree"]), plural(d["filesBefore"], "file")), "  " + d["path"],
+                "Nothing was deleted. To empty it%s, run:  mj space clean %s --yes" % ("" if d.get("leftOver") else " (quit %s first)" % d["app"], d["id"])]
+    out = ["Emptied the %s: freed %s." % (title, mb(d["bytesFreed"]))]
+    if d.get("problems"):
+        out.append("  Could not remove: %s." % names(d["problems"]))
+    return out
+
+
 EXPLAINERS = {
     "MJ_PROJECT_SUMMARY_1": explain_summary, "MJ_EXPRESSION_LINT_1": explain_lint, "MJ_PROJECT_SNAPSHOT_1": explain_snapshot,
     "MJ_RENDER_1": explain_render, "MJ_GOLDEN_CHECK_1": explain_golden, "MJ_LOOP_SEAMS_1": explain_loop, "MJ_DEPS_GRAPH_1": explain_deps,
@@ -425,7 +459,7 @@ EXPLAINERS = {
     "MJ_PLUGIN_USAGE_1": explain_plugins, "MJ_PLUGIN_INVENTORY_1": explain_plugins, "MJ_AUDIT_VERIFY_1": explain_audit,
     "MJ_HOST_DETECT_1": explain_hosts, "MJ_PROJECT_SCRAPE_1": explain_scrape,
     "MJ_C4D_SUMMARY_1": explain_c4d_summary, "MJ_C4D_LINT_1": explain_c4d_lint, "MJ_BRIDGE_CHECK_1": explain_bridge,
-    "MJ_PREFLIGHT_1": explain_preflight,
+    "MJ_PREFLIGHT_1": explain_preflight, "MJ_CACHE_INSPECT_1": explain_cache_inspect, "MJ_CACHE_CLEAN_1": explain_cache_clean,
 }
 
 

@@ -42,6 +42,7 @@ for f in \
   src/modules/insight.zsh \
   src/modules/c4d.zsh \
   src/modules/studio.zsh \
+  src/modules/space.zsh \
   src/modules/host.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$OUT"

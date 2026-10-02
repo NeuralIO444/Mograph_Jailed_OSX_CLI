@@ -48,13 +48,15 @@ operation_names() {
     c4d.lint \
     bridge.check \
     project.preflight \
+    cache.inspect \
+    cache.clean \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -148,6 +150,12 @@ operation_available() {
     project.preflight)
       cap_available python3
       ;;
+    cache.inspect)
+      cap_available python3
+      ;;
+    cache.clean)
+      cap_available python3
+      ;;
     *) return 1 ;;
   esac
 }
@@ -202,6 +210,8 @@ operation_summary() {
     project.health) printf 'A documented 0-100 health score for a project, with its trend.' ;;
     audit.plugins) printf 'Projects using an effect matchName, or the plugin inventory.' ;;
     project.preflight) printf '%s' 'Will this project open cleanly here? Fonts, footage, third-party effects.' ;;
+    cache.inspect) printf '%s' 'How much disk the After Effects, Adobe media and Redshift caches take.' ;;
+    cache.clean) printf '%s' 'Empty one cache by its id; refuses while its app runs.' ;;
     report.tech) printf 'Native diagnostic receipt for support.' ;;
     package.create) printf 'Zip a file or folder with ditto; never overwrites.' ;;
     *) printf '' ;;
@@ -237,6 +247,8 @@ operation_cost() {
     project.snapshot) printf 'IO_BOUND' ;;
     package.create) printf 'IO_BOUND' ;;
     project.preflight) printf 'SIZE_DEPENDENT' ;;
+    cache.inspect) printf 'SIZE_DEPENDENT' ;;
+    cache.clean) printf 'SIZE_DEPENDENT' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
@@ -248,6 +260,7 @@ operation_mutation() {
     search.candidate|loop.seams|golden.check) printf 'INTERNAL_TEMP' ;;
     image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get|ae.render|c4d.render) printf 'DERIVATIVE_CREATE' ;;
     index.add|preset.add|project.health) printf 'STORE_WRITE' ;;
+    cache.clean) printf 'CACHE_DELETE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -283,13 +296,15 @@ operation_authority() {
     preset.get|ae.render|c4d.render) printf 'AUTHORITATIVE_OPERATION' ;;
     host.detect) printf 'AUTHORITATIVE_ENVIRONMENT' ;;
     project.preflight) printf 'DERIVED_PROJECT_SUMMARY' ;;
+    cache.inspect) printf 'AUTHORITATIVE_FILESYSTEM_METADATA' ;;
+    cache.clean) printf 'AUTHORITATIVE_OPERATION' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
 
 operation_interactive_safe() {
   case "$1" in
-    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check|project.restore|handoff.package|index.add|preset.add|preset.get|ae.render|c4d.render) return 1 ;;
+    file.hash|asset.manifest|asset.verify|search.candidate|image.derivative|media.timing|media.frame|package.create|project.snapshot|loop.seams|golden.record|golden.check|project.restore|handoff.package|index.add|preset.add|preset.get|ae.render|c4d.render|cache.clean) return 1 ;;
     *) return 0 ;;
   esac
 }

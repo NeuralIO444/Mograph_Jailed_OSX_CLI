@@ -41,6 +41,7 @@ for f in \
   src/modules/insight.zsh \
   src/modules/c4d.zsh \
   src/modules/studio.zsh \
+  src/modules/space.zsh \
   src/modules/host.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$OUT"
@@ -49,6 +50,7 @@ for f in \
   # The production bundle has no such hook.
   if [ "$f" = "src/core/constants.zsh" ]; then
     printf '%s\n' 'MJ_HOST_APPS_DIR="${MJ_TEST_APPS_DIR:-/Applications}"' >> "$OUT"
+    printf '%s\n' 'MJ_PS="${MJ_TEST_PS:-/bin/ps}"' >> "$OUT"
   fi
   if [ "$f" = "src/core/capabilities.zsh" ]; then
     # Test bundle only: MJ_TEST_MISSING_CAPS="python3 sips" makes those tools look absent.

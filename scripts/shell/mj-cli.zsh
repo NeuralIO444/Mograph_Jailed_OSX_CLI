@@ -363,6 +363,7 @@ mj versions [project]              list saved versions
 mj lint [last|<scrape>]            check expressions, in plain language
 mj health [last|<scrape>] [--record]  project health score (0-100)
 mj check [project|last|<scrape>] [--details]  one verdict: expressions, health, fonts, footage
+mj space [clean <id>|leftovers [--yes]]  disk taken by After Effects, Adobe and Redshift caches; empty one safely
 mj timeline <project> [--all]      every scrape and snapshot of a project, with health and what changed
 mj scene [last|<c4d scrape>] [--summary]   check a Cinema 4D scene receipt, in plain language
 mj bridge <c4d scrape> [<ae scrape>|last] [comp]   does the AE comp match the C4D scene?
@@ -434,6 +435,26 @@ USAGE
             fi
             /bin/rm -rf "$ckd"
             return $rc1 ;;
+        space)
+            shift
+            case "${1:-}" in
+                "") _mj_say cache.inspect; return ;;
+                clean)
+                    [ -n "${2:-}" ] || { print -u2 "usage: mj space clean <id>|leftovers [--yes]"; return 64; }
+                    local sid="$2" syes=0 srs=0; local -a sids
+                    [ "${3:-}" = --yes ] && syes=1
+                    if [ "$sid" = leftovers ]; then
+                        sids=(${(f)"$(_mj_run cache.inspect | /usr/bin/jq -r '.data.caches[]? | select(.leftOver and .cleanable and .bytes > 0) | .id')"})
+                        [ ${#sids} -gt 0 ] || { print "Nothing left over from old versions."; return 0; }
+                    else
+                        sids=("$sid")
+                    fi
+                    for sid in "${sids[@]}"; do
+                        if (( syes )); then _mj_say cache.clean "target=$sid" format=delete || srs=$?; else _mj_say cache.clean "target=$sid" || srs=$?; fi
+                    done
+                    return $srs ;;
+                *) print -u2 "usage: mj space   |   mj space clean <id>|leftovers [--yes]"; return 64 ;;
+            esac ;;
         timeline)
             shift
             [ -n "${1:-}" ] || { print -u2 "usage: mj timeline <project name> [--all]"; return 64; }
@@ -536,7 +557,7 @@ USAGE
 _mj_complete() {
     local -a items
     local json cmd="${words[2]}"
-    local -a verbs; verbs=(snapshot versions lint health check timeline diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
+    local -a verbs; verbs=(snapshot versions lint health check timeline space diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
     if (( CURRENT == 2 )); then
         json=$(_mj_describe) || json=""
         items=($verbs ${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]' 2>/dev/null)"})
@@ -550,6 +571,7 @@ _mj_complete() {
         health) items=(last --record); compadd -a items; _files ;;
         diff) items=(last); compadd -a items; _files ;;
         watch) items=(on off status); compadd -a items ;;
+        space) if (( CURRENT == 3 )); then items=(clean); compadd -a items; elif (( CURRENT == 4 )); then items=(leftovers ${(f)"$(_mj_run cache.inspect 2>/dev/null | /usr/bin/jq -r '.data.caches[]? | select(.cleanable) | .id')"}); compadd -a items; else items=(--yes); compadd -a items; fi ;;
         notify) items=(on off test status); compadd -a items ;;
         config)
             if (( CURRENT == 3 )); then items=(show path get set unset); compadd -a items

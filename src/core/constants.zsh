@@ -34,4 +34,5 @@ export PYTHONNOUSERSITE PYTHONDONTWRITEBYTECODE
 
 # Host applications (After Effects, Cinema 4D) are only ever discovered here.
 MJ_HOST_APPS_DIR="/Applications"
+MJ_PS="/bin/ps"
 MJ_HOST_MIN_YEAR=2024

@@ -140,6 +140,8 @@ Details are in `render.json` and `render.log` in the render folder.
 
 | Code | Exit | What it means | What to do |
 |---|---|---|---|
+| `HOST_BUSY` | 74 | The app that owns a cache is running, so `cache.clean` did not delete anything. | Quit the app named in the message and try again. |
+| `POLICY_DENIED` | 77 | The tool will not do this by design (for example emptying a cache the app manages itself). | Use the app's own setting named in the message. |
 | `RENDER_BUSY` | 74 | Another render is running; renders run one at a time. | Wait for it, or check `mj status`. |
 | `RENDER_FAILED` | 74 | The host exited with an error. | Read `errorTail` in `render.json` and `render.log`. |
 | `RENDER_INCOMPLETE` | 74 | The host finished but fewer frames exist than expected. If it produced none and said nothing, it was probably waiting on a dialog (sign-in, project conversion, script permissions). | Open the application once by hand and clear any prompt; check the comp/scene range and the log; re-render. |
@@ -206,4 +208,5 @@ A successful response can still carry `warnings`: a list of `{ "code", "message"
 | `NO_MATCHING_LAYER` | No layer in the After Effects project uses the Cinema 4D scene being checked. | Check the scene and project are the right pair; the layer's source must be that `.c4d` file. |
 | `FONT_REPORT_UNAVAILABLE` | The scrape has no After Effects missing-font report (scraper before 1.1, or After Effects before 24.0). | Font status comes from scanning this Mac's font folders; a font manager may provide fonts it cannot see. Re-scrape with scraper 1.1 for After Effects' own answer. |
 | `FONT_SCAN_CAPPED` | The font scan stopped at its file limit. | Some installed fonts may not have been seen. |
+| `CACHE_PARTLY_CLEANED` | Some entries in a cache folder could not be removed. | They are listed in `problems`; check permissions or quit the app and run it again. |
 | `SOURCE_CHANGED_DURING_RENDER` | The project or scene changed while rendering. | The frames may mix two versions; re-render. |

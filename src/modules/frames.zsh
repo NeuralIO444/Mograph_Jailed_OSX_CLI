@@ -34,6 +34,11 @@ frames_emit_python_result() {
   emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
   case "$MJ_FRAMES_ERR_CODE" in
     INVALID_JSON|SCHEMA_MISMATCH|SCRAPE_TOO_LARGE) return 65 ;;    # the file you gave is not acceptable, same as ingest and lint
+    INVALID_ARGUMENT|INVALID_PATH|INVALID_TARGET|INVALID_SPEC) return 65 ;;
+    NOT_FOUND) return 66 ;;
+    UNSUPPORTED) return 69 ;;
+    OUTPUT_EXISTS|OUTPUT_UNAVAILABLE) return 73 ;;
+    POLICY_DENIED) return 77 ;;
   esac
   return 74
 }

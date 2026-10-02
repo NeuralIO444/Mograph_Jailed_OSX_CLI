@@ -45,6 +45,8 @@ project.health
 c4d.inspect
 c4d.lint
 bridge.check
+cache.clean
+cache.inspect
 project.preflight
 report.tech
 runtime.verify
