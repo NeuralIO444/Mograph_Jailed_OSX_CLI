@@ -28,7 +28,7 @@ REQ
 run_req describe
 check test "$RC" -eq 0
 check jq -e '.ok==true and .cliVersion=="0.4.0-dev.2" and .data.schema=="MOGRAPHJAILED_CAPABILITY_REGISTRY_2" and .data.registryVersion==2 and .data.protocolVersion==1' "$TMP/describe.json"
-check jq -e '.data.operations|length==52' "$TMP/describe.json"
+check jq -e '.data.operations|length==53' "$TMP/describe.json"
 check jq -e '.data.operations["file.hash"].cost=="SIZE_DEPENDENT" and .data.operations["file.hash"].interactiveSafe==false and .data.operations["file.hash"].authority=="AUTHORITATIVE_BYTES"' "$TMP/describe.json"
 check jq -e '.data.operations["file.hash"].requires.anyOf==[["sha256","shasum"]]' "$TMP/describe.json"
 check jq -e '.data.operations["runtime.verify"].requires.anyOf==[] and .data.operations["runtime.verify"].optionalCapabilities==["sha256","shasum"]' "$TMP/describe.json"

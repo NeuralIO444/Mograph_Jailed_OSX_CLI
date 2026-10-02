@@ -452,6 +452,17 @@ def explain_cache_clean(d):
     return out
 
 
+QC_MARK = {"pass": "ok", "fail": "!!", "warn": "??", "skipped": "--"}
+
+
+def explain_qc(d):
+    verdict = "passes" if d["passed"] else "fails %s" % plural(d["failed"], "check")
+    out = ["%s %s for %s." % (os.path.basename(d["path"]), verdict, d["specName"])]
+    for c in d["checks"]:
+        out.append("  %s %s" % (QC_MARK[c["status"]], c["message"]))
+    return out
+
+
 EXPLAINERS = {
     "MJ_PROJECT_SUMMARY_1": explain_summary, "MJ_EXPRESSION_LINT_1": explain_lint, "MJ_PROJECT_SNAPSHOT_1": explain_snapshot,
     "MJ_RENDER_1": explain_render, "MJ_GOLDEN_CHECK_1": explain_golden, "MJ_LOOP_SEAMS_1": explain_loop, "MJ_DEPS_GRAPH_1": explain_deps,
@@ -460,6 +471,7 @@ EXPLAINERS = {
     "MJ_HOST_DETECT_1": explain_hosts, "MJ_PROJECT_SCRAPE_1": explain_scrape,
     "MJ_C4D_SUMMARY_1": explain_c4d_summary, "MJ_C4D_LINT_1": explain_c4d_lint, "MJ_BRIDGE_CHECK_1": explain_bridge,
     "MJ_PREFLIGHT_1": explain_preflight, "MJ_CACHE_INSPECT_1": explain_cache_inspect, "MJ_CACHE_CLEAN_1": explain_cache_clean,
+    "MJ_MEDIA_QC_1": explain_qc,
 }
 
 

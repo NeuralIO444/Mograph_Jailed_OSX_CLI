@@ -363,6 +363,7 @@ mj versions [project]              list saved versions
 mj lint [last|<scrape>]            check expressions, in plain language
 mj health [last|<scrape>] [--record]  project health score (0-100)
 mj check [project|last|<scrape>] [--details]  one verdict: expressions, health, fonts, footage
+mj qc <movie> [spec]               check a render against a delivery spec (codec, size, fps, audio, loudness)
 mj space [clean <id>|leftovers [--yes]]  disk taken by After Effects, Adobe and Redshift caches; empty one safely
 mj timeline <project> [--all]      every scrape and snapshot of a project, with health and what changed
 mj scene [last|<c4d scrape>] [--summary]   check a Cinema 4D scene receipt, in plain language
@@ -435,6 +436,17 @@ USAGE
             fi
             /bin/rm -rf "$ckd"
             return $rc1 ;;
+        qc)
+            shift
+            [ -n "${1:-}" ] || { print -u2 "usage: mj qc <movie> [spec]   (built-in specs: broadcast-us broadcast-eu web social-vertical prores-master, or a spec file; default: qc_spec setting, else web)"; return 64; }
+            local qm="${1:A}" qs="${2:-$(mj_config_get qc_spec)}"
+            [ -n "$qs" ] || qs=web
+            local qout qrc
+            if [ -f "$qs" ]; then qout=$(_mj_run media.qc "path=$qm" "input=${qs:A}"); else qout=$(_mj_run media.qc "path=$qm" "format=$qs"); fi
+            qrc=$?
+            print -r -- "$qout" | _mj_explain -
+            (( qrc == 0 )) && [ "$(print -r -- "$qout" | /usr/bin/jq -r '.data.passed')" = false ] && return 1     # a failed check fails the command, so batches and scripts can gate on it
+            return $qrc ;;
         space)
             shift
             case "${1:-}" in
@@ -557,7 +569,7 @@ USAGE
 _mj_complete() {
     local -a items
     local json cmd="${words[2]}"
-    local -a verbs; verbs=(snapshot versions lint health check timeline space diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
+    local -a verbs; verbs=(snapshot versions lint health check timeline space qc diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
     if (( CURRENT == 2 )); then
         json=$(_mj_describe) || json=""
         items=($verbs ${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]' 2>/dev/null)"})
@@ -571,6 +583,7 @@ _mj_complete() {
         health) items=(last --record); compadd -a items; _files ;;
         diff) items=(last); compadd -a items; _files ;;
         watch) items=(on off status); compadd -a items ;;
+        qc) if (( CURRENT == 3 )); then _files -g '*.(mov|mp4|m4v|MOV|MP4)'; else items=(broadcast-us broadcast-eu web social-vertical prores-master); compadd -a items; _files; fi ;;
         space) if (( CURRENT == 3 )); then items=(clean); compadd -a items; elif (( CURRENT == 4 )); then items=(leftovers ${(f)"$(_mj_run cache.inspect 2>/dev/null | /usr/bin/jq -r '.data.caches[]? | select(.cleanable) | .id')"}); compadd -a items; else items=(--yes); compadd -a items; fi ;;
         notify) items=(on off test status); compadd -a items ;;
         config)

@@ -1,8 +1,8 @@
 # MographJailed settings: one small file, set once, remembered by every tool.
 #
 #   file:  ${MJ_CONFIG:-~/.config/mograph-jailed/config}     key=value lines, # comments
-#   keys:  versions_dir  receipts_dir  watch_dir  cli  post_snapshot_hook
-#   env:   MJ_VERSIONS_DIR MJ_RECEIPTS_DIR MJ_WATCH_DIR MJ_CLI MJ_POST_SNAPSHOT_HOOK  (win over the file)
+#   keys:  versions_dir  receipts_dir  watch_dir  cli  post_snapshot_hook  qc_spec  studio_spec
+#   env:   MJ_VERSIONS_DIR MJ_RECEIPTS_DIR MJ_WATCH_DIR MJ_CLI MJ_POST_SNAPSHOT_HOOK MJ_QC_SPEC MJ_STUDIO_SPEC  (win over the file)
 #
 # Precedence everywhere: command-line flag > environment > config file > built-in default.
 # The file is parsed, never sourced, so a setting can never run code. Safe to source; it
@@ -10,7 +10,7 @@
 
 _mj_config_file() { print -r -- "${MJ_CONFIG:-$HOME/.config/mograph-jailed/config}"; }
 
-_mj_config_keys() { print -r -- "versions_dir receipts_dir watch_dir cli post_snapshot_hook"; }
+_mj_config_keys() { print -r -- "versions_dir receipts_dir watch_dir cli post_snapshot_hook qc_spec studio_spec"; }
 
 _mj_config_env_name() {
     case "$1" in
@@ -19,6 +19,8 @@ _mj_config_env_name() {
         watch_dir) print -r -- MJ_WATCH_DIR ;;
         cli) print -r -- MJ_CLI ;;
         post_snapshot_hook) print -r -- MJ_POST_SNAPSHOT_HOOK ;;
+        qc_spec) print -r -- MJ_QC_SPEC ;;
+        studio_spec) print -r -- MJ_STUDIO_SPEC ;;
         *) return 1 ;;
     esac
 }
@@ -68,8 +70,10 @@ _mj_config_check() {
     case "$val" in *$'\n'*|*$'\r'*) print -u2 "mj: a setting cannot contain a line break"; return 1 ;; esac
     case "$val" in "~"*) val="$HOME${val#\~}" ;; esac
     case "$key" in
-        versions_dir|receipts_dir|watch_dir|cli|post_snapshot_hook)
+        versions_dir|receipts_dir|watch_dir|cli|post_snapshot_hook|studio_spec)
             case "$val" in /*) ;; *) print -u2 "mj: $key must be a full path starting with / (got: $val)"; return 1 ;; esac ;;
+        qc_spec)
+            case "$val" in /*|broadcast-us|broadcast-eu|web|social-vertical|prores-master) ;; *) print -u2 "mj: qc_spec must be a built-in spec (broadcast-us broadcast-eu web social-vertical prores-master) or a full path to a spec file"; return 1 ;; esac ;;
     esac
     print -r -- "$val"
 }

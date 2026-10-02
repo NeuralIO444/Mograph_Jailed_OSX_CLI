@@ -15,6 +15,8 @@ config file: ~/.config/mograph-jailed/config
   watch_dir            (file)    ~/AE/projects
   cli                  (env)     <repo>/dist/mograph-jailed.zsh
   post_snapshot_hook   (unset)   -
+  qc_spec              (unset)   -
+  studio_spec          (unset)   -
 
 ##### snapshot
 $ mj snapshot "Spring Promo"

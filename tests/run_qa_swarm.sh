@@ -120,6 +120,7 @@ for f in \
   src/modules/c4d.zsh \
   src/modules/studio.zsh \
   src/modules/space.zsh \
+  src/modules/deliver.zsh \
   src/modules/host.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$EXPECTED_DIST"

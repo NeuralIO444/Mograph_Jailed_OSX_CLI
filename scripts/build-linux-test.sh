@@ -42,6 +42,7 @@ for f in \
   src/modules/c4d.zsh \
   src/modules/studio.zsh \
   src/modules/space.zsh \
+  src/modules/deliver.zsh \
   src/modules/host.zsh \
   src/cli/entry.zsh; do
   printf '\n# --- %s ---\n' "$f" >> "$OUT"
@@ -54,6 +55,8 @@ for f in \
   fi
   if [ "$f" = "src/core/capabilities.zsh" ]; then
     # Test bundle only: MJ_TEST_MISSING_CAPS="python3 sips" makes those tools look absent.
+    # Test bundle only: MJ_TEST_AVMEDIAINFO / MJ_TEST_AFCONVERT stand in for the stock media tools.
+    printf '%s\n' 'functions -c cap_path _mj_cap_path_real; cap_path() { case "$1" in avmediainfo) [ -n "${MJ_TEST_AVMEDIAINFO:-}" ] && { printf "%s" "$MJ_TEST_AVMEDIAINFO"; return 0; } ;; afconvert) [ -n "${MJ_TEST_AFCONVERT:-}" ] && { printf "%s" "$MJ_TEST_AFCONVERT"; return 0; } ;; esac; _mj_cap_path_real "$1"; }' >> "$OUT"
     printf '%s\n' 'cap_available() { case " ${MJ_TEST_MISSING_CAPS:-} " in *" $1 "*) return 1 ;; esac; local _cap_path; _cap_path=$(cap_path "$1") || return 1; [ -x "$_cap_path" ]; }' >> "$OUT"
   fi
   if [ "$f" = "src/modules/project.zsh" ]; then
