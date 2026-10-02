@@ -23,17 +23,9 @@ def now_iso():
 def db_path(store):
     return os.path.join(store, "index.sqlite")
 
-def open_db(store, create=False):
-    path = db_path(store)
-    if not create and not os.path.isfile(path):
-        err("STORE_EMPTY", "Nothing has been indexed yet; run index.add or preset.add first.")
-    db = sqlite3.connect(path, timeout=15)
-    v = db.execute("PRAGMA user_version").fetchone()[0]
-    if v > SCHEMA_VERSION:
-        err("STORE_TOO_NEW", "Store schema %d is newer than this runtime supports (%d)." % (v, SCHEMA_VERSION))
-    if v < 1:
-        with db:
-            db.executescript("""
+STORE_MIGRATIONS = [
+    # v1
+    (1, """
                 CREATE TABLE docs(id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, sha256 TEXT NOT NULL,
                                   schema TEXT NOT NULL, title TEXT, indexed_at TEXT NOT NULL);
                 CREATE VIRTUAL TABLE entries USING fts5(doc_id UNINDEXED, kind, name, detail,
@@ -42,12 +34,9 @@ def open_db(store, create=False):
                                   sha256 TEXT NOT NULL, kind TEXT NOT NULL, original_name TEXT NOT NULL,
                                   bytes INTEGER NOT NULL, added_at TEXT NOT NULL, UNIQUE(label, version));
                 PRAGMA user_version = 1;
-            """)
-    if v < 2:
-        # v2: normalized project tables for exact audit queries. Filled by index.add
-        # from MJ_PROJECT_SCRAPE_1 receipts (newest scrape per project path wins).
-        with db:
-            db.executescript("""
+            """),
+    # v2
+    (2, """
                 CREATE TABLE projects(id INTEGER PRIMARY KEY, project_path TEXT UNIQUE NOT NULL, name TEXT,
                                   ae_version TEXT, scraped_at TEXT NOT NULL, receipt_path TEXT NOT NULL,
                                   receipt_sha256 TEXT NOT NULL);
@@ -73,17 +62,46 @@ def open_db(store, create=False):
                 -- Receipts indexed under v1 have no relational rows; force one re-read.
                 UPDATE docs SET sha256 = '' WHERE schema = 'MJ_PROJECT_SCRAPE_1';
                 PRAGMA user_version = 2;
-            """)
-    if v < 3:
-        # v3: recorded project health scores (project.health format=record), for trends.
-        with db:
-            db.executescript("""
+            """),
+    # v3
+    (3, """
                 CREATE TABLE health(id INTEGER PRIMARY KEY, project_path TEXT NOT NULL, scraped_at TEXT NOT NULL, score INTEGER NOT NULL,
                                   formula_version INTEGER NOT NULL, receipt_sha256 TEXT NOT NULL, recorded_at TEXT NOT NULL,
                                   UNIQUE(project_path, receipt_sha256, formula_version));
                 CREATE INDEX idx_health_project ON health(project_path, scraped_at);
                 PRAGMA user_version = 3;
-            """)
+            """),
+]
+
+def open_db(store, create=False):
+    path = db_path(store)
+    if not create and not os.path.isfile(path):
+        err("STORE_EMPTY", "Nothing has been indexed yet; run index.add or preset.add first.")
+    db = sqlite3.connect(path, timeout=15)
+    v = db.execute("PRAGMA user_version").fetchone()[0]
+    if v > SCHEMA_VERSION:
+        err("STORE_TOO_NEW", "Store schema %d is newer than this runtime supports (%d)." % (v, SCHEMA_VERSION))
+    # Each migration runs in one IMMEDIATE transaction and re-reads the version once it holds the write
+    # lock, so two runs creating a new store at the same moment cannot both apply it (one waits, then skips).
+    db.isolation_level = None
+    for target, script in STORE_MIGRATIONS:
+        if v >= target:
+            continue
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            v = db.execute("PRAGMA user_version").fetchone()[0]
+            if v < target:
+                stmt = ""
+                for line in script.splitlines(True):
+                    stmt += line
+                    if sqlite3.complete_statement(stmt):
+                        db.execute(stmt); stmt = ""
+                v = target
+            db.execute("COMMIT")
+        except Exception:
+            db.execute("ROLLBACK")
+            raise
+    db.isolation_level = ""
     db.execute("PRAGMA foreign_keys = ON")
     return db
 
@@ -210,7 +228,7 @@ library_require_store() {
   if [ ! -d "$_dir" ]; then
     [ "$_create" = create ] || { set_error "STORE_EMPTY" "Nothing has been indexed yet; run index.add or preset.add first."; return 66; }
     [ -d "$(parent_path "$_dir")" ] || { set_error "STORE_UNAVAILABLE" "Store parent directory does not exist."; return 73; }
-    /bin/mkdir -m 700 "$_dir" 2>/dev/null || { set_error "STORE_UNAVAILABLE" "Could not create the store directory."; return 73; }
+    /bin/mkdir -m 700 "$_dir" 2>/dev/null || [ -d "$_dir" ] || { set_error "STORE_UNAVAILABLE" "Could not create the store directory."; return 73; }   # another run may have just made it
   fi
   [ -w "$_dir" ] || { set_error "STORE_UNAVAILABLE" "Store directory is not writable."; return 73; }
   mj_require_local_existing_path "$_dir" || return 73

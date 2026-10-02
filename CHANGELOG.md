@@ -12,7 +12,8 @@ Operations grew from 49 to 56. Protocol v1 is unchanged.
 - Scraper 1.1 (additive): labels, project-panel folders, layer source kind, adjustment flag, `missingFonts`; can run unattended.
 - Engine errors exit with their documented codes rather than 74 for everything.
 - Fixed: the health explainer showed an unmeasured component as points lost.
-- Not yet qualified in a real After Effects: the job runner and scraper 1.1 (After Effects on the test Mac was blocked by a dialog).
+- Qualified in After Effects 26.5 (`tests/live/run_ae_hall_of_horror.zsh`, 28 checks): unattended scrape (scraper 1.1), conform (72 of 72 steps, every expression evaluates), extract (a 12-deep chain; a duplicated comp name by id), runner refusals, original unchanged. Found and fixed: an extract kept expressions pointing at comps outside it with no warning (now `EXTERNAL_REFERENCES`).
+- Hall of horror (`tests/run_hall_of_horror.sh`, about 250 cases). Found and fixed: malformed nested receipt data crashed lint, ingest, preflight and conform (the shared loader now cleans nested data); racing snapshots of one project reported `OUTPUT_EXISTS` or saved duplicate versions (now a per-project lock, and identical bytes report `alreadySaved`); runs creating a new store at the same moment crashed (migrations now run in an IMMEDIATE transaction that re-checks the version).
 
 ## 0.4.0-dev.2 — 2026-10-02
 

@@ -60,3 +60,16 @@ Protocol 1
 ```
 
 The protocol number must match the protocol the CLI speaks (see `MOGRAPHJAILED_PROTOCOL_VERSION` in the CLI). Don't hand-edit it — it ships with the repo.
+
+## Is After Effects reachable?
+
+With After Effects open and no project loaded:
+
+```text
+zsh tests/live/run_ae_hall_of_horror.zsh
+```
+
+It checks that After Effects is found, answers AppleScript and may write files. Then it builds a deliberately hostile project and runs the whole pipeline on it in After Effects: scrape, check, conform, extract, the runner's refusals. It confirms the original never changes. If the first steps fail, allow Terminal to control After Effects (System Settings > Privacy & Security > Automation), clear any open dialog, and turn on Allow Scripts to Write Files and Access Network. Add `--keep` to keep the scratch folder.
+
+`bash tests/run_hall_of_horror.sh` is the portable half (part of the test suite). It throws about 250 hostile inputs at the CLI: odd paths, FIFOs, a 9 GB sparse file, JSON bombs, broken receipts, protocol abuse, injection strings, odd locales and time zones, and racing snapshots and indexes.
+

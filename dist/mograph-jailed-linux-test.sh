@@ -3945,8 +3945,9 @@ footage_unlinked = []
 for item in doc["footage"]:
     if not isinstance(item, dict):
         continue
-    name = item.get("name", "?")
+    name = str(item.get("name", "?"))
     p = item.get("path", "")
+    p = p if isinstance(p, str) else ""
     if item.get("missing") is True:
         footage_missing.append(name)
     elif not p:
@@ -4018,6 +4019,9 @@ if not isinstance(doc, dict) or doc.get("schema") != "MJ_PROJECT_SCRAPE_1":
 if not isinstance(doc.get("comps"), list):
     err("SCHEMA_MISMATCH", "comps must be an array.")
 
+def arr(v):
+    return v if isinstance(v, list) else []
+
 layer_ref_re = re.compile(r'thisComp\s*\.\s*layer\s*\(\s*["\']([^"\']+)["\']\s*\)')
 effect_ref_re = re.compile(r'''\beffect\s*\(\s*["\']([^"\']+)["\']\s*\)''')
 loop_re = re.compile(r'\b(for|while)\b')
@@ -4039,18 +4043,18 @@ for comp in doc["comps"]:
         continue
     comp_name = str(comp.get("name", "?"))
     layer_names = set()
-    for layer in comp.get("layers", []):
+    for layer in arr(comp.get("layers")):
         if isinstance(layer, dict):
             layer_names.add(str(layer.get("name", "")))
-    for layer in comp.get("layers", []):
+    for layer in arr(comp.get("layers")):
         if not isinstance(layer, dict):
             continue
         layer_name = str(layer.get("name", "?"))
         effect_names = set()
-        for eff in layer.get("effects", []):
+        for eff in arr(layer.get("effects")):
             if isinstance(eff, dict):
                 effect_names.add(str(eff.get("name", "")))
-        for item in layer.get("expressions", []):
+        for item in arr(layer.get("expressions")):
             if not isinstance(item, dict):
                 continue
             prop = str(item.get("propertyPath", "?"))
@@ -4276,6 +4280,46 @@ handle_plugin_audit() {
 # Test bundle only redefines this to simulate a project being written mid-copy.
 snapshot_test_hook() { :; }
 
+# A regular, non-link file whose full SHA-256 is $2.
+snapshot_same_bytes() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  hash_sha256_file "$1" 2>/dev/null || return 1
+  [ "$MJ_HASH_VALUE" = "$2" ]
+}
+
+# Success without a new file: reason "unchanged" (matches the latest snapshot) or "alreadySaved"
+# (a concurrent snapshot published these exact bytes; $6 is its path).
+snapshot_emit_not_created() {
+  local _reason="$1" _src="$2" _sha="$3" _hsrc="$4" _id0="$5" _existing="$6"
+  emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+  printf '{"schema":"MJ_PROJECT_SNAPSHOT_1","sourcePath":'; json_quote "$_src"
+  printf ',"sha256":'; json_quote "$_sha"
+  printf ',"hashSource":'; json_quote "$_hsrc"
+  printf ',"snapshotCreated":false,"reason":'; json_quote "$_reason"
+  [ -n "$_existing" ] && { printf ',"snapshotPath":'; json_quote "$_existing"; }
+  printf ',"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_src")"
+  emit_success_end
+}
+
+# mkdir is atomic: the lock is a folder holding the owner's pid. A lock whose owner is gone is taken
+# over; otherwise wait up to 60 s.
+MJ_SNAPSHOT_LOCK=""
+snapshot_lock() {
+  local _l="$1" _i=0 _pid
+  while [ $_i -lt 600 ]; do
+    if /bin/mkdir "$_l" 2>/dev/null; then
+      printf '%s' "$$" > "$_l/pid"; MJ_SNAPSHOT_LOCK="$_l"; return 0
+    fi
+    _pid=$(/bin/cat "$_l/pid" 2>/dev/null)
+    if [ -n "$_pid" ] && ! /bin/kill -0 "$_pid" 2>/dev/null; then
+      /bin/rm -rf "$_l" 2>/dev/null; continue
+    fi
+    /bin/sleep 0.1; _i=$((_i + 1))
+  done
+  return 1
+}
+snapshot_unlock() { [ -n "$MJ_SNAPSHOT_LOCK" ] && /bin/rm -rf "$MJ_SNAPSHOT_LOCK" 2>/dev/null; MJ_SNAPSHOT_LOCK=""; }
+
 handle_project_snapshot() {
   local _path=""
   local _outdir=""
@@ -4327,16 +4371,22 @@ handle_project_snapshot() {
   # Each kind keeps its own pointer so Hero.aep and Hero.c4d can never be mistaken for each other.
   if [ "$_ext" = c4d ]; then _latest_name="$_stem.c4d.latest.json"; else _latest_name="$_stem.latest.json"; fi
   _latest_file="$_outdir_real/$_latest_name"
+  # One snapshot of a project at a time: the "unchanged since the latest snapshot" check, the copy and the
+  # publish all happen under a per-project lock, so the watcher and a manual mj snapshot can never both
+  # save the same bytes (found by tests/run_hall_of_horror.sh: 16 racers across a second boundary).
+  snapshot_lock "$_outdir_real/.$_latest_name.lock" || { set_error "CONFLICT" "Another snapshot of this project is still running; try again."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  local _snap_rc=0
+  snapshot_publish || _snap_rc=$?
+  snapshot_unlock
+  return $_snap_rc
+}
+
+# The rest of project.snapshot, run while holding the project's lock. Uses the handler's locals.
+snapshot_publish() {
   if [ -f "$_latest_file" ]; then
     _prev_sha=$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sha256",""))' "$_latest_file" 2>/dev/null || printf '')
     if [ -n "$_prev_sha" ] && [ "$_prev_sha" = "$_sha_value" ]; then
-      emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-      printf '{"schema":"MJ_PROJECT_SNAPSHOT_1","sourcePath":'; json_quote "$_path"
-      printf ',"sha256":'; json_quote "$_sha_value"
-      printf ',"hashSource":'; json_quote "$_sha_source"
-      printf ',"snapshotCreated":false,"reason":"unchanged","sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_path")"
-      emit_success_end
-      return 0
+      snapshot_emit_not_created unchanged "$_path" "$_sha_value" "$_sha_source" "$_id0" ""; return 0
     fi
   fi
 
@@ -4344,7 +4394,12 @@ handle_project_snapshot() {
   _short=${_sha_value:0:12}
   _dest="$_outdir_real/$_stem.$_ts.$_short.$_ext"
   _partial="$_outdir_real/.$_stem.$_ts.$_short.partial.$$"
-  [ ! -e "$_dest" ] && [ ! -L "$_dest" ] || { set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+  if [ -e "$_dest" ] || [ -L "$_dest" ]; then
+    # Same name means same second and same hash prefix: another snapshot (the watcher, or a second
+    # mj snapshot) saved these exact bytes a moment ago. Confirm in full, then say so instead of failing.
+    snapshot_same_bytes "$_dest" "$_sha_value" && { snapshot_emit_not_created alreadySaved "$_path" "$_sha_value" "$_sha_source" "$_id0" "$_dest"; return 0; }
+    set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73
+  fi
   _bytes=$(file_stat_size "$_path" 2>/dev/null || printf '0')
 
   # Stage the copy under a hidden name, prove it matches, then publish with a hard link.
@@ -4379,6 +4434,7 @@ handle_project_snapshot() {
   if ! /bin/ln "$_partial" "$_dest" 2>/dev/null; then
     /bin/rm -f "$_partial" 2>/dev/null
     if [ -e "$_dest" ] || [ -L "$_dest" ]; then
+      snapshot_same_bytes "$_dest" "$_sha_value" && { snapshot_emit_not_created alreadySaved "$_path" "$_sha_value" "$_sha_source" "$_id0" "$_dest"; return 0; }
       set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."
     else
       set_error "SNAPSHOT_FAILED" "Could not publish the snapshot."
@@ -4874,6 +4930,44 @@ def load_scrape(path, max_bytes=8388608):
     for key in ("comps", "fonts", "footage"):
         if not isinstance(doc.get(key), list):
             err("SCHEMA_MISMATCH", "%s must be an array." % key)
+    return clean_scrape(doc)
+
+def clean_scrape(doc):
+    """Drop nested entries of the wrong shape and coerce names and paths to text, so every consumer can
+    trust what it iterates. A scrape is data from outside; the hall of horror test feeds it junk."""
+    def lst(v):
+        return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+    def txt(d, k):
+        if k in d and not isinstance(d[k], str):
+            d[k] = "" if d[k] is None else str(d[k])
+    def num(d, k):
+        if k in d and (isinstance(d[k], bool) or not isinstance(d[k], int)):
+            d[k] = 0
+    doc["comps"] = lst(doc["comps"])
+    for c in doc["comps"]:
+        txt(c, "name"); txt(c, "folder")
+        if not isinstance(c.get("id"), int) or isinstance(c.get("id"), bool):
+            c["id"] = None
+        c["layers"] = lst(c.get("layers"))
+        for l in c["layers"]:
+            for k in ("name", "type", "sourceName", "sourcePath", "sourceKind", "font"):
+                txt(l, k)
+            num(l, "index"); num(l, "sourceId"); num(l, "label")
+            l["effects"] = lst(l.get("effects"))
+            for e in l["effects"]:
+                txt(e, "name"); txt(e, "matchName")
+            l["expressions"] = [e for e in lst(l.get("expressions")) if isinstance(e.get("expression"), str)]
+            for e in l["expressions"]:
+                txt(e, "propertyPath")
+    doc["footage"] = lst(doc["footage"])
+    for f in doc["footage"]:
+        for k in ("name", "path", "kind", "folder"):
+            txt(f, k)
+        if not isinstance(f.get("id"), int) or isinstance(f.get("id"), bool):
+            f["id"] = None
+    doc["fonts"] = [x for x in doc["fonts"] if isinstance(x, str)]
+    if "missingFonts" in doc and not isinstance(doc["missingFonts"], list):
+        doc["missingFonts"] = None
     return doc
 
 LOCAL_FS = {"apfs", "hfs", "hfs+", "exfat", "msdos", "vfat", "ext2", "ext3", "ext4", "xfs",
@@ -5278,17 +5372,9 @@ def now_iso():
 def db_path(store):
     return os.path.join(store, "index.sqlite")
 
-def open_db(store, create=False):
-    path = db_path(store)
-    if not create and not os.path.isfile(path):
-        err("STORE_EMPTY", "Nothing has been indexed yet; run index.add or preset.add first.")
-    db = sqlite3.connect(path, timeout=15)
-    v = db.execute("PRAGMA user_version").fetchone()[0]
-    if v > SCHEMA_VERSION:
-        err("STORE_TOO_NEW", "Store schema %d is newer than this runtime supports (%d)." % (v, SCHEMA_VERSION))
-    if v < 1:
-        with db:
-            db.executescript("""
+STORE_MIGRATIONS = [
+    # v1
+    (1, """
                 CREATE TABLE docs(id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, sha256 TEXT NOT NULL,
                                   schema TEXT NOT NULL, title TEXT, indexed_at TEXT NOT NULL);
                 CREATE VIRTUAL TABLE entries USING fts5(doc_id UNINDEXED, kind, name, detail,
@@ -5297,12 +5383,9 @@ def open_db(store, create=False):
                                   sha256 TEXT NOT NULL, kind TEXT NOT NULL, original_name TEXT NOT NULL,
                                   bytes INTEGER NOT NULL, added_at TEXT NOT NULL, UNIQUE(label, version));
                 PRAGMA user_version = 1;
-            """)
-    if v < 2:
-        # v2: normalized project tables for exact audit queries. Filled by index.add
-        # from MJ_PROJECT_SCRAPE_1 receipts (newest scrape per project path wins).
-        with db:
-            db.executescript("""
+            """),
+    # v2
+    (2, """
                 CREATE TABLE projects(id INTEGER PRIMARY KEY, project_path TEXT UNIQUE NOT NULL, name TEXT,
                                   ae_version TEXT, scraped_at TEXT NOT NULL, receipt_path TEXT NOT NULL,
                                   receipt_sha256 TEXT NOT NULL);
@@ -5328,17 +5411,46 @@ def open_db(store, create=False):
                 -- Receipts indexed under v1 have no relational rows; force one re-read.
                 UPDATE docs SET sha256 = '' WHERE schema = 'MJ_PROJECT_SCRAPE_1';
                 PRAGMA user_version = 2;
-            """)
-    if v < 3:
-        # v3: recorded project health scores (project.health format=record), for trends.
-        with db:
-            db.executescript("""
+            """),
+    # v3
+    (3, """
                 CREATE TABLE health(id INTEGER PRIMARY KEY, project_path TEXT NOT NULL, scraped_at TEXT NOT NULL, score INTEGER NOT NULL,
                                   formula_version INTEGER NOT NULL, receipt_sha256 TEXT NOT NULL, recorded_at TEXT NOT NULL,
                                   UNIQUE(project_path, receipt_sha256, formula_version));
                 CREATE INDEX idx_health_project ON health(project_path, scraped_at);
                 PRAGMA user_version = 3;
-            """)
+            """),
+]
+
+def open_db(store, create=False):
+    path = db_path(store)
+    if not create and not os.path.isfile(path):
+        err("STORE_EMPTY", "Nothing has been indexed yet; run index.add or preset.add first.")
+    db = sqlite3.connect(path, timeout=15)
+    v = db.execute("PRAGMA user_version").fetchone()[0]
+    if v > SCHEMA_VERSION:
+        err("STORE_TOO_NEW", "Store schema %d is newer than this runtime supports (%d)." % (v, SCHEMA_VERSION))
+    # Each migration runs in one IMMEDIATE transaction and re-reads the version once it holds the write
+    # lock, so two runs creating a new store at the same moment cannot both apply it (one waits, then skips).
+    db.isolation_level = None
+    for target, script in STORE_MIGRATIONS:
+        if v >= target:
+            continue
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            v = db.execute("PRAGMA user_version").fetchone()[0]
+            if v < target:
+                stmt = ""
+                for line in script.splitlines(True):
+                    stmt += line
+                    if sqlite3.complete_statement(stmt):
+                        db.execute(stmt); stmt = ""
+                v = target
+            db.execute("COMMIT")
+        except Exception:
+            db.execute("ROLLBACK")
+            raise
+    db.isolation_level = ""
     db.execute("PRAGMA foreign_keys = ON")
     return db
 
@@ -5465,7 +5577,7 @@ library_require_store() {
   if [ ! -d "$_dir" ]; then
     [ "$_create" = create ] || { set_error "STORE_EMPTY" "Nothing has been indexed yet; run index.add or preset.add first."; return 66; }
     [ -d "$(parent_path "$_dir")" ] || { set_error "STORE_UNAVAILABLE" "Store parent directory does not exist."; return 73; }
-    /bin/mkdir -m 700 "$_dir" 2>/dev/null || { set_error "STORE_UNAVAILABLE" "Could not create the store directory."; return 73; }
+    /bin/mkdir -m 700 "$_dir" 2>/dev/null || [ -d "$_dir" ] || { set_error "STORE_UNAVAILABLE" "Could not create the store directory."; return 73; }   # another run may have just made it
   fi
   [ -w "$_dir" ] || { set_error "STORE_UNAVAILABLE" "Store directory is not writable."; return 73; }
   mj_require_local_existing_path "$_dir" || return 73
@@ -7475,6 +7587,19 @@ if os.path.basename(doc.get("projectPath", "")) != os.path.basename(aep):
     warnings.append({"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape is of %s, not %s." % (doc.get("projectName"), os.path.basename(aep))})
 keep, footage_ids = comp_closure(byid, ids)
 fnames = {f.get("id"): f.get("name") for f in doc["footage"] if isinstance(f, dict)}
+# Expressions in kept comps that name a comp which will not be in the new project break after extract
+# (found running it in After Effects 26.5: comp("Main Comp") inside the extracted precomp).
+kept_names = {byid[i]["name"] for i in keep}
+outside = []
+for cid in sorted(keep):
+    for l in byid[cid].get("layers") or []:
+        for e in (l.get("expressions") or []) if isinstance(l, dict) else []:
+            for m in REF.finditer(e.get("expression", "") if isinstance(e, dict) else ""):
+                if m.group(1) == "comp" and m.group(3) not in kept_names:
+                    outside.append({"comp": byid[cid]["name"], "layer": l.get("name"), "path": e.get("propertyPath"), "references": m.group(3)})
+if outside:
+    warnings.append({"code": "EXTERNAL_REFERENCES", "message": "%d expression(s) refer to comps that will not be in the new project (%s); they will error after the extract." % (
+        len(outside), ", ".join(sorted({o["references"] for o in outside})))})
 body = {"extract": {"compIds": ids, "compNames": [byid[i]["name"] for i in ids]}}
 job, plan, cloned = make_job("extract", os.environ["MJ_LABEL"], aep, os.environ["MJ_OUT"], body, os.environ["MJ_RUNNER"], os.environ["MJ_SCRAPE"])
 print(json.dumps({"ok": True, "data": {
@@ -7483,6 +7608,7 @@ print(json.dumps({"ok": True, "data": {
     "comps": [{"id": i, "name": byid[i]["name"]} for i in ids],
     "keeps": {"comps": sorted(byid[i]["name"] for i in keep), "footage": sorted(str(fnames.get(i, i)) for i in footage_ids)},
     "removes": {"comps": len(comps) - len(keep), "footage": max(len(fnames) - len(footage_ids), 0)},
+    "externalReferences": outside[:50],
     "_warnings": warnings,
 }}))
 PY_EXTRACT

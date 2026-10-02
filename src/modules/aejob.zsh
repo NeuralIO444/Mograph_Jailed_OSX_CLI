@@ -309,6 +309,19 @@ if os.path.basename(doc.get("projectPath", "")) != os.path.basename(aep):
     warnings.append({"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape is of %s, not %s." % (doc.get("projectName"), os.path.basename(aep))})
 keep, footage_ids = comp_closure(byid, ids)
 fnames = {f.get("id"): f.get("name") for f in doc["footage"] if isinstance(f, dict)}
+# Expressions in kept comps that name a comp which will not be in the new project break after extract
+# (found running it in After Effects 26.5: comp("Main Comp") inside the extracted precomp).
+kept_names = {byid[i]["name"] for i in keep}
+outside = []
+for cid in sorted(keep):
+    for l in byid[cid].get("layers") or []:
+        for e in (l.get("expressions") or []) if isinstance(l, dict) else []:
+            for m in REF.finditer(e.get("expression", "") if isinstance(e, dict) else ""):
+                if m.group(1) == "comp" and m.group(3) not in kept_names:
+                    outside.append({"comp": byid[cid]["name"], "layer": l.get("name"), "path": e.get("propertyPath"), "references": m.group(3)})
+if outside:
+    warnings.append({"code": "EXTERNAL_REFERENCES", "message": "%d expression(s) refer to comps that will not be in the new project (%s); they will error after the extract." % (
+        len(outside), ", ".join(sorted({o["references"] for o in outside})))})
 body = {"extract": {"compIds": ids, "compNames": [byid[i]["name"] for i in ids]}}
 job, plan, cloned = make_job("extract", os.environ["MJ_LABEL"], aep, os.environ["MJ_OUT"], body, os.environ["MJ_RUNNER"], os.environ["MJ_SCRAPE"])
 print(json.dumps({"ok": True, "data": {
@@ -317,6 +330,7 @@ print(json.dumps({"ok": True, "data": {
     "comps": [{"id": i, "name": byid[i]["name"]} for i in ids],
     "keeps": {"comps": sorted(byid[i]["name"] for i in keep), "footage": sorted(str(fnames.get(i, i)) for i in footage_ids)},
     "removes": {"comps": len(comps) - len(keep), "footage": max(len(fnames) - len(footage_ids), 0)},
+    "externalReferences": outside[:50],
     "_warnings": warnings,
 }}))
 PY_EXTRACT

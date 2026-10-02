@@ -127,6 +127,8 @@ def explain_lint(d):
 
 
 def explain_snapshot(d):
+    if d.get("snapshotCreated") is False and d.get("reason") == "alreadySaved":
+        return ["Nothing new to save: these exact bytes of %s were saved a moment ago by another snapshot." % os.path.basename(d.get("sourcePath", "the project")), "  %s" % d.get("snapshotPath", "")]
     if d.get("snapshotCreated") is False:
         return ["Nothing to save: %s has not changed since the last snapshot." % os.path.basename(d.get("sourcePath", "the project"))]
     out = ["Saved a verified copy of %s." % os.path.basename(d.get("sourcePath", "the project")), "  %s" % d.get("snapshotPath", "")]

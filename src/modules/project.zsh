@@ -114,8 +114,9 @@ footage_unlinked = []
 for item in doc["footage"]:
     if not isinstance(item, dict):
         continue
-    name = item.get("name", "?")
+    name = str(item.get("name", "?"))
     p = item.get("path", "")
+    p = p if isinstance(p, str) else ""
     if item.get("missing") is True:
         footage_missing.append(name)
     elif not p:
@@ -187,6 +188,9 @@ if not isinstance(doc, dict) or doc.get("schema") != "MJ_PROJECT_SCRAPE_1":
 if not isinstance(doc.get("comps"), list):
     err("SCHEMA_MISMATCH", "comps must be an array.")
 
+def arr(v):
+    return v if isinstance(v, list) else []
+
 layer_ref_re = re.compile(r'thisComp\s*\.\s*layer\s*\(\s*["\']([^"\']+)["\']\s*\)')
 effect_ref_re = re.compile(r'''\beffect\s*\(\s*["\']([^"\']+)["\']\s*\)''')
 loop_re = re.compile(r'\b(for|while)\b')
@@ -208,18 +212,18 @@ for comp in doc["comps"]:
         continue
     comp_name = str(comp.get("name", "?"))
     layer_names = set()
-    for layer in comp.get("layers", []):
+    for layer in arr(comp.get("layers")):
         if isinstance(layer, dict):
             layer_names.add(str(layer.get("name", "")))
-    for layer in comp.get("layers", []):
+    for layer in arr(comp.get("layers")):
         if not isinstance(layer, dict):
             continue
         layer_name = str(layer.get("name", "?"))
         effect_names = set()
-        for eff in layer.get("effects", []):
+        for eff in arr(layer.get("effects")):
             if isinstance(eff, dict):
                 effect_names.add(str(eff.get("name", "")))
-        for item in layer.get("expressions", []):
+        for item in arr(layer.get("expressions")):
             if not isinstance(item, dict):
                 continue
             prop = str(item.get("propertyPath", "?"))
@@ -445,6 +449,46 @@ handle_plugin_audit() {
 # Test bundle only redefines this to simulate a project being written mid-copy.
 snapshot_test_hook() { :; }
 
+# A regular, non-link file whose full SHA-256 is $2.
+snapshot_same_bytes() {
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  hash_sha256_file "$1" 2>/dev/null || return 1
+  [ "$MJ_HASH_VALUE" = "$2" ]
+}
+
+# Success without a new file: reason "unchanged" (matches the latest snapshot) or "alreadySaved"
+# (a concurrent snapshot published these exact bytes; $6 is its path).
+snapshot_emit_not_created() {
+  local _reason="$1" _src="$2" _sha="$3" _hsrc="$4" _id0="$5" _existing="$6"
+  emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+  printf '{"schema":"MJ_PROJECT_SNAPSHOT_1","sourcePath":'; json_quote "$_src"
+  printf ',"sha256":'; json_quote "$_sha"
+  printf ',"hashSource":'; json_quote "$_hsrc"
+  printf ',"snapshotCreated":false,"reason":'; json_quote "$_reason"
+  [ -n "$_existing" ] && { printf ',"snapshotPath":'; json_quote "$_existing"; }
+  printf ',"sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_src")"
+  emit_success_end
+}
+
+# mkdir is atomic: the lock is a folder holding the owner's pid. A lock whose owner is gone is taken
+# over; otherwise wait up to 60 s.
+MJ_SNAPSHOT_LOCK=""
+snapshot_lock() {
+  local _l="$1" _i=0 _pid
+  while [ $_i -lt 600 ]; do
+    if /bin/mkdir "$_l" 2>/dev/null; then
+      printf '%s' "$$" > "$_l/pid"; MJ_SNAPSHOT_LOCK="$_l"; return 0
+    fi
+    _pid=$(/bin/cat "$_l/pid" 2>/dev/null)
+    if [ -n "$_pid" ] && ! /bin/kill -0 "$_pid" 2>/dev/null; then
+      /bin/rm -rf "$_l" 2>/dev/null; continue
+    fi
+    /bin/sleep 0.1; _i=$((_i + 1))
+  done
+  return 1
+}
+snapshot_unlock() { [ -n "$MJ_SNAPSHOT_LOCK" ] && /bin/rm -rf "$MJ_SNAPSHOT_LOCK" 2>/dev/null; MJ_SNAPSHOT_LOCK=""; }
+
 handle_project_snapshot() {
   local _path=""
   local _outdir=""
@@ -496,16 +540,22 @@ handle_project_snapshot() {
   # Each kind keeps its own pointer so Hero.aep and Hero.c4d can never be mistaken for each other.
   if [ "$_ext" = c4d ]; then _latest_name="$_stem.c4d.latest.json"; else _latest_name="$_stem.latest.json"; fi
   _latest_file="$_outdir_real/$_latest_name"
+  # One snapshot of a project at a time: the "unchanged since the latest snapshot" check, the copy and the
+  # publish all happen under a per-project lock, so the watcher and a manual mj snapshot can never both
+  # save the same bytes (found by tests/run_hall_of_horror.sh: 16 racers across a second boundary).
+  snapshot_lock "$_outdir_real/.$_latest_name.lock" || { set_error "CONFLICT" "Another snapshot of this project is still running; try again."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  local _snap_rc=0
+  snapshot_publish || _snap_rc=$?
+  snapshot_unlock
+  return $_snap_rc
+}
+
+# The rest of project.snapshot, run while holding the project's lock. Uses the handler's locals.
+snapshot_publish() {
   if [ -f "$_latest_file" ]; then
     _prev_sha=$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sha256",""))' "$_latest_file" 2>/dev/null || printf '')
     if [ -n "$_prev_sha" ] && [ "$_prev_sha" = "$_sha_value" ]; then
-      emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
-      printf '{"schema":"MJ_PROJECT_SNAPSHOT_1","sourcePath":'; json_quote "$_path"
-      printf ',"sha256":'; json_quote "$_sha_value"
-      printf ',"hashSource":'; json_quote "$_sha_source"
-      printf ',"snapshotCreated":false,"reason":"unchanged","sourceUnchanged":%s}' "$(source_unchanged_json "$_id0" "$_path")"
-      emit_success_end
-      return 0
+      snapshot_emit_not_created unchanged "$_path" "$_sha_value" "$_sha_source" "$_id0" ""; return 0
     fi
   fi
 
@@ -513,7 +563,12 @@ handle_project_snapshot() {
   _short=${_sha_value:0:12}
   _dest="$_outdir_real/$_stem.$_ts.$_short.$_ext"
   _partial="$_outdir_real/.$_stem.$_ts.$_short.partial.$$"
-  [ ! -e "$_dest" ] && [ ! -L "$_dest" ] || { set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+  if [ -e "$_dest" ] || [ -L "$_dest" ]; then
+    # Same name means same second and same hash prefix: another snapshot (the watcher, or a second
+    # mj snapshot) saved these exact bytes a moment ago. Confirm in full, then say so instead of failing.
+    snapshot_same_bytes "$_dest" "$_sha_value" && { snapshot_emit_not_created alreadySaved "$_path" "$_sha_value" "$_sha_source" "$_id0" "$_dest"; return 0; }
+    set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73
+  fi
   _bytes=$(file_stat_size "$_path" 2>/dev/null || printf '0')
 
   # Stage the copy under a hidden name, prove it matches, then publish with a hard link.
@@ -548,6 +603,7 @@ handle_project_snapshot() {
   if ! /bin/ln "$_partial" "$_dest" 2>/dev/null; then
     /bin/rm -f "$_partial" 2>/dev/null
     if [ -e "$_dest" ] || [ -L "$_dest" ]; then
+      snapshot_same_bytes "$_dest" "$_sha_value" && { snapshot_emit_not_created alreadySaved "$_path" "$_sha_value" "$_sha_source" "$_id0" "$_dest"; return 0; }
       set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."
     else
       set_error "SNAPSHOT_FAILED" "Could not publish the snapshot."

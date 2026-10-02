@@ -54,6 +54,44 @@ def load_scrape(path, max_bytes=8388608):
     for key in ("comps", "fonts", "footage"):
         if not isinstance(doc.get(key), list):
             err("SCHEMA_MISMATCH", "%s must be an array." % key)
+    return clean_scrape(doc)
+
+def clean_scrape(doc):
+    """Drop nested entries of the wrong shape and coerce names and paths to text, so every consumer can
+    trust what it iterates. A scrape is data from outside; the hall of horror test feeds it junk."""
+    def lst(v):
+        return [x for x in v if isinstance(x, dict)] if isinstance(v, list) else []
+    def txt(d, k):
+        if k in d and not isinstance(d[k], str):
+            d[k] = "" if d[k] is None else str(d[k])
+    def num(d, k):
+        if k in d and (isinstance(d[k], bool) or not isinstance(d[k], int)):
+            d[k] = 0
+    doc["comps"] = lst(doc["comps"])
+    for c in doc["comps"]:
+        txt(c, "name"); txt(c, "folder")
+        if not isinstance(c.get("id"), int) or isinstance(c.get("id"), bool):
+            c["id"] = None
+        c["layers"] = lst(c.get("layers"))
+        for l in c["layers"]:
+            for k in ("name", "type", "sourceName", "sourcePath", "sourceKind", "font"):
+                txt(l, k)
+            num(l, "index"); num(l, "sourceId"); num(l, "label")
+            l["effects"] = lst(l.get("effects"))
+            for e in l["effects"]:
+                txt(e, "name"); txt(e, "matchName")
+            l["expressions"] = [e for e in lst(l.get("expressions")) if isinstance(e.get("expression"), str)]
+            for e in l["expressions"]:
+                txt(e, "propertyPath")
+    doc["footage"] = lst(doc["footage"])
+    for f in doc["footage"]:
+        for k in ("name", "path", "kind", "folder"):
+            txt(f, k)
+        if not isinstance(f.get("id"), int) or isinstance(f.get("id"), bool):
+            f["id"] = None
+    doc["fonts"] = [x for x in doc["fonts"] if isinstance(x, str)]
+    if "missingFonts" in doc and not isinstance(doc["missingFonts"], list):
+        doc["missingFonts"] = None
     return doc
 
 LOCAL_FS = {"apfs", "hfs", "hfs+", "exfat", "msdos", "vfat", "ext2", "ext3", "ext4", "xfs",

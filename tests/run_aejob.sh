@@ -126,6 +126,9 @@ check jq -e '.data.removes=={"comps":1,"footage":2}' "$TMP/x.json"
 check jq -e '.extract=={"compIds":[1],"compNames":["Main Comp"]} and .kind=="extract"' "$TMP/jobs/main-only.mjjob/plan.json"
 run "$TMP/x2.json" project.extract path="$AEP" input="$SCRAPE" target=2,3 output="$TMP/jobs" label=two
 check jq -e '.data.keeps.comps==["Lower Third","Unused Comp"] and .data.keeps.footage==[]' "$TMP/x2.json"
+# Lower Third's Name layer reads comp("Main Comp"), which is not kept (found in a real After Effects run).
+check jq -e '[.warnings[].code]==["EXTERNAL_REFERENCES"] and .data.externalReferences==[{"comp":"Lower Third","layer":"Name","path":"Transform/Opacity","references":"Main Comp"}]' "$TMP/x2.json"
+check jq -e '.data.externalReferences==[] and ([.warnings[]?.code]|index("EXTERNAL_REFERENCES"))==null' "$TMP/x.json"
 run "$TMP/xe1.json" project.extract path="$AEP" input="$SCRAPE" target=9 output="$TMP/jobs" label=e1; check jq -e '.error.code=="NOT_FOUND"' "$TMP/xe1.json"; check test ! -e "$TMP/jobs/e1.mjjob"
 run "$TMP/xe2.json" project.extract path="$AEP" input="$SCRAPE" target='1;2' output="$TMP/jobs" label=e2; check jq -e '.error.code=="INVALID_ARGUMENT"' "$TMP/xe2.json"
 run "$TMP/xe3.json" project.extract path="$AEP" input="$SCRAPE" target=1,1 output="$TMP/jobs" label=e3; check jq -e '.error.code=="INVALID_ARGUMENT"' "$TMP/xe3.json"
