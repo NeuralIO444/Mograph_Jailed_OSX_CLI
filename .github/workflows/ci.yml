@@ -71,8 +71,6 @@ jobs:
   macos-tests:
     name: macOS tests
     runs-on: macos-latest
-    # ponytail: advisory until the suite is proven green on hosted macOS; drop continue-on-error then.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
