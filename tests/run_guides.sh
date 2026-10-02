@@ -16,29 +16,7 @@ GOLDEN="$ROOT/docs/guides/walkthrough.golden"
 printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=g\ncommand=system.describe\n' > "$TMP/d.req"
 MJ_STORE_DIR="$TMP/s" "$ROOT/dist/mograph-jailed-linux-test.sh" --request "$TMP/d.req" | jq -r '.data.operations|keys[]' | sort > "$TMP/ops.txt"
 VERBS="snapshot versions lint health diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help"
-python3 - "$ROOT" "$TMP/ops.txt" "$VERBS" <<'PY'
-import glob, re, sys
-root, opsfile, verbs = sys.argv[1], sys.argv[2], set(sys.argv[3].split())
-ops = set(open(opsfile).read().split())
-files = glob.glob(root + "/docs/guides/*.md") + [root + "/README.md"]
-bad = []
-for f in files:
-    text = open(f, encoding="utf-8").read()
-    for block in re.findall(r"```(?:sh|text|bash|zsh)?\n(.*?)```", text, re.S):
-        for line in block.splitlines():
-            m = re.match(r"^\s*\$?\s*(?:[A-Z_]+=\S+\s+)*mj\s+([A-Za-z0-9_.-]+)", line)
-            if m:
-                tok = m.group(1)
-                if tok not in verbs and tok not in ops:
-                    bad.append((f.split("/")[-1], line.strip()))
-    for name in set(re.findall(r"`((?:[a-z0-9]+)\.(?:[a-z0-9]+))`", text)):
-        # dotted names that look like operations (not file names like mj-config.zsh or schema ids)
-        if name.split(".")[0] in {"project", "expression", "plugin", "loop", "golden", "audit", "index", "preset", "host", "ae", "c4d", "trace", "bridge", "image", "media", "file", "asset", "storage", "volume", "temp", "search", "report", "package", "system", "runtime", "deps", "handoff"} and name not in ops:
-            bad.append((f.split("/")[-1], "operation `%s` does not exist" % name))
-if bad:
-    for b in bad: print("UNKNOWN:", b)
-    sys.exit(1)
-PY
+python3 "$ROOT/tests/support/check_guides.py" "$ROOT" "$TMP/ops.txt" "$VERBS"
 check true
 [ -d "$ROOT/docs/guides" ] && check test "$(ls "$ROOT"/docs/guides/*.md | wc -l | tr -d ' ')" -ge 8
 
