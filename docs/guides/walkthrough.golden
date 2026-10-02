@@ -169,7 +169,7 @@ Built the handoff folder: ~/AE/out/spring_v2.handoff
   Fonts to install: Brandon Grotesque, Inter.
   A manifest with a checksum for every file is inside.
 
-$ ls ~/AE/out/spring_v2.handoff
+$ ls ~/AE/out/spring_v2.handoff | LC_ALL=C sort
 MANIFEST.json
 README.txt
 footage

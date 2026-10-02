@@ -44,7 +44,7 @@ run 'mj scene last'
 run 'mj bridge last last'
 sec handoff
 run 'mj handoff.package path="$HOME/AE/projects/Spring Promo/Spring Promo.aep" input="$HOME/AE/receipts/spring.20261001T163000Z.scrape.json" output="$HOME/AE/out" label=spring_v2 > ~/AE/handoff.json; mj explain ~/AE/handoff.json'
-run 'ls ~/AE/out/spring_v2.handoff'
+run 'ls ~/AE/out/spring_v2.handoff | LC_ALL=C sort'
 sec status
 run 'mj status'
 run 'mj notify status'
