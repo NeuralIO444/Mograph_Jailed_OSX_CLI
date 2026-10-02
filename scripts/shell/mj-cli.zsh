@@ -124,9 +124,9 @@ _mj_resolve_project() {
     if [ -f "$arg" ]; then print -r -- "${arg:A}"; return 0; fi
     w=$(mj_config_get watch_dir)
     if [ -d "$w" ]; then
-        stem="${arg%.[aA][eE][pP]}"
+        stem="${arg%.[aA][eE][pP]}"; stem="${stem%.[cC]4[dD]}"
         pat="${stem//(#m)[\[\]*?\\]/\\$MATCH}"           # what you type is a name, never a wildcard
-        hits=("${(@f)$(/usr/bin/find "$w" -maxdepth 3 -type f -iname "${pat}*.aep" 2>/dev/null | /usr/bin/sort)}")
+        hits=("${(@f)$(/usr/bin/find "$w" -maxdepth 3 -type f \( -iname "${pat}*.aep" -o -iname "${pat}*.c4d" \) 2>/dev/null | /usr/bin/sort)}")
         hits=(${hits:#})
         for h in $hits; do [[ "${(L)${h:t:r}}" == "${(L)stem}" ]] && exact+=("$h"); done
         if [ ${#exact} -eq 1 ]; then print -r -- "${exact[1]}"; return 0; fi     # an exact name wins over longer names that start with it
@@ -172,9 +172,10 @@ _mj_versions() {
     local d name f when size stem ts; local -a rows
     d=$(_mj_need_dir versions_dir versions) || return $?
     name="${1:-}"
-    for f in "$d"/*.aep(.Nom); do
-        [[ "${f:t}" =~ '^(.*)\.([0-9]{8}T[0-9]{6}Z)\.([0-9a-f]{12})\.aep$' ]] || continue
+    for f in "$d"/*.(aep|c4d)(.Nom); do
+        [[ "${f:t}" =~ '^(.*)\.([0-9]{8}T[0-9]{6}Z)\.([0-9a-f]{12})\.(aep|c4d)$' ]] || continue
         stem="${match[1]}"; ts="${match[2]}"
+        [ "${match[4]}" = c4d ] && stem="$stem.c4d"
         [ -z "$name" ] || [[ "${(L)stem}" == *"${(L)name}"* ]] || continue
         zmodload -F zsh/stat b:zstat 2>/dev/null
         zstat -A when -F '%Y-%m-%d %H:%M' +mtime -- "$f"; zstat -A size +size -- "$f"
@@ -194,7 +195,7 @@ _mj_watch() {
         off) /bin/zsh -f "$tools/watch-uninstall.zsh" --yes ;;
         status)
             v=$(mj_config_get versions_dir)
-            if /bin/launchctl list 2>/dev/null | /usr/bin/grep -q "$label"; then print "Watcher: on  (versioning .aep files in $(mj_config_get watch_dir))"; else print "Watcher: off  (turn on with: mj watch on)"; fi
+            if /bin/launchctl list 2>/dev/null | /usr/bin/grep -q "$label"; then print "Watcher: on  (versioning .aep and .c4d files in $(mj_config_get watch_dir))"; else print "Watcher: off  (turn on with: mj watch on)"; fi
             if [ -r "$v/watcher.log" ]; then print "Recent activity:"; /usr/bin/tail -n 3 "$v/watcher.log" | /usr/bin/sed 's/^/  /'; fi ;;
         *) print -u2 "usage: mj watch on|off|status"; return 64 ;;
     esac
@@ -348,7 +349,7 @@ mj scene [last|<c4d scrape>] [--summary]   check a Cinema 4D scene receipt, in p
 mj bridge <c4d scrape> [<ae scrape>|last] [comp]   does the AE comp match the C4D scene?
 mj diff last | <older> <newer>     what changed between two scrapes
 mj explain [last|<file>]           any receipt, in plain language
-mj watch on|off|status             automatic versioning of your .aep files
+mj watch on|off|status             automatic versioning of your .aep and .c4d files
 mj doctor                          is this Mac ready? what is missing?
 mj batch <recipe> <folder>         run a recipe over every file in a folder, with a summary
 mj last                            show the newest render receipt
@@ -477,7 +478,7 @@ _mj_complete() {
         return
     fi
     case "$cmd" in
-        snapshot) _files -g '*.(aep|AEP)' ;;
+        snapshot) _files -g '*.(aep|AEP|c4d|C4D)' ;;
         lint|explain|scene|bridge) items=(last); compadd -a items; _files ;;
         health) items=(last --record); compadd -a items; _files ;;
         diff) items=(last); compadd -a items; _files ;;

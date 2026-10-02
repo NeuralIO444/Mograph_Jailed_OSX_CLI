@@ -613,6 +613,24 @@ set +e; mjz "mj snapshot 'Foo*'" >/dev/null 2>&1; w1=$?; mjz "mj snapshot 'F[o]o
 check test "$w1" = 66 -a "$w2" = 66 -a "$w3" = 65
 export MJ_CONFIG="$TMP/cfg/config"
 
+# ================= Cinema 4D scenes: restore, watcher, mj =================
+export MJ_CONFIG="$TMP/hcfg/config"
+mkdir -p "$TMP/c4w/watch" "$TMP/c4w/restored"
+printf 'scene-one' > "$TMP/c4w/watch/Logo Sting.c4d"
+F9=$(render_watcher "$TMP/c4w/watch" "$TMP/c4w/v" "$CLI"); zsh -f "$F9"
+check grep -q 'snapshot ok: .*Logo Sting.c4d' "$TMP/c4w/v/watcher.log"                   # the watcher versions scenes too
+check test "$(ls "$TMP"/c4w/v/Logo\ Sting.*.c4d | wc -l | tr -d ' ')" = 1
+zsh -f "$F9"; check grep -q 'unchanged, skipped: .*Logo Sting.c4d' "$TMP/c4w/v/watcher.log"
+SNAPC=$(ls "$TMP"/c4w/v/Logo\ Sting.*.c4d | head -1)
+printf 'MOGRAPHJAILED_REQUEST 1\nrequestId=rs\ncommand=project.restore\narg.path=%s\narg.output=%s\n' "$(b64 "$SNAPC")" "$(b64 "$TMP/c4w/restored")" > "$TMP/c4w/rs.req"
+"$CLI" --request "$TMP/c4w/rs.req" > "$TMP/c4w/rs.json" 2>/dev/null || true
+check jq -e '.ok==true and .data.receiptVerified==true and (.data.restoredPath|test("Logo Sting\\.[0-9TZ]+\\.[0-9a-f]{12}\\.restored\\.[0-9TZ]+\\.c4d$"))' "$TMP/c4w/rs.json"
+check cmp -s "$(jq -r .data.restoredPath "$TMP/c4w/rs.json")" "$TMP/c4w/watch/Logo Sting.c4d"
+mjz "mj config set versions_dir '$TMP/c4w/v'" >/dev/null; mjz "mj config set watch_dir '$TMP/c4w/watch'" >/dev/null
+mjz "mj versions" > "$TMP/c4v.txt"; check grep -Eq 'Logo Sting\.c4d +20[0-9-]+ [0-9:]+' "$TMP/c4v.txt"                  # listed with its kind
+mjz "mj snapshot 'logo sting'" > "$TMP/c4s.txt" 2>&1; check grep -q 'Nothing to save: Logo Sting.c4d has not changed' "$TMP/c4s.txt"      # found by name
+export MJ_CONFIG="$TMP/cfg/config"
+
 # ================= folder-wide batches =================
 mkdir -p "$TMP/bt/in/sub"
 cp "$TMP/sc/v1.scrape.json" "$TMP/bt/in/a.scrape.json"

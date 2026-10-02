@@ -3751,7 +3751,7 @@ handle_package_create() {
 # project.ingest   — validate an MJ_PROJECT_SCRAPE_1 JSON file and summarize it
 # expression.lint  — static analysis ("spell-check") over scraped expressions
 # plugin.audit     — enumerate and hash an After Effects Plug-ins directory
-# project.snapshot — hash + versioned copy of an .aep (time-machine primitive)
+# project.snapshot — hash + versioned copy of an .aep or .c4d (time-machine primitive)
 
 # Max scrape JSON size accepted by ingest/lint (bytes). The scraper budgets ~5MB.
 PROJECT_OBSERVE_MAX_SCRAPE_BYTES=8388608
@@ -4207,6 +4207,8 @@ handle_project_snapshot() {
   local _clone_used=false
   local _id0=""
   local _partial=""
+  local _ext="aep"
+  local _latest_name=""
 
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
@@ -4217,8 +4219,9 @@ handle_project_snapshot() {
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Snapshot target must be a regular file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Snapshot target is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
   case "${_path##*/}" in
-    *.[aA][eE][pP]) ;;
-    *) set_error "INVALID_TARGET" "Snapshot target must be an After Effects project (.aep)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;;
+    *.[aA][eE][pP]) _ext=aep ;;
+    *.[cC]4[dD]) _ext=c4d ;;
+    *) set_error "INVALID_TARGET" "Snapshot target must be an After Effects project (.aep) or a Cinema 4D scene (.c4d)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;;
   esac
   [ -d "$_outdir" ] || { set_error "OUTPUT_UNAVAILABLE" "Snapshot output directory does not exist."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
   [ -w "$_outdir" ] || { set_error "OUTPUT_UNAVAILABLE" "Snapshot output directory is not writable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
@@ -4232,9 +4235,11 @@ handle_project_snapshot() {
   [ -n "$_sha_value" ] || { set_error "UNSUPPORTED" "No approved native SHA-256 utility is available."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
 
   _base=${_path##*/}
-  _stem="${_base%.[aA][eE][pP]}"
+  _stem="${_base%.[aA][eE][pP]}"; _stem="${_stem%.[cC]4[dD]}"
   [ -n "$_stem" ] && [ "$_stem" != "$_base" ] || _stem="project"
-  _latest_file="$_outdir_real/$_stem.latest.json"
+  # Each kind keeps its own pointer so Hero.aep and Hero.c4d can never be mistaken for each other.
+  if [ "$_ext" = c4d ]; then _latest_name="$_stem.c4d.latest.json"; else _latest_name="$_stem.latest.json"; fi
+  _latest_file="$_outdir_real/$_latest_name"
   if [ -f "$_latest_file" ]; then
     _prev_sha=$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("sha256",""))' "$_latest_file" 2>/dev/null || printf '')
     if [ -n "$_prev_sha" ] && [ "$_prev_sha" = "$_sha_value" ]; then
@@ -4250,7 +4255,7 @@ handle_project_snapshot() {
 
   _ts=$(/bin/date -u '+%Y%m%dT%H%M%SZ' 2>/dev/null || printf 'unknown')
   _short=${_sha_value:0:12}
-  _dest="$_outdir_real/$_stem.$_ts.$_short.aep"
+  _dest="$_outdir_real/$_stem.$_ts.$_short.$_ext"
   _partial="$_outdir_real/.$_stem.$_ts.$_short.partial.$$"
   [ ! -e "$_dest" ] && [ ! -L "$_dest" ] || { set_error "OUTPUT_EXISTS" "Refusing to overwrite an existing snapshot."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
   _bytes=$(file_stat_size "$_path" 2>/dev/null || printf '0')
@@ -4299,7 +4304,7 @@ handle_project_snapshot() {
   _receipt="$_dest.snapshot.json"
   MJ_SNAP_SHA="$_sha_value" MJ_SNAP_SRC="$_path" MJ_SNAP_DEST="$_dest" \
   MJ_SNAP_BYTES="$_bytes" MJ_SNAP_TS="$_ts" MJ_SNAP_CLONE="$_clone_used" \
-  MJ_SNAP_HASH_SRC="$_sha_source" MJ_SNAP_STEM="$_stem" \
+  MJ_SNAP_HASH_SRC="$_sha_source" MJ_SNAP_STEM="$_stem" MJ_SNAP_LATEST="$_latest_name" MJ_SNAP_EXT="$_ext" \
   /usr/bin/python3 - <<'PY_SNAPSHOT_RECEIPT' 2>/dev/null
 import json, os
 receipt = {
@@ -4312,6 +4317,7 @@ receipt = {
     "bytesCopied": int(os.environ["MJ_SNAP_BYTES"] or 0),
     "cloneUsed": os.environ["MJ_SNAP_CLONE"] == "true",
     "copyVerified": True,
+    "kind": os.environ["MJ_SNAP_EXT"],
     "sourceStableDuringCopy": True,
 }
 with open(os.environ["MJ_SNAP_DEST"] + ".snapshot.json", "w", encoding="utf-8") as f:
@@ -4326,7 +4332,7 @@ latest = {
 }
 stem = os.environ["MJ_SNAP_STEM"]
 outdir = os.path.dirname(os.environ["MJ_SNAP_DEST"])
-with open(os.path.join(outdir, stem + ".latest.json"), "w", encoding="utf-8") as f:
+with open(os.path.join(outdir, os.environ["MJ_SNAP_LATEST"]), "w", encoding="utf-8") as f:
     json.dump(latest, f, sort_keys=True, separators=(",", ":"))
     f.write("\n")
 PY_SNAPSHOT_RECEIPT
@@ -4841,6 +4847,17 @@ protect_require_output_dir() {
   mj_require_local_existing_path "$_dir" || return 73
 }
 
+# A snapshot file to restore from: an .aep or .c4d.
+protect_require_snapshot() {
+  local _path="$1"
+  is_absolute_path "$_path" || { set_error "INVALID_PATH" "Snapshot path must be absolute."; return 65; }
+  [ -f "$_path" ] || { set_error "INVALID_TARGET" "Snapshot must be a regular file."; return 65; }
+  [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Snapshot is not readable."; return 77; }
+  case "${_path##*/}" in *.[aA][eE][pP]|*.[cC]4[dD]) ;; *) set_error "INVALID_TARGET" "Snapshot must be an After Effects project (.aep) or a Cinema 4D scene (.c4d)."; return 65 ;; esac
+  cap_available python3 || { set_error "UNSUPPORTED" "This operation requires python3."; return 69; }
+  mj_require_local_existing_path "$_path" || return 73
+}
+
 protect_require_aep() {
   local _path="$1"
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Project path must be absolute."; return 65; }
@@ -4857,7 +4874,7 @@ handle_project_restore() {
   _path="$MJ_REQUIRED_ARG_VALUE"
   require_arg output || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _outdir="$MJ_REQUIRED_ARG_VALUE"
-  protect_require_aep "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  protect_require_snapshot "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
   protect_require_output_dir "$_outdir" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
 
   _out=$(MJ_SNAP="$_path" MJ_OUTDIR="$(canonical_existing_dir "$_outdir")" protect_python <<'PY_RESTORE'
@@ -4876,6 +4893,7 @@ if os.path.isfile(receipt_path):
     if recorded != sha:
         err("SNAPSHOT_CORRUPT", "Snapshot bytes no longer match its receipt; refusing to restore.")
     receipt_verified = True
+ext = os.path.splitext(snap)[1].lower()          # .aep or .c4d
 stem = os.path.basename(snap)[:-4]
 base = os.path.join(outdir, "%s.restored.%s" % (stem, utc_stamp()))
 partial = os.path.join(outdir, ".%s.partial-%d" % (os.path.basename(base), os.getpid()))
@@ -4885,7 +4903,7 @@ try:
     if sha256_file(partial) != sha:
         err("RESTORE_FAILED", "Restored copy did not verify.")
     for n in range(1, 100):
-        candidate = base + (".aep" if n == 1 else "-%d.aep" % n)
+        candidate = base + (ext if n == 1 else "-%d%s" % (n, ext))
         try:
             os.link(partial, candidate)     # fails if it exists: never overwrites
             dest = candidate

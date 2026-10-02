@@ -5,7 +5,7 @@
 # and writes the rendered copy next to the versions dir. Never hand-edit the
 # rendered copy; re-run watch-install.zsh instead.
 #
-# On every launchd WatchPaths trigger, scans for *.aep files (max 2 levels
+# On every launchd WatchPaths trigger, scans for *.aep and *.c4d files (max 2 levels
 # under the watch dir) and fires one project.snapshot request per file.
 # Tier 0 only: the watcher may never trigger renders, builds, or any
 # Tier 1 operation. Per-file failures are logged and skipped (continue).
@@ -111,7 +111,7 @@ fi
 
 n=0
 # -iname: Windows-originated projects are often Foo.AEP.
-find "$WATCH_DIR" -maxdepth 2 -type f -iname '*.aep' -print 2>/dev/null | while IFS= read -r aep; do
+find "$WATCH_DIR" -maxdepth 2 -type f \( -iname '*.aep' -o -iname '*.c4d' \) -print 2>/dev/null | while IFS= read -r aep; do
     [[ -n "$aep" ]] || continue
     n=$((n + 1))
     # mktemp gives every request its own file, so overlapping launchd runs cannot collide.

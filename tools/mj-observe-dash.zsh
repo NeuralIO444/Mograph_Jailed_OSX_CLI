@@ -145,7 +145,7 @@ def collect():
     # Primary index: *.latest.json (written by project.snapshot).
     # Fallback: group snapshot-named *.aep files (<stem>.<ts>.<hash>.aep).
     import re
-    snap_re = re.compile(r"^(.*)\.\d{8}T\d{6}Z\.[0-9a-f]{12}\.aep$")
+    snap_re = re.compile(r"^(.*)\.\d{8}T\d{6}Z\.[0-9a-f]{12}\.(aep|c4d)$")
     if os.path.isdir(VERSIONS):
         indexed = {}
         for fn in sorted(os.listdir(VERSIONS)):
@@ -161,12 +161,12 @@ def collect():
             indexed[stem] = latest.get("sourcePath", "")
         groups = {}
         for g in sorted(os.listdir(VERSIONS)):
-            if not g.endswith(".aep") or g.endswith(".snapshot.json"):
+            if not (g.endswith(".aep") or g.endswith(".c4d")) or g.endswith(".snapshot.json"):
                 continue
             m = snap_re.match(g)
             if not m:
                 continue
-            stem = m.group(1)
+            stem = m.group(1) + (".c4d" if m.group(2) == "c4d" else "")     # matches the pointer name Foo.c4d.latest.json
             p = os.path.join(VERSIONS, g)
             try:
                 st = os.stat(p)

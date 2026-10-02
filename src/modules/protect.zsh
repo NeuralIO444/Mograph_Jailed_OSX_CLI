@@ -119,6 +119,17 @@ protect_require_output_dir() {
   mj_require_local_existing_path "$_dir" || return 73
 }
 
+# A snapshot file to restore from: an .aep or .c4d.
+protect_require_snapshot() {
+  local _path="$1"
+  is_absolute_path "$_path" || { set_error "INVALID_PATH" "Snapshot path must be absolute."; return 65; }
+  [ -f "$_path" ] || { set_error "INVALID_TARGET" "Snapshot must be a regular file."; return 65; }
+  [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Snapshot is not readable."; return 77; }
+  case "${_path##*/}" in *.[aA][eE][pP]|*.[cC]4[dD]) ;; *) set_error "INVALID_TARGET" "Snapshot must be an After Effects project (.aep) or a Cinema 4D scene (.c4d)."; return 65 ;; esac
+  cap_available python3 || { set_error "UNSUPPORTED" "This operation requires python3."; return 69; }
+  mj_require_local_existing_path "$_path" || return 73
+}
+
 protect_require_aep() {
   local _path="$1"
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Project path must be absolute."; return 65; }
@@ -135,7 +146,7 @@ handle_project_restore() {
   _path="$MJ_REQUIRED_ARG_VALUE"
   require_arg output || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _outdir="$MJ_REQUIRED_ARG_VALUE"
-  protect_require_aep "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  protect_require_snapshot "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
   protect_require_output_dir "$_outdir" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
 
   _out=$(MJ_SNAP="$_path" MJ_OUTDIR="$(canonical_existing_dir "$_outdir")" protect_python <<'PY_RESTORE'
@@ -154,6 +165,7 @@ if os.path.isfile(receipt_path):
     if recorded != sha:
         err("SNAPSHOT_CORRUPT", "Snapshot bytes no longer match its receipt; refusing to restore.")
     receipt_verified = True
+ext = os.path.splitext(snap)[1].lower()          # .aep or .c4d
 stem = os.path.basename(snap)[:-4]
 base = os.path.join(outdir, "%s.restored.%s" % (stem, utc_stamp()))
 partial = os.path.join(outdir, ".%s.partial-%d" % (os.path.basename(base), os.getpid()))
@@ -163,7 +175,7 @@ try:
     if sha256_file(partial) != sha:
         err("RESTORE_FAILED", "Restored copy did not verify.")
     for n in range(1, 100):
-        candidate = base + (".aep" if n == 1 else "-%d.aep" % n)
+        candidate = base + (ext if n == 1 else "-%d%s" % (n, ext))
         try:
             os.link(partial, candidate)     # fails if it exists: never overwrites
             dest = candidate

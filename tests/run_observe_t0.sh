@@ -220,6 +220,29 @@ check bash -c "cat '$TMP'/race?.json | jq -s 'all(.ok == true or .error.code == 
 check bash -c "ls -A '$TMP/race/versions' | grep -q partial; test \$? -ne 0"
 check bash -c "for f in '$TMP'/race/versions/Race.*.aep; do cmp -s \"\$f\" '$TMP/race/Race.aep' || exit 1; done"
 
+# Cinema 4D scenes are versioned the same verified way, with their own pointer
+mkdir -p "$TMP/c4d/versions"
+printf 'c4d-scene-bytes' > "$TMP/c4d/Hero.c4d"; printf 'aep-bytes-hero' > "$TMP/c4d/Hero.aep"; printf 'upper' > "$TMP/c4d/Big.C4D"
+run_req "$(req project.snapshot "path=$TMP/c4d/Hero.c4d" "output=$TMP/c4d/versions")" "$TMP/c1.json" >/dev/null
+check jq -e '.ok==true and .data.snapshotCreated==true and .data.copyVerified==true and .data.sourceUnchanged==true' "$TMP/c1.json"
+C1=$(jq -r '.data.snapshotPath' "$TMP/c1.json")
+check bash -c "echo '$C1' | grep -Eq 'Hero\.[0-9]{8}T[0-9]{6}Z\.[0-9a-f]{12}\.c4d$'"
+check cmp -s "$C1" "$TMP/c4d/Hero.c4d"
+check jq -e '.kind=="c4d" and .copyVerified==true' "$C1.snapshot.json"
+check test -f "$TMP/c4d/versions/Hero.c4d.latest.json" -a ! -e "$TMP/c4d/versions/Hero.latest.json"
+run_req "$(req project.snapshot "path=$TMP/c4d/Hero.c4d" "output=$TMP/c4d/versions")" "$TMP/c2.json" >/dev/null
+check jq -e '.data.snapshotCreated==false and .data.reason=="unchanged"' "$TMP/c2.json"
+# Hero.aep and Hero.c4d are different things: neither shadows the other's "unchanged" pointer
+run_req "$(req project.snapshot "path=$TMP/c4d/Hero.aep" "output=$TMP/c4d/versions")" "$TMP/c3.json" >/dev/null
+check jq -e '.data.snapshotCreated==true' "$TMP/c3.json"
+check test -f "$TMP/c4d/versions/Hero.latest.json" -a -f "$TMP/c4d/versions/Hero.c4d.latest.json"
+run_req "$(req project.snapshot "path=$TMP/c4d/Big.C4D" "output=$TMP/c4d/versions")" "$TMP/c4.json" >/dev/null
+check jq -e '.data.snapshotCreated==true' "$TMP/c4.json"
+check test -f "$TMP/c4d/versions/Big.c4d.latest.json"
+printf 'x' > "$TMP/c4d/notes.txt"
+run_req "$(req project.snapshot "path=$TMP/c4d/notes.txt" "output=$TMP/c4d/versions")" "$TMP/c5.json" >/dev/null
+check jq -e '.error.code=="INVALID_TARGET" and (.error.message|test("c4d"))' "$TMP/c5.json"
+
 # #10: the dashboard shows project paths read from the real (unwrapped) latest pointer
 D2=$(COLUMNS=110 LINES=32 "$ROOT/tools/mj-observe-dash.zsh" --versions "$TMP/upper/versions" \
   --cli "$CLI" --once 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
