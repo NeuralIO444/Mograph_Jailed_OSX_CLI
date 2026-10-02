@@ -1,7 +1,4 @@
 ##### setup
-$ mj doctor
-This Mac is ready. All 49 operations can run.
-
 $ mj config set versions_dir ~/AE/versions
 saved: versions_dir
 
@@ -23,7 +20,7 @@ config file: ~/.config/mograph-jailed/config
 $ mj snapshot "Spring Promo"
 Saved a verified copy of Spring Promo.aep.
   ~/AE/versions/Spring Promo.<time>.26b2effec987.aep
-  15 bytes copied instantly (copy-on-write); the copy and the original were checked and match.
+  15 bytes copied; the copy and the original were checked and match.
 
 $ mj snapshot "Spring Promo"
 Nothing to save: Spring Promo.aep has not changed since the last snapshot.

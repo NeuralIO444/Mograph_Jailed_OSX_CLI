@@ -50,7 +50,7 @@ HOMEREAL=$(cd "$S/home" && pwd -P)
 sed -E -e 's|/private/var|/var|g' -e "s|${HOMEREAL#/private}|~|g" -e "s|$S/home|~|g" -e "s|$ROOT|<repo>|g" \
     -e 's/[0-9]{8}T[0-9]{6}Z\.([0-9a-f]{12})\.(aep|c4d)/<time>.\1.\2/g' \
     -e 's/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]/<date> <time>/g' \
-    -e 's/([0-9][0-9]*s)/(Ns)/g' "$TMP/walk.raw" > "$TMP/walk.norm"
+    -e 's/ copied instantly \(copy-on-write\);/ copied;/' -e 's/([0-9][0-9]*s)/(Ns)/g' "$TMP/walk.raw" > "$TMP/walk.norm"
 if [ "${1:-}" = "--update" ]; then cp "$TMP/walk.norm" "$GOLDEN"; echo "updated $GOLDEN"; exit 0; fi
 check test -s "$TMP/walk.norm"
 if ! diff -u "$GOLDEN" "$TMP/walk.norm" > "$TMP/walk.diff"; then echo "walkthrough differs from docs/guides/walkthrough.golden:" >&2; head -40 "$TMP/walk.diff" >&2; fail=$((fail+1)); else pass=$((pass+1)); fi

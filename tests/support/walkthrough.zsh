@@ -15,7 +15,6 @@ sec() { print -r -- "##### $1"; }
 run() { print -r -- "\$ $*"; eval "$@" 2>&1; print; }
 
 sec setup
-run 'mj doctor'
 run 'mj config set versions_dir ~/AE/versions'
 run 'mj config set receipts_dir ~/AE/receipts'
 run 'mj config set watch_dir ~/AE/projects'
