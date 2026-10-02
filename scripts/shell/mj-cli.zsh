@@ -49,7 +49,7 @@ _mj_run() {
 # render, golden check or recipe finishes, or any operation runs for 10 s or more.
 # Text reaches osascript as arguments (never spliced into script source), so nothing in a
 # path, label or error message can be interpreted as AppleScript.
-zmodload -F zsh/datetime b:strftime p:EPOCHREALTIME 2>/dev/null
+zmodload -F zsh/datetime b:strftime p:EPOCHREALTIME p:EPOCHSECONDS 2>/dev/null
 
 _mj_store() { print -r -- "${MJ_STORE_DIR:-$HOME/Library/Application Support/MographJailed}"; }
 
@@ -174,6 +174,51 @@ _mj_scrape_for() {
     done
     print -u2 "mj: no scrape receipt for \"$arg\" in $d (run the After Effects scraper on it first)"
     return 66
+}
+
+# Comp names (from the project's newest scrape) to comp ids: "12,40". Exact names; a name used by two
+# comps is refused (the scrape cannot tell them apart by name; pass the id with #12 instead).
+_mj_comp_ids() {
+    local scrape="$1" name id; shift; local -a ids
+    for name in "$@"; do
+        if [[ "$name" == \#<-> ]]; then ids+=("${name#\#}"); continue; fi
+        id=$(/usr/bin/jq -r --arg n "$name" '[.comps[] | select(.name == $n) | .id] | if length == 1 then .[0] elif length == 0 then "none" else "many" end' "$scrape")
+        case "$id" in
+            none) print -u2 "mj: no comp named \"$name\" in $(/usr/bin/jq -r .projectName "$scrape")"; print -u2 "  comps: $(/usr/bin/jq -r '[.comps[].name] | join(", ")' "$scrape")"; return 66 ;;
+            many) print -u2 "mj: more than one comp is named \"$name\"; give its id instead: $(/usr/bin/jq -r --arg n "$name" '[.comps[] | select(.name == $n) | "#\(.id)"] | join(" ")' "$scrape")"; return 65 ;;
+        esac
+        ids+=("$id")
+    done
+    print -r -- "${(j:,:)ids}"
+}
+
+# The installed After Effects to send jobs to: the newest complete, supported one.
+_mj_ae_app() {
+    local app; app=$(_mj_run host.detect | /usr/bin/jq -r '[.data.afterEffects[]? | select(.complete and .supported)] | sort_by(.year) | last | .app // empty')
+    [ -n "$app" ] || { print -u2 "mj: no supported After Effects found in /Applications"; return 69; }
+    print -r -- "$app"
+}
+
+_mj_ae() {
+    local sub="${1:-}" job="${2:-}" app name
+    case "$sub" in
+        run)
+            [ -d "$job" ] && [ -f "$job/run.jsx" ] || { print -u2 "usage: mj ae run <job folder>   (made by mj extract or mj conform --apply)"; return 64; }
+            app=$(_mj_ae_app) || return $?
+            name="${${app:t}%.app}"
+            [[ "$name" =~ '^Adobe After Effects 20[0-9][0-9]( \(Beta\))?$' ]] || { print -u2 "mj: unexpected After Effects name: $name"; return 69; }
+            print "Sending the job to $name. It asks to close your open project (you can save it), then works on the job's copy."
+            print "If macOS asks whether Terminal may control After Effects, allow it; or run ${job:A}/run.jsx from File > Scripts > Run Script File."
+            # The app name is checked above; the job path reaches AppleScript as an argument, never as script text.
+            : > "${job:A}/quiet"        # the runner then finishes without an alert nobody is there to click
+            "${MJ_OSASCRIPT:-/usr/bin/osascript}" -e 'on run argv' -e 'with timeout of 3600 seconds' -e "tell application \"$name\" to DoScriptFile (item 1 of argv)" -e 'end timeout' -e 'end run' -- "${job:A}/run.jsx" >/dev/null || {
+                print -u2 "mj: After Effects did not take the job; run ${job:A}/run.jsx from File > Scripts > Run Script File."; return 69; }
+            _mj_say project.jobcheck "path=${job:A}"; return ;;
+        verify)
+            [ -d "$job" ] || { print -u2 "usage: mj ae verify <job folder>"; return 64; }
+            _mj_say project.jobcheck "path=${job:A}"; return ;;
+        *) print -u2 "usage: mj ae run|verify <job folder>"; return 64 ;;
+    esac
 }
 
 _mj_say() {   # run an operation, print it in plain language, return its exit code
@@ -363,6 +408,9 @@ mj versions [project]              list saved versions
 mj lint [last|<scrape>]            check expressions, in plain language
 mj health [last|<scrape>] [--record]  project health score (0-100)
 mj check [project|last|<scrape>] [--details]  one verdict: expressions, health, fonts, footage
+mj extract <project> <comp> [...] [--run]   keep chosen comps (and what they use) as a new project
+mj conform <project> [--spec F] [--apply|--run]   studio names, labels, folders, expression fixes (plan first)
+mj ae run|verify <job>             send a job to After Effects / check it ran and the original is untouched
 mj qc <movie> [spec]               check a render against a delivery spec (codec, size, fps, audio, loudness)
 mj space [clean <id>|leftovers [--yes]]  disk taken by After Effects, Adobe and Redshift caches; empty one safely
 mj timeline <project> [--all]      every scrape and snapshot of a project, with health and what changed
@@ -436,9 +484,64 @@ USAGE
             fi
             /bin/rm -rf "$ckd"
             return $rc1 ;;
+        extract)
+            shift
+            local ep="" eo="" el="" erun=0 a; local -a ecomps
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --label) el="${2:-}"; shift 2 ;;
+                    --out) eo="${2:-}"; shift 2 ;;
+                    --run) erun=1; shift ;;
+                    *) if [ -z "$ep" ]; then ep="$1"; else ecomps+=("$1"); fi; shift ;;
+                esac
+            done
+            [ -n "$ep" ] && [ ${#ecomps} -gt 0 ] || { print -u2 "usage: mj extract <project> <comp> [<comp> ...] [--label NAME] [--out FOLDER] [--run]"; return 64; }
+            local eaep escr eids
+            eaep=$(_mj_resolve_project "$ep") || return $?
+            escr=$(_mj_scrape_for "${${eaep:t}%.[aA][eE][pP]}") || return $?
+            eids=$(_mj_comp_ids "$escr" "${ecomps[@]}") || return $?
+            [ -n "$eo" ] || eo=$(_mj_need_dir versions_dir versions) || return $?
+            [ -n "$el" ] || el="${${${eaep:t}%.[aA][eE][pP]}//[^A-Za-z0-9._-]/_}-extract-$(strftime %Y%m%d-%H%M%S $EPOCHSECONDS)"
+            local eout; eout=$(_mj_run project.extract "path=$eaep" "input=$escr" "target=$eids" "output=${eo:A}" "label=$el") || { print -r -- "$eout" | _mj_explain -; return 1; }
+            print -r -- "$eout" | _mj_explain -
+            (( erun )) && { print; _mj_ae run "$(print -r -- "$eout" | /usr/bin/jq -r .data.job)"; }
+            return 0 ;;
+        conform)
+            shift
+            local cp="" cspec="" capply=0 crun=0 cl="" co=""
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --spec) cspec="${2:-}"; shift 2 ;;
+                    --apply) capply=1; shift ;;
+                    --run) capply=1; crun=1; shift ;;
+                    --label) cl="${2:-}"; shift 2 ;;
+                    --out) co="${2:-}"; shift 2 ;;
+                    *) cp="$1"; shift ;;
+                esac
+            done
+            [ -n "$cp" ] || { print -u2 "usage: mj conform <project> [--spec FILE] [--apply | --run] [--label NAME] [--out FOLDER]"; return 64; }
+            [ -n "$cspec" ] || cspec=$(mj_config_get studio_spec)
+            local caep cscr; local -a cargs
+            caep=$(_mj_resolve_project "$cp") || return $?
+            cscr=$(_mj_scrape_for "${${caep:t}%.[aA][eE][pP]}") || return $?
+            cargs=("input=$cscr"); [ -n "$cspec" ] && cargs+=("spec=${cspec:A}")
+            if (( capply )); then
+                [ -n "$co" ] || co=$(_mj_need_dir versions_dir versions) || return $?
+                [ -n "$cl" ] || cl="${${${caep:t}%.[aA][eE][pP]}//[^A-Za-z0-9._-]/_}-conform-$(strftime %Y%m%d-%H%M%S $EPOCHSECONDS)"
+                cargs+=(format=job "path=$caep" "output=${co:A}" "label=$cl")
+            fi
+            local cout; cout=$(_mj_run project.conform "${cargs[@]}") || { print -r -- "$cout" | _mj_explain -; return 1; }
+            print -r -- "$cout" | _mj_explain -
+            (( crun )) && [ "$(print -r -- "$cout" | /usr/bin/jq -r '.data.job.folder // empty')" != "" ] && { print; _mj_ae run "$(print -r -- "$cout" | /usr/bin/jq -r .data.job.folder)"; }
+            return 0 ;;
+        ae)
+            shift; _mj_ae "$@"; return ;;
         qc)
             shift
-            [ -n "${1:-}" ] || { print -u2 "usage: mj qc <movie> [spec]   (built-in specs: broadcast-us broadcast-eu web social-vertical prores-master, or a spec file; default: qc_spec setting, else web)"; return 64; }
+            [ -n "${1:-}" ] || { print -u2 "usage: mj extract <project> <comp> [...] [--run]   keep chosen comps (and what they use) as a new project
+mj conform <project> [--spec F] [--apply|--run]   studio names, labels, folders, expression fixes (plan first)
+mj ae run|verify <job>             send a job to After Effects / check it ran and the original is untouched
+mj qc <movie> [spec]   (built-in specs: broadcast-us broadcast-eu web social-vertical prores-master, or a spec file; default: qc_spec setting, else web)"; return 64; }
             local qm="${1:A}" qs="${2:-$(mj_config_get qc_spec)}"
             [ -n "$qs" ] || qs=web
             local qout qrc
@@ -569,7 +672,7 @@ USAGE
 _mj_complete() {
     local -a items
     local json cmd="${words[2]}"
-    local -a verbs; verbs=(snapshot versions lint health check timeline space qc diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
+    local -a verbs; verbs=(snapshot versions lint health check timeline space qc extract conform ae diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
     if (( CURRENT == 2 )); then
         json=$(_mj_describe) || json=""
         items=($verbs ${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]' 2>/dev/null)"})
@@ -583,6 +686,8 @@ _mj_complete() {
         health) items=(last --record); compadd -a items; _files ;;
         diff) items=(last); compadd -a items; _files ;;
         watch) items=(on off status); compadd -a items ;;
+        extract|conform) _files -g '*.(aep|AEP)' ;;
+        ae) if (( CURRENT == 3 )); then items=(run verify); compadd -a items; else _files -/; fi ;;
         qc) if (( CURRENT == 3 )); then _files -g '*.(mov|mp4|m4v|MOV|MP4)'; else items=(broadcast-us broadcast-eu web social-vertical prores-master); compadd -a items; _files; fi ;;
         space) if (( CURRENT == 3 )); then items=(clean); compadd -a items; elif (( CURRENT == 4 )); then items=(leftovers ${(f)"$(_mj_run cache.inspect 2>/dev/null | /usr/bin/jq -r '.data.caches[]? | select(.cleanable) | .id')"}); compadd -a items; else items=(--yes); compadd -a items; fi ;;
         notify) items=(on off test status); compadd -a items ;;

@@ -120,6 +120,9 @@ dispatch_request() {
     c4d.inspect) handle_c4d_inspect ;;
     c4d.lint) handle_c4d_lint ;;
     bridge.check) handle_bridge_check ;;
+    project.jobcheck) handle_project_jobcheck ;;
+    project.conform) handle_project_conform ;;
+    project.extract) handle_project_extract ;;
     media.qc) handle_media_qc ;;
     cache.clean) handle_cache_clean ;;
     cache.inspect) handle_cache_inspect ;;

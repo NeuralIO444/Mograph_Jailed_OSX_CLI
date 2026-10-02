@@ -286,8 +286,11 @@
         }
         var proj = app.project;
 
-        var outFolder = Folder.selectDialog("Choose Tier 0 receipts folder");
-        if (!outFolder) { return; }
+        /* Unattended use (mj scrape): a wrapper sets MJ_SCRAPE_OUT_DIR (and MJ_SCRAPE_QUIET) before this file. */
+        var unattended = (typeof MJ_SCRAPE_OUT_DIR === "string" && MJ_SCRAPE_OUT_DIR.length > 0);
+        var quiet = unattended && (typeof MJ_SCRAPE_QUIET !== "undefined") && MJ_SCRAPE_QUIET === true;
+        var outFolder = unattended ? new Folder(MJ_SCRAPE_OUT_DIR) : Folder.selectDialog("Choose Tier 0 receipts folder");
+        if (!outFolder || !outFolder.exists) { if (!quiet) { alert("MographJailed scraper: no receipts folder."); } return; }
 
         var projFile = proj.file;
         var projectPath = projFile ? String(projFile.fsName) : "";
@@ -410,6 +413,7 @@
         outFile.writeln(json);
         outFile.close();
 
+        if (quiet) { return; }
         alert("MographJailed Tier 0 scrape complete\n\n" +
               "Project: " + projectName + "\n" +
               "Comps: " + compCount + (compsTruncated ? " (truncated)" : "") + "\n" +
@@ -419,6 +423,6 @@
               "Footage items: " + footage.length + "\n\n" +
               "Wrote: " + outName);
     } catch (err) {
-        alert("MographJailed scraper error:\n" + err.toString());
+        if (!(typeof MJ_SCRAPE_QUIET !== "undefined" && MJ_SCRAPE_QUIET === true)) { alert("MographJailed scraper error:\n" + err.toString()); }
     }
 }());

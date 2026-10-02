@@ -45,6 +45,9 @@ project.health
 c4d.inspect
 c4d.lint
 bridge.check
+project.jobcheck
+project.conform
+project.extract
 media.qc
 cache.clean
 cache.inspect

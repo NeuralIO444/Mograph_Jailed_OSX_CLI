@@ -16,14 +16,14 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 is_safe_arg_name() {
   case "$1" in
-    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels|minFrames|threshold|version|range|timeoutSeconds) return 0 ;;
+    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels|minFrames|threshold|version|range|timeoutSeconds|spec) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -52,6 +52,7 @@ REQUEST_ARG_threshold=""
 REQUEST_ARG_version=""
 REQUEST_ARG_range=""
 REQUEST_ARG_timeoutSeconds=""
+REQUEST_ARG_spec=""
 
 request_arg_present() {
   local _name="$1"
@@ -88,6 +89,7 @@ request_arg_set() {
     version) REQUEST_ARG_version="$_value" ;;
     range) REQUEST_ARG_range="$_value" ;;
     timeoutSeconds) REQUEST_ARG_timeoutSeconds="$_value" ;;
+    spec) REQUEST_ARG_spec="$_value" ;;
     *) return 1 ;;
   esac
 }
@@ -120,6 +122,7 @@ request_arg_get() {
     version) printf '%s' "$REQUEST_ARG_version" ;;
     range) printf '%s' "$REQUEST_ARG_range" ;;
     timeoutSeconds) printf '%s' "$REQUEST_ARG_timeoutSeconds" ;;
+    spec) printf '%s' "$REQUEST_ARG_spec" ;;
     *) return 1 ;;
   esac
 }
@@ -296,6 +299,18 @@ request_schema_for() {
       ;;
     media.qc)
       MJ_SCHEMA_ALLOWED=" path format input "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    project.extract)
+      MJ_SCHEMA_ALLOWED=" path input target output label "
+      MJ_SCHEMA_REQUIRED=" path input target output label "
+      ;;
+    project.conform)
+      MJ_SCHEMA_ALLOWED=" path input spec format output label "
+      MJ_SCHEMA_REQUIRED=" input "
+      ;;
+    project.jobcheck)
+      MJ_SCHEMA_ALLOWED=" path "
       MJ_SCHEMA_REQUIRED=" path "
       ;;
     *) return 1 ;;

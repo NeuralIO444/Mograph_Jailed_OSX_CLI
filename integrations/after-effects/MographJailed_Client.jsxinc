@@ -65,7 +65,7 @@
             "host.detect", "ae.render", "c4d.render",
             "trace.asset", "audit.plugins",
             "project.diff", "project.health",
-            "c4d.inspect", "c4d.lint", "bridge.check", "media.qc", "cache.clean", "cache.inspect", "project.preflight"
+            "c4d.inspect", "c4d.lint", "bridge.check", "project.jobcheck", "project.conform", "project.extract", "media.qc", "cache.clean", "cache.inspect", "project.preflight"
         ];
         var i;
         for (i = 0; i < allowed.length; i++) {

@@ -34,6 +34,10 @@ jobs:
         run: sh scripts/check-c4d-scraper-readonly.sh
       - name: C4D guard rejects every known mutation pattern
         run: bash tests/run_c4d_guard.sh
+      - name: After Effects job runner changes only its own copy
+        run: sh scripts/check-job-runner.sh
+      - name: Job runner guard rejects every known escape
+        run: bash tests/run_job_guard.sh
 
   dist-parity:
     name: dist parity

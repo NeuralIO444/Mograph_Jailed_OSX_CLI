@@ -463,6 +463,70 @@ def explain_qc(d):
     return out
 
 
+def explain_job_plan(d):
+    out = ["Made an extract job: %s from %s." % (names(['"%s"' % c["name"] for c in d["comps"]]), os.path.basename(d["source"]["path"])),
+           "  The new project keeps %s and %s; %s and %s go." % (plural(len(d["keeps"]["comps"]), "comp"), plural(len(d["keeps"]["footage"]), "footage item"),
+                                                               plural(d["removes"]["comps"], "other comp"), plural(d["removes"]["footage"], "footage item")),
+           "  Job folder: %s" % d["job"]]
+    return out + job_next(d["job"])
+
+
+def job_next(folder):
+    return ["", "Your project is not touched: After Effects works on before.aep in the job folder and saves result.aep.",
+            "Next:  mj ae run %s" % shlex_quote(folder),
+            "   or  in After Effects, File > Scripts > Run Script File, and pick run.jsx in the job folder.",
+            "Then:  mj ae verify %s" % shlex_quote(folder)]
+
+
+def shlex_quote(s):
+    return s if re.match(r"^[A-Za-z0-9_./-]+$", s) else "'" + s.replace("'", "'\\''") + "'"
+
+
+def explain_conform(d):
+    c, p = d["counts"], d["plan"]
+    if d["changes"] == 0:
+        return ["%s already matches %s. Nothing to change." % (d.get("projectName", "The project"), d["specName"])]
+    out = ["%s against %s: %s." % (d.get("projectName", "Project"), d["specName"], plural(d["changes"], "change"))]
+    sections = (("itemRenames", "Rename comps", lambda r: '%s -> %s' % (r["from"], r["to"])),
+                ("layerRenames", "Rename layers", lambda r: '%s / %s -> %s' % (r["comp"], r["from"], r["to"])),
+                ("expressions", "Update expressions that refer to renamed things", lambda r: '%s / %s / %s' % (r["comp"], r["layer"], r["path"])),
+                ("layerLabels", "Relabel layers", lambda r: '%s / %s: %s -> %s' % (r["comp"], r["layer"], r["from"], r["to"])),
+                ("itemLabels", "Relabel comps", lambda r: '%s: %s -> %s' % (r["name"], r["from"], r["to"])),
+                ("moves", "Move into folders", lambda r: '%s -> %s/' % (r["name"], r["to"])))
+    for key, title, fmt in sections:
+        if c.get(key):
+            out.append("  %s (%d):" % (title, c[key]))
+            out += ["    " + fmt(r) for r in p[key][:8]]
+            if c[key] > 8:
+                out.append("    ... and %d more" % (c[key] - 8))
+    for sug in p.get("suggestions", [])[:8]:
+        out.append('  %s %s / %s: "%s" does not exist; did you mean "%s"?' % ("Fixing" if sug["applied"] else "Suggestion:", sug["comp"], sug["path"], sug["reference"], sug["suggestion"]))
+    if d.get("job"):
+        out += ["", "Made a conform job: %s" % d["job"]["folder"]] + job_next(d["job"]["folder"])[1:]
+    else:
+        out += ["", "This is a plan; nothing was changed. To make it a job:  mj conform <project> --apply   (or --run to send it to After Effects)"]
+    return out
+
+
+def explain_job_check(d):
+    st = {"notRun": "has not been run in After Effects yet", "done": "was applied", "partial": "was applied with some errors",
+          "failed": "failed in After Effects; nothing was saved", "refused": "was refused by the runner"}.get(d["status"], "is in an unknown state (%s)" % d["status"])
+    out = ["The %s job \"%s\" %s." % (d.get("kind") or "?", d.get("label"), st)]
+    for c in d["checks"]:
+        out.append("  %s %s" % ("ok" if c["ok"] else "!!", c["message"]))
+    if d.get("applied") is not None:
+        out.append("  %s of %s applied; %s skipped." % (d["applied"], plural(d.get("steps") or 0, "step"), len(d.get("skipped") or [])))
+    for sk in (d.get("skipped") or [])[:6]:
+        out.append("    skipped %s: %s" % (sk.get("step"), sk.get("why")))
+    for e in (d.get("errors") or [])[:6]:
+        out.append("    error at %s: %s" % (e.get("step"), e.get("why")))
+    if d.get("itemsBefore") is not None:
+        out.append("  Project items: %s before, %s after." % (d["itemsBefore"], d["itemsAfter"]))
+    if d.get("result"):
+        out.append("  New project: %s" % d["result"])
+    return out
+
+
 EXPLAINERS = {
     "MJ_PROJECT_SUMMARY_1": explain_summary, "MJ_EXPRESSION_LINT_1": explain_lint, "MJ_PROJECT_SNAPSHOT_1": explain_snapshot,
     "MJ_RENDER_1": explain_render, "MJ_GOLDEN_CHECK_1": explain_golden, "MJ_LOOP_SEAMS_1": explain_loop, "MJ_DEPS_GRAPH_1": explain_deps,
@@ -471,7 +535,8 @@ EXPLAINERS = {
     "MJ_HOST_DETECT_1": explain_hosts, "MJ_PROJECT_SCRAPE_1": explain_scrape,
     "MJ_C4D_SUMMARY_1": explain_c4d_summary, "MJ_C4D_LINT_1": explain_c4d_lint, "MJ_BRIDGE_CHECK_1": explain_bridge,
     "MJ_PREFLIGHT_1": explain_preflight, "MJ_CACHE_INSPECT_1": explain_cache_inspect, "MJ_CACHE_CLEAN_1": explain_cache_clean,
-    "MJ_MEDIA_QC_1": explain_qc,
+    "MJ_MEDIA_QC_1": explain_qc, "MJ_AE_JOB_PLAN_1": explain_job_plan, "MJ_CONFORM_PLAN_1": explain_conform,
+    "MJ_AE_JOB_CHECK_1": explain_job_check,
 }
 
 

@@ -165,14 +165,14 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|package.create|report.tech) return 0 ;;
     *) return 1 ;;
   esac
 }
 
 is_safe_arg_name() {
   case "$1" in
-    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels|minFrames|threshold|version|range|timeoutSeconds) return 0 ;;
+    path|pathA|pathB|target|label|runId|output|input|format|expectedCliVersion|expectedProtocolVersion|expectedFilename|expectedSha256|expectedSizeBytes|expectedModifiedEpoch|requiredBytes|maxResults|timeSeconds|maxPixels|minFrames|threshold|version|range|timeoutSeconds|spec) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -201,6 +201,7 @@ REQUEST_ARG_threshold=""
 REQUEST_ARG_version=""
 REQUEST_ARG_range=""
 REQUEST_ARG_timeoutSeconds=""
+REQUEST_ARG_spec=""
 
 request_arg_present() {
   local _name="$1"
@@ -237,6 +238,7 @@ request_arg_set() {
     version) REQUEST_ARG_version="$_value" ;;
     range) REQUEST_ARG_range="$_value" ;;
     timeoutSeconds) REQUEST_ARG_timeoutSeconds="$_value" ;;
+    spec) REQUEST_ARG_spec="$_value" ;;
     *) return 1 ;;
   esac
 }
@@ -269,6 +271,7 @@ request_arg_get() {
     version) printf '%s' "$REQUEST_ARG_version" ;;
     range) printf '%s' "$REQUEST_ARG_range" ;;
     timeoutSeconds) printf '%s' "$REQUEST_ARG_timeoutSeconds" ;;
+    spec) printf '%s' "$REQUEST_ARG_spec" ;;
     *) return 1 ;;
   esac
 }
@@ -445,6 +448,18 @@ request_schema_for() {
       ;;
     media.qc)
       MJ_SCHEMA_ALLOWED=" path format input "
+      MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    project.extract)
+      MJ_SCHEMA_ALLOWED=" path input target output label "
+      MJ_SCHEMA_REQUIRED=" path input target output label "
+      ;;
+    project.conform)
+      MJ_SCHEMA_ALLOWED=" path input spec format output label "
+      MJ_SCHEMA_REQUIRED=" input "
+      ;;
+    project.jobcheck)
+      MJ_SCHEMA_ALLOWED=" path "
       MJ_SCHEMA_REQUIRED=" path "
       ;;
     *) return 1 ;;
@@ -845,13 +860,16 @@ operation_names() {
     cache.inspect \
     cache.clean \
     media.qc \
+    project.extract \
+    project.conform \
+    project.jobcheck \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -954,6 +972,15 @@ operation_available() {
     media.qc)
       cap_available python3 && cap_available avmediainfo
       ;;
+    project.extract)
+      cap_available python3 && cap_available cp
+      ;;
+    project.conform)
+      cap_available python3 && cap_available cp
+      ;;
+    project.jobcheck)
+      cap_available python3
+      ;;
     *) return 1 ;;
   esac
 }
@@ -1011,6 +1038,9 @@ operation_summary() {
     cache.inspect) printf '%s' 'How much disk the After Effects, Adobe media and Redshift caches take.' ;;
     cache.clean) printf '%s' 'Empty one cache by its id; refuses while its app runs.' ;;
     media.qc) printf '%s' 'Check a movie against a delivery spec: codec, size, fps, audio, loudness.' ;;
+    project.extract) printf '%s' 'Keep chosen comps and what they use as a new project, via a job on a copy.' ;;
+    project.conform) printf '%s' 'Plan studio names, labels, folders, expression fixes; format=job makes a job.' ;;
+    project.jobcheck) printf '%s' 'Did an After Effects job run, save its result, and leave the original untouched?' ;;
     report.tech) printf 'Native diagnostic receipt for support.' ;;
     package.create) printf 'Zip a file or folder with ditto; never overwrites.' ;;
     *) printf '' ;;
@@ -1049,6 +1079,9 @@ operation_cost() {
     cache.inspect) printf 'SIZE_DEPENDENT' ;;
     cache.clean) printf 'SIZE_DEPENDENT' ;;
     media.qc) printf 'SIZE_DEPENDENT' ;;
+    project.extract) printf 'IO_BOUND' ;;
+    project.conform) printf 'SIZE_DEPENDENT' ;;
+    project.jobcheck) printf 'SIZE_DEPENDENT' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
@@ -1061,6 +1094,8 @@ operation_mutation() {
     image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get|ae.render|c4d.render) printf 'DERIVATIVE_CREATE' ;;
     index.add|preset.add|project.health) printf 'STORE_WRITE' ;;
     cache.clean) printf 'CACHE_DELETE' ;;
+    project.extract) printf 'DERIVATIVE_CREATE' ;;
+    project.conform) printf 'DERIVATIVE_CREATE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -1099,6 +1134,9 @@ operation_authority() {
     cache.inspect) printf 'AUTHORITATIVE_FILESYSTEM_METADATA' ;;
     cache.clean) printf 'AUTHORITATIVE_OPERATION' ;;
     media.qc) printf 'DERIVED_MEDIA_QC' ;;
+    project.extract) printf 'AUTHORITATIVE_OPERATION' ;;
+    project.conform) printf 'DERIVED_PROJECT_SUMMARY' ;;
+    project.jobcheck) printf 'AUTHORITATIVE_OPERATION' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
@@ -1112,7 +1150,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc|project.extract|project.conform|project.jobcheck) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1187,7 +1225,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc|project.extract|project.conform|project.jobcheck) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"
@@ -7125,6 +7163,445 @@ PY_MEDIA_QC
   frames_emit_python_result "$_out"
 }
 
+# --- src/modules/aejob.zsh ---
+# After Effects jobs: changes that only After Effects can make, done on a copy, never the original.
+#
+# project.extract  — keep one comp or a list of comps (and everything they use) as a NEW project.
+# project.conform  — bring a project to a studio spec: comp and layer names, labels, project-panel
+#                    folders, and the expressions that refer to renamed things (plus, optionally,
+#                    broken name references with one clear close match). format=plan (default) only
+#                    reports the plan; format=job writes a job.
+# project.jobcheck — after the job ran in After Effects: was it applied, and is the original untouched?
+#
+# Everything is planned here from the scrape, so it is reviewable and testable without After Effects.
+# A job folder holds before.aep (a verified copy), plan.json and run.jsx (the fixed runner in
+# integrations/after-effects/MographJailed_JobRunner.jsx with the plan embedded). The runner opens only
+# before.aep, skips any step whose item no longer matches the plan, and saves result.aep as a new file.
+
+IFS= read -r -d '' MJ_PY_AEJOB <<'PY_AEJOB_LIB' || true
+import difflib
+
+def comp_index(doc):
+    comps = [c for c in doc["comps"] if isinstance(c, dict) and isinstance(c.get("id"), int)]
+    return comps, {c["id"]: c for c in comps}
+
+def comp_closure(byid, ids):
+    """The comps reachable from ids through precomp layers, and the footage ids they use."""
+    seen, stack, footage = set(), list(ids), set()
+    while stack:
+        cid = stack.pop()
+        if cid in seen or cid not in byid:
+            continue
+        seen.add(cid)
+        for l in byid[cid].get("layers") or []:
+            sid = l.get("sourceId") if isinstance(l, dict) else None
+            if isinstance(sid, int) and sid:
+                if sid in byid:
+                    stack.append(sid)
+                else:
+                    footage.add(sid)
+    return seen, footage
+
+def make_job(kind, label, aep, outdir, plan_body, runner_path, scrape_path):
+    """Create <outdir>/<label>.mjjob with a verified copy, plan.json and run.jsx. Never overwrites."""
+    job = os.path.join(outdir, label + ".mjjob")
+    try:
+        os.mkdir(job, 0o755)
+    except FileExistsError:
+        err("OUTPUT_EXISTS", "A job named %s already exists in the output folder." % label)
+    except OSError:
+        err("OUTPUT_UNAVAILABLE", "The job folder could not be created.")
+    try:
+        runner = open(runner_path, encoding="utf-8").read()
+    except OSError:
+        shutil.rmtree(job, ignore_errors=True)
+        err("NOT_FOUND", "The After Effects job runner is missing (integrations/after-effects/MographJailed_JobRunner.jsx).")
+    src_sha = sha256_file(aep)
+    work = os.path.join(job, "before.aep")
+    try:
+        cloned = clone_copy(aep, work)
+    except OSError:
+        shutil.rmtree(job, ignore_errors=True)
+        err("SNAPSHOT_FAILED", "The project could not be copied into the job folder.")
+    if sha256_file(work) != src_sha or sha256_file(aep) != src_sha:
+        shutil.rmtree(job, ignore_errors=True)
+        err("SNAPSHOT_UNSTABLE", "The project changed while it was being copied; save it in After Effects and try again.")
+    plan = {"schema": "MJ_AE_JOB_1", "kind": kind, "label": label, "createdAt": utc_stamp(),
+            "source": {"path": aep, "sha256": src_sha, "size": os.path.getsize(aep)}, "scrape": scrape_path,
+            "work": work, "workSha256": src_sha, "result": os.path.join(job, "result.aep"), "receipt": os.path.join(job, "result.json"),
+            "quietFlag": os.path.join(job, "quiet")}
+    plan.update(plan_body)
+    text = json.dumps(plan, indent=1, sort_keys=True, ensure_ascii=True)
+    with open(os.path.join(job, "plan.json"), "x", encoding="utf-8") as f:
+        f.write(text + "\n")
+    with open(os.path.join(job, "run.jsx"), "x", encoding="utf-8") as f:
+        f.write("#target aftereffects\n// MographJailed %s job \"%s\". Run this file in After Effects; it works on before.aep in this folder only.\n" % (kind, label))
+        f.write("var MJ_PLAN = " + text + ";\n")
+        f.write(runner)
+    return job, plan, cloned
+
+# ---- studio spec ----
+LAYER_KINDS = ("text", "shape", "solid", "null", "adjustment", "camera", "light", "precomp", "footage", "audio")
+DEFAULT_STUDIO_SPEC = {
+    "name": "MographJailed studio default",
+    "precompPrefix": "PRE_", "mainCompPrefix": "", "spaces": "_",
+    "layerPrefix.text": "TXT_", "layerPrefix.shape": "SHP_", "layerPrefix.solid": "SOL_", "layerPrefix.null": "NULL_",
+    "layerPrefix.adjustment": "ADJ_", "layerPrefix.camera": "CAM_", "layerPrefix.light": "LGT_", "layerPrefix.precomp": "PRE_",
+    "layerPrefix.footage": "", "layerPrefix.audio": "AUD_",
+    "label.text": "1", "label.shape": "8", "label.solid": "2", "label.null": "11", "label.adjustment": "5", "label.camera": "4",
+    "label.light": "6", "label.precomp": "15", "label.footage": "14", "label.audio": "7",
+    "label.mainComp": "9", "label.precompItem": "15",
+    "folder.mainComps": "01_Comps", "folder.precomps": "02_Precomps", "folder.footage": "03_Footage", "folder.solids": "04_Solids", "folder.audio": "05_Audio",
+    "fixBrokenRefs": "suggest",
+}
+STUDIO_KEYS = {"name", "precompPrefix", "mainCompPrefix", "spaces", "fixBrokenRefs", "label.mainComp", "label.precompItem"} | \
+    {"layerPrefix." + k for k in LAYER_KINDS} | {"label." + k for k in LAYER_KINDS} | \
+    {"folder." + k for k in ("mainComps", "precomps", "footage", "solids", "audio")}
+
+def parse_studio_spec(path):
+    spec = {}
+    try:
+        lines = open(path, encoding="utf-8").read(65536).splitlines()
+    except (OSError, UnicodeDecodeError):
+        err("INVALID_SPEC", "The studio spec could not be read as UTF-8 text.")
+    for n, line in enumerate(lines, 1):
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if "=" not in s:
+            err("INVALID_SPEC", "Spec line %d is not key = value." % n)
+        k, v = (x.strip() for x in s.split("=", 1))
+        if k not in STUDIO_KEYS:
+            err("INVALID_SPEC", "Spec line %d: unknown key %s." % (n, k))
+        if k.startswith("label.") and v and not (v.isdigit() and 0 <= int(v) <= 16):
+            err("INVALID_SPEC", "Spec line %d: %s must be a label number 0-16 (or empty to leave labels alone)." % (n, k))
+        if k == "spaces" and v not in ("keep", "_", "-"):
+            err("INVALID_SPEC", "Spec line %d: spaces must be keep, _ or -." % n)
+        if k == "fixBrokenRefs" and v not in ("off", "suggest", "apply"):
+            err("INVALID_SPEC", "Spec line %d: fixBrokenRefs must be off, suggest or apply." % n)
+        if any(ch in v for ch in '"\\') or len(v) > 64:
+            err("INVALID_SPEC", "Spec line %d: values may not contain quotes or backslashes and must be short." % n)
+        spec[k] = v
+    return spec
+
+def layer_kind(l, comp_ids):
+    t = l.get("type")
+    simple = {"TextLayer": "text", "ShapeLayer": "shape", "CameraLayer": "camera", "LightLayer": "light", "NullLayer": "null"}
+    if t in simple:
+        return simple[t]
+    if l.get("adjustment"):
+        return "adjustment"
+    sk = l.get("sourceKind") or ("comp" if l.get("sourceId") in comp_ids else "")
+    if sk == "comp":
+        return "precomp"
+    if sk == "solid":
+        return "solid"
+    if l.get("hasAudio") and not l.get("hasVideo"):
+        return "audio"
+    return "footage"
+
+def styled(name, spec):
+    n = " ".join(str(name).split())
+    sp = spec.get("spaces", "keep")
+    if sp in ("_", "-"):
+        n = n.replace(" ", sp)
+    return n
+
+def prefixed(name, prefix):
+    if prefix and not name.lower().startswith(prefix.lower()):
+        return prefix + name
+    return name
+
+def unique(name, taken):
+    if name not in taken:
+        return name
+    i = 2
+    while "%s_%d" % (name, i) in taken:
+        i += 1
+    return "%s_%d" % (name, i)
+
+REF = re.compile(r'(\bcomp|\.layer|\blayer)\(\s*(["\'])((?:(?!\2)[^\\\n])*)\2\s*\)')
+
+def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, suggestions, where):
+    """Rename name references inside one expression. Returns (new text, changed?)."""
+    out, pos, changed = [], 0, False
+    last_comp_end, last_comp_name = -1, None
+    for m in REF.finditer(text):
+        fn, q, name = m.group(1), m.group(2), m.group(3)
+        new = name
+        if fn == "comp":
+            last_comp_end, last_comp_name = m.end(), name
+            new = comp_new.get(name, name)
+        else:
+            target = last_comp_name if (fn == ".layer" and m.start() == last_comp_end) else own_comp
+            names = layer_names.get(target)
+            if names is not None and name not in names and fix != "off":
+                close = difflib.get_close_matches(name, sorted(names), n=2, cutoff=0.8)
+                if len(close) == 1:
+                    suggestions.append(dict(where, reference=name, suggestion=close[0], comp=target, applied=fix == "apply"))
+                    if fix == "apply":
+                        name_fixed = close[0]
+                        new = layer_new.get((target, name_fixed), name_fixed)
+            if new == name:
+                new = layer_new.get((target, name), name)
+        if new != name:
+            out.append(text[pos:m.start(3)]); out.append(new); pos = m.end(3); changed = True
+    out.append(text[pos:])
+    return "".join(out), changed
+
+def plan_conform(doc, spec):
+    comps, byid = comp_index(doc)
+    comp_ids = set(byid)
+    used_as_precomp = {l.get("sourceId") for c in comps for l in (c.get("layers") or []) if isinstance(l, dict) and l.get("sourceId") in comp_ids}
+    names_count = {}
+    for c in comps:
+        names_count[c.get("name")] = names_count.get(c.get("name"), 0) + 1
+    item_renames, comp_new, taken = [], {}, set()
+    for c in comps:
+        role = "precomp" if c["id"] in used_as_precomp else "main"
+        new = prefixed(styled(c["name"], spec), spec.get("precompPrefix" if role == "precomp" else "mainCompPrefix", ""))
+        new = unique(new, taken); taken.add(new)
+        c["_role"] = role
+        if new != c["name"]:
+            item_renames.append({"id": c["id"], "kind": "comp", "role": role, "from": c["name"], "to": new})
+            if names_count[c["name"]] == 1:
+                comp_new[c["name"]] = new
+    layer_renames, layer_new, layer_labels, layer_names = [], {}, [], {}
+    for c in comps:
+        layer_names[c["name"]] = {l.get("name") for l in (c.get("layers") or []) if isinstance(l, dict)}
+        seen, lc = set(), {}
+        for l in c.get("layers") or []:
+            lc[l.get("name")] = lc.get(l.get("name"), 0) + 1
+        for l in c.get("layers") or []:
+            if not isinstance(l, dict) or not isinstance(l.get("index"), int):
+                continue
+            kind = layer_kind(l, comp_ids)
+            new = prefixed(styled(l.get("name", ""), spec), spec.get("layerPrefix." + kind, ""))
+            new = unique(new, seen); seen.add(new)
+            if new != l.get("name"):
+                layer_renames.append({"compId": c["id"], "comp": c["name"], "index": l["index"], "kind": kind, "from": l.get("name"), "to": new})
+                if lc[l.get("name")] == 1:
+                    layer_new[(c["name"], l.get("name"))] = new
+            want = spec.get("label." + kind, "")
+            if want != "" and isinstance(l.get("label"), int) and l["label"] != int(want):
+                layer_labels.append({"compId": c["id"], "comp": c["name"], "index": l["index"], "layer": l.get("name"), "kind": kind, "from": l["label"], "to": int(want)})
+    item_labels, moves, folders = [], [], []
+    def move(item_id, kind, frm, folder_key, name):
+        dest = spec.get(folder_key, "")
+        if dest and frm != dest:
+            moves.append({"id": item_id, "kind": kind, "name": name, "from": frm, "to": dest})
+            if dest not in folders:
+                folders.append(dest)
+    for c in comps:
+        want = spec.get("label.precompItem" if c["_role"] == "precomp" else "label.mainComp", "")
+        if want != "" and isinstance(c.get("label"), int) and c["label"] != int(want):
+            item_labels.append({"id": c["id"], "kind": "comp", "name": c["name"], "from": c["label"], "to": int(want)})
+        if "folder" in c:
+            move(c["id"], "comp", c.get("folder", ""), "folder.precomps" if c["_role"] == "precomp" else "folder.mainComps", c["name"])
+    for f in doc["footage"]:
+        if not isinstance(f, dict) or not isinstance(f.get("id"), int) or "folder" not in f:
+            continue
+        key = "folder.solids" if f.get("kind") == "solid" else "folder.audio" if (f.get("hasAudio") and not f.get("hasVideo")) else "folder.footage"
+        move(f["id"], "footage", f.get("folder", ""), key, f.get("name", ""))
+    expressions, suggestions, dynamic = [], [], 0
+    fix = spec.get("fixBrokenRefs", "suggest")
+    for c in comps:
+        for l in c.get("layers") or []:
+            if not isinstance(l, dict):
+                continue
+            for e in l.get("expressions") or []:
+                if not isinstance(e, dict) or e.get("expressionTruncated"):
+                    continue
+                text = e.get("expression", "")
+                where = {"comp": c["name"], "layer": l.get("name"), "path": e.get("propertyPath")}
+                new, changed = rewrite_expression(text, c["name"], comp_new, layer_new, layer_names, fix, suggestions, where)
+                if changed:
+                    expressions.append({"compId": c["id"], "comp": c["name"], "index": l.get("index"), "layer": l.get("name"), "path": e.get("propertyPath"), "from": text, "to": new})
+                if re.search(r"\b(?:comp|layer)\(\s*[^\"'\s)]", text):
+                    dynamic += 1
+    return {"itemRenames": item_renames, "layerRenames": layer_renames, "expressions": expressions, "layerLabels": layer_labels,
+            "itemLabels": item_labels, "folders": folders, "moves": moves, "suggestions": suggestions, "dynamicReferences": dynamic}
+PY_AEJOB_LIB
+
+aejob_python() {
+  local _main=""
+  IFS= read -r -d '' _main || true
+  printf '%s\n%s\n%s' "$MJ_PY_PROTECT_LIB" "$MJ_PY_AEJOB" "$_main" | /usr/bin/python3 - 2>/dev/null
+}
+
+aejob_runner_path() {
+  local _self
+  _self=$(runtime_self_path) || return 1
+  printf '%s/../integrations/after-effects/MographJailed_JobRunner.jsx' "${_self%/*}"
+}
+
+# Shared checks for an .aep + its scrape (+ optional output folder and label for a job).
+aejob_require_inputs() {
+  local _aep="$1" _scrape="$2"
+  is_absolute_path "$_aep" || { set_error "INVALID_PATH" "Project path must be absolute."; return 65; }
+  case "${_aep##*/}" in *.[aA][eE][pP]) ;; *) set_error "INVALID_TARGET" "Project must be an After Effects .aep file."; return 65 ;; esac
+  [ -f "$_aep" ] || { set_error "NOT_FOUND" "Project not found."; return 66; }
+  mj_require_local_existing_path "$_aep" || return 73
+  project_require_scrape_file "$_scrape" || return $?
+}
+
+aejob_require_job_output() {
+  local _out="$1" _label="$2"
+  protect_require_output_dir "$_out" || return $?
+  case "$_label" in ""|.*|*[!A-Za-z0-9._-]*) set_error "INVALID_ARGUMENT" "label may contain only letters, digits, dot, dash and underscore."; return 65 ;; esac
+  [ ${#_label} -le 64 ] || { set_error "INVALID_ARGUMENT" "label must be at most 64 characters."; return 65; }
+}
+
+handle_project_extract() {
+  local _rc=0 _aep _scrape _ids _outdir _label _out a
+  for a in path input target output label; do require_arg "$a" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }; done
+  _aep=$(request_arg_get path); _scrape=$(request_arg_get input); _ids=$(request_arg_get target)
+  _outdir=$(request_arg_get output); _label=$(request_arg_get label)
+  case "$_ids" in ""|*[!0-9,]*|,*|*,|*,,*) set_error "INVALID_ARGUMENT" "target must be comp ids from the scrape, separated by commas (for example 12,40)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
+  aejob_require_inputs "$_aep" "$_scrape" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  aejob_require_job_output "$_outdir" "$_label" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  _out=$(MJ_AEP="$_aep" MJ_SCRAPE="$_scrape" MJ_IDS="$_ids" MJ_OUT="$_outdir" MJ_LABEL="$_label" MJ_RUNNER="$(aejob_runner_path)" aejob_python <<'PY_EXTRACT'
+doc = load_scrape(os.environ["MJ_SCRAPE"])
+comps, byid = comp_index(doc)
+ids = [int(x) for x in os.environ["MJ_IDS"].split(",")]
+missing = [i for i in ids if i not in byid]
+if missing:
+    err("NOT_FOUND", "No comp with id %s in the scrape." % ", ".join(map(str, missing)))
+if len(set(ids)) != len(ids):
+    err("INVALID_ARGUMENT", "A comp id is listed twice.")
+warnings = []
+aep = os.environ["MJ_AEP"]
+if os.path.basename(doc.get("projectPath", "")) != os.path.basename(aep):
+    warnings.append({"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape is of %s, not %s." % (doc.get("projectName"), os.path.basename(aep))})
+keep, footage_ids = comp_closure(byid, ids)
+fnames = {f.get("id"): f.get("name") for f in doc["footage"] if isinstance(f, dict)}
+body = {"extract": {"compIds": ids, "compNames": [byid[i]["name"] for i in ids]}}
+job, plan, cloned = make_job("extract", os.environ["MJ_LABEL"], aep, os.environ["MJ_OUT"], body, os.environ["MJ_RUNNER"], os.environ["MJ_SCRAPE"])
+print(json.dumps({"ok": True, "data": {
+    "schema": "MJ_AE_JOB_PLAN_1", "kind": "extract", "job": job, "runScript": os.path.join(job, "run.jsx"), "result": plan["result"],
+    "source": plan["source"], "copiedInstantly": cloned,
+    "comps": [{"id": i, "name": byid[i]["name"]} for i in ids],
+    "keeps": {"comps": sorted(byid[i]["name"] for i in keep), "footage": sorted(str(fnames.get(i, i)) for i in footage_ids)},
+    "removes": {"comps": len(comps) - len(keep), "footage": max(len(fnames) - len(footage_ids), 0)},
+    "_warnings": warnings,
+}}))
+PY_EXTRACT
+) || true
+  frames_emit_python_result "$_out"
+}
+
+handle_project_conform() {
+  local _rc=0 _aep="" _scrape _spec="" _fmt="plan" _outdir="" _label="" _out a
+  require_arg input || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _scrape="$MJ_REQUIRED_ARG_VALUE"
+  request_arg_present format && _fmt=$(request_arg_get format)
+  case "$_fmt" in plan|job) ;; *) set_error "INVALID_ARGUMENT" "format must be plan (default) or job."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65 ;; esac
+  request_arg_present spec && _spec=$(request_arg_get spec)
+  if [ -n "$_spec" ]; then
+    is_absolute_path "$_spec" || { set_error "INVALID_PATH" "Spec path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+    [ -f "$_spec" ] || { set_error "NOT_FOUND" "Studio spec not found."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 66; }
+  fi
+  if [ "$_fmt" = job ]; then
+    for a in path output label; do require_arg "$a" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }; done
+    _aep=$(request_arg_get path); _outdir=$(request_arg_get output); _label=$(request_arg_get label)
+    aejob_require_inputs "$_aep" "$_scrape" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+    aejob_require_job_output "$_outdir" "$_label" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  else
+    project_require_scrape_file "$_scrape" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  fi
+  _out=$(MJ_AEP="$_aep" MJ_SCRAPE="$_scrape" MJ_SPEC="$_spec" MJ_FMT="$_fmt" MJ_OUT="$_outdir" MJ_LABEL="$_label" MJ_RUNNER="$(aejob_runner_path)" aejob_python <<'PY_CONFORM'
+id0 = tree_id(os.environ["MJ_SCRAPE"])
+doc = load_scrape(os.environ["MJ_SCRAPE"])
+spec = dict(DEFAULT_STUDIO_SPEC)
+if os.environ["MJ_SPEC"]:
+    spec.update(parse_studio_spec(os.environ["MJ_SPEC"]))
+plan = plan_conform(doc, spec)
+warnings = []
+old = str(doc.get("scraperVersion", "")) < "1.1"
+if old:
+    warnings.append({"code": "SCRAPE_TOO_OLD", "message": "This scrape is from scraper %s; labels, folders, solids and adjustment layers need scraper 1.1, so only names and expressions are planned." % doc.get("scraperVersion")})
+if any(c.get("layersTruncated") for c in doc["comps"] if isinstance(c, dict)) or doc.get("compsTruncated"):
+    warnings.append({"code": "SCRAPE_TRUNCATED", "message": "The scrape is truncated; comps or layers beyond its limits are not in the plan."})
+if plan["dynamicReferences"]:
+    warnings.append({"code": "DYNAMIC_REFERENCES", "message": "%d expression(s) look layers or comps up by a computed name; those references cannot be followed and may need a look after renaming." % plan["dynamicReferences"]})
+counts = {k: len(plan[k]) for k in ("itemRenames", "layerRenames", "expressions", "layerLabels", "itemLabels", "moves")}
+data = {"schema": "MJ_CONFORM_PLAN_1", "projectName": doc.get("projectName"), "specName": spec.get("name"), "spec": os.environ["MJ_SPEC"] or "built-in",
+        "counts": counts, "changes": sum(counts.values()), "plan": plan, "job": None}
+if os.environ["MJ_FMT"] == "job":
+    aep = os.environ["MJ_AEP"]
+    if os.path.basename(doc.get("projectPath", "")) != os.path.basename(aep):
+        warnings.append({"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape is of %s, not %s." % (doc.get("projectName"), os.path.basename(aep))})
+if os.environ["MJ_FMT"] == "job" and data["changes"] == 0:
+    warnings.append({"code": "NOTHING_TO_DO", "message": "The project already matches the spec, so no job was made."})
+elif os.environ["MJ_FMT"] == "job":
+    body = {"conform": {k: plan[k] for k in ("itemRenames", "layerRenames", "expressions", "layerLabels", "itemLabels", "moves")}, "specName": spec.get("name")}
+    job, jp, cloned = make_job("conform", os.environ["MJ_LABEL"], aep, os.environ["MJ_OUT"], body, os.environ["MJ_RUNNER"], os.environ["MJ_SCRAPE"])
+    data["job"] = {"folder": job, "runScript": os.path.join(job, "run.jsx"), "result": jp["result"], "source": jp["source"], "copiedInstantly": cloned}
+data["sourceUnchanged"] = tree_id(os.environ["MJ_SCRAPE"]) == id0
+data["_warnings"] = warnings
+print(json.dumps({"ok": True, "data": data}))
+PY_CONFORM
+) || true
+  frames_emit_python_result "$_out"
+}
+
+handle_project_jobcheck() {
+  local _rc=0 _job _out
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _job="$MJ_REQUIRED_ARG_VALUE"
+  is_absolute_path "$_job" || { set_error "INVALID_PATH" "Job path must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  [ -d "$_job" ] && [ -f "$_job/plan.json" ] || { set_error "INVALID_TARGET" "That is not a job folder (no plan.json)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  mj_require_local_existing_path "$_job" || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 73; }
+  cap_available python3 || { set_error "UNSUPPORTED" "Job checks require python3."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 69; }
+  _out=$(MJ_JOB="$_job" aejob_python <<'PY_JOBCHECK'
+job = os.path.realpath(os.environ["MJ_JOB"])
+try:
+    plan = json.load(open(os.path.join(job, "plan.json"), encoding="utf-8"))
+    assert plan.get("schema") == "MJ_AE_JOB_1"
+except Exception:
+    err("INVALID_RECEIPT", "plan.json is not a MographJailed job plan.")
+inside = lambda p: os.path.realpath(p).startswith(job + os.sep)
+if not all(inside(plan.get(k, "/")) for k in ("work", "result", "receipt", "quietFlag")):
+    err("INVALID_RECEIPT", "The plan points outside its job folder.")
+checks = []
+def add(name, ok, msg):
+    checks.append({"check": name, "ok": ok, "message": msg})
+src = plan["source"]["path"]
+if os.path.isfile(src):
+    same = sha256_file(src) == plan["source"]["sha256"]
+    add("originalUnchanged", same, "The original project is byte-for-byte what it was when the job was made." if same else
+        "The original project has changed since the job was made (you saved it in After Effects); the job was still applied to the copy.")
+else:
+    add("originalUnchanged", False, "The original project is no longer at %s." % src)
+w = plan["work"]
+add("copyUnchanged", os.path.isfile(w) and sha256_file(w) == plan["workSha256"], "before.aep is still the copy the job started from." if os.path.isfile(w) and sha256_file(w) == plan["workSha256"] else "before.aep was changed or removed.")
+status, result = "notRun", None
+if os.path.isfile(plan["receipt"]):
+    try:
+        result = json.load(open(plan["receipt"], encoding="utf-8"))
+        status = result.get("status", "unknown")
+    except Exception:
+        status = "unreadable"
+add("ran", status != "notRun", "After Effects ran the job (%s)." % status if status != "notRun" else "The job has not been run in After Effects yet.")
+res = plan["result"]
+has_result = os.path.isfile(res) and os.path.getsize(res) > 0
+if status != "notRun":
+    add("resultSaved", has_result, "result.aep was saved (%d bytes)." % os.path.getsize(res) if has_result else "There is no result.aep.")
+# Complete: After Effects applied it, saved the result, and the copy it worked from is intact. Whether the
+# original changed since is reported, not held against the job (you may have kept working on it).
+ok = status in ("done", "partial") and has_result and checks[1]["ok"]
+print(json.dumps({"ok": True, "data": {
+    "schema": "MJ_AE_JOB_CHECK_1", "job": job, "kind": plan.get("kind"), "label": plan.get("label"), "status": status, "complete": ok,
+    "result": res if has_result else None, "checks": checks,
+    "applied": (result or {}).get("applied"), "steps": (result or {}).get("steps"),
+    "skipped": (result or {}).get("skipped", [])[:50], "errors": (result or {}).get("errors", [])[:50],
+    "itemsBefore": (result or {}).get("itemsBefore"), "itemsAfter": (result or {}).get("itemsAfter"),
+}}))
+PY_JOBCHECK
+) || true
+  frames_emit_python_result "$_out"
+}
+
 # --- src/modules/host.zsh ---
 # Host applications — After Effects and Cinema 4D (Power CLI Phases 0-1).
 #
@@ -7644,6 +8121,9 @@ dispatch_request() {
     c4d.inspect) handle_c4d_inspect ;;
     c4d.lint) handle_c4d_lint ;;
     bridge.check) handle_bridge_check ;;
+    project.jobcheck) handle_project_jobcheck ;;
+    project.conform) handle_project_conform ;;
+    project.extract) handle_project_extract ;;
     media.qc) handle_media_qc ;;
     cache.clean) handle_cache_clean ;;
     cache.inspect) handle_cache_inspect ;;

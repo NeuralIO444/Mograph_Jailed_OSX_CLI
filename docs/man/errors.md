@@ -211,4 +211,8 @@ A successful response can still carry `warnings`: a list of `{ "code", "message"
 | `FONT_SCAN_CAPPED` | The font scan stopped at its file limit. | Some installed fonts may not have been seen. |
 | `CACHE_PARTLY_CLEANED` | Some entries in a cache folder could not be removed. | They are listed in `problems`; check permissions or quit the app and run it again. |
 | `PEAK_IS_SAMPLE_PEAK` | The peak check uses the sample peak, not a 4x-oversampled true peak. | Leave about 0.5 dB of extra headroom on bright material. |
+| `SCRAPE_TOO_OLD` | The scrape comes from scraper 1.0, which does not record labels, folders, solids or adjustment layers. | Only names and expressions are planned; re-scrape with scraper 1.1 for the rest. |
+| `SCRAPE_TRUNCATED` | The scrape hit its comp or layer limits. | Comps or layers past the limits are not in the plan. |
+| `DYNAMIC_REFERENCES` | Some expressions look layers or comps up by a computed name. | Those references cannot be followed when renaming; check them after the job runs. |
+| `NOTHING_TO_DO` | The project already matches the studio spec. | No job was made. |
 | `SOURCE_CHANGED_DURING_RENDER` | The project or scene changed while rendering. | The frames may mix two versions; re-render. |

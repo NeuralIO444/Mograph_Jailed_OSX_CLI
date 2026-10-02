@@ -51,13 +51,16 @@ operation_names() {
     cache.inspect \
     cache.clean \
     media.qc \
+    project.extract \
+    project.conform \
+    project.jobcheck \
     report.tech \
     package.create
 }
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|report.tech|package.create) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -160,6 +163,15 @@ operation_available() {
     media.qc)
       cap_available python3 && cap_available avmediainfo
       ;;
+    project.extract)
+      cap_available python3 && cap_available cp
+      ;;
+    project.conform)
+      cap_available python3 && cap_available cp
+      ;;
+    project.jobcheck)
+      cap_available python3
+      ;;
     *) return 1 ;;
   esac
 }
@@ -217,6 +229,9 @@ operation_summary() {
     cache.inspect) printf '%s' 'How much disk the After Effects, Adobe media and Redshift caches take.' ;;
     cache.clean) printf '%s' 'Empty one cache by its id; refuses while its app runs.' ;;
     media.qc) printf '%s' 'Check a movie against a delivery spec: codec, size, fps, audio, loudness.' ;;
+    project.extract) printf '%s' 'Keep chosen comps and what they use as a new project, via a job on a copy.' ;;
+    project.conform) printf '%s' 'Plan studio names, labels, folders, expression fixes; format=job makes a job.' ;;
+    project.jobcheck) printf '%s' 'Did an After Effects job run, save its result, and leave the original untouched?' ;;
     report.tech) printf 'Native diagnostic receipt for support.' ;;
     package.create) printf 'Zip a file or folder with ditto; never overwrites.' ;;
     *) printf '' ;;
@@ -255,6 +270,9 @@ operation_cost() {
     cache.inspect) printf 'SIZE_DEPENDENT' ;;
     cache.clean) printf 'SIZE_DEPENDENT' ;;
     media.qc) printf 'SIZE_DEPENDENT' ;;
+    project.extract) printf 'IO_BOUND' ;;
+    project.conform) printf 'SIZE_DEPENDENT' ;;
+    project.jobcheck) printf 'SIZE_DEPENDENT' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
@@ -267,6 +285,8 @@ operation_mutation() {
     image.derivative|media.frame|package.create|project.snapshot|golden.record|project.restore|handoff.package|preset.get|ae.render|c4d.render) printf 'DERIVATIVE_CREATE' ;;
     index.add|preset.add|project.health) printf 'STORE_WRITE' ;;
     cache.clean) printf 'CACHE_DELETE' ;;
+    project.extract) printf 'DERIVATIVE_CREATE' ;;
+    project.conform) printf 'DERIVATIVE_CREATE' ;;
     *) printf 'NONE' ;;
   esac
 }
@@ -305,6 +325,9 @@ operation_authority() {
     cache.inspect) printf 'AUTHORITATIVE_FILESYSTEM_METADATA' ;;
     cache.clean) printf 'AUTHORITATIVE_OPERATION' ;;
     media.qc) printf 'DERIVED_MEDIA_QC' ;;
+    project.extract) printf 'AUTHORITATIVE_OPERATION' ;;
+    project.conform) printf 'DERIVED_PROJECT_SUMMARY' ;;
+    project.jobcheck) printf 'AUTHORITATIVE_OPERATION' ;;
     *) printf 'UNKNOWN' ;;
   esac
 }
@@ -318,7 +341,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc|project.extract|project.conform|project.jobcheck) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -393,7 +416,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc|project.extract|project.conform|project.jobcheck) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"
