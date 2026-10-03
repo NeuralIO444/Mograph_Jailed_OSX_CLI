@@ -195,7 +195,7 @@ A successful response can still carry `warnings`: a list of `{ "code", "message"
 | `MISSING_FOOTAGE` | Footage files that a project uses are missing. | Find or relink them before delivery. |
 | `FOOTAGE_UNVERIFIED` | Footage on network or unknown storage was not checked. | Check those files by hand. |
 | `FOOTAGE_NOT_COLLECTED` | Footage on network or unknown storage was not copied into the handoff. | Copy it separately. |
-| `PROJECT_SCRAPE_MISMATCH` | The scrape was taken from a differently named project than the `.aep` packaged. | Check you passed matching files. |
+| `PROJECT_SCRAPE_MISMATCH` | 65 | The scrape was made from a different project than the `.aep` given (compared by full path), or `handoff.package` was given a scrape of a differently named project. | Scrape this project again (`mj scrape` or the After Effects script) so comp ids and layer numbers match. |
 | `FILES_UNREADABLE` | Some receipts could not be indexed. | See `problems` in the result. |
 | `RESULTS_TRUNCATED` | More results exist than were returned. | Raise `maxResults` or narrow the query. |
 | `STALE_RECEIPTS` | Indexed receipts no longer exist on disk. | Re-run `index.add` on the current folder. |

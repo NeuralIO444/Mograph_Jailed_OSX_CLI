@@ -226,6 +226,11 @@ mjz "mj extract 'Spring Promo' 'Main\"; touch $CANARY; \"'"; mjcheck "extract co
 mjz "mj qc '$TMP/fifo.mov'"; mjcheck "qc of a FIFO" "1|65|66|69"
 mjz "mj space clean '../../etc'"; mjcheck "space clean traversal" "1|65"
 mjz "mj timeline \"\$(printf 'x\\ny')\""; mjcheck "timeline with newline" "0|66"
+mjz "mj conform foo --spec"; mjcheck "a flag with no value does not loop forever" 64
+mjz "mj extract foo --label"; mjcheck "extract: a flag with no value" 64
+mjz "mj zzzz"; mjcheck "an unknown word is not a raw error" 64
+mjz "mj doctor"; mjcheck "doctor with nothing set up" "0|1"
+mjz "mj setup --yes"; mjcheck "setup with nothing there yet" "0|66"
 
 echo "Hall of horror: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

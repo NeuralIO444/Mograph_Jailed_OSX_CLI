@@ -15,6 +15,13 @@
 IFS= read -r -d '' MJ_PY_AEJOB <<'PY_AEJOB_LIB' || true
 import difflib
 
+def require_same_project(doc, aep):
+    """Comp ids and layer indexes only mean something for the project that was scraped. Two client folders
+    can each hold a Main.aep, so compare the full resolved path, not the file name."""
+    sp = doc.get("projectPath") or ""
+    if not sp or os.path.realpath(sp) != os.path.realpath(aep):
+        err("PROJECT_SCRAPE_MISMATCH", "The scrape was made from %s, not from %s; scrape this project again so the comp ids match." % (sp or "an unsaved project", aep))
+
 def comp_index(doc):
     comps = [c for c in doc["comps"] if isinstance(c, dict) and isinstance(c.get("id"), int)]
     return comps, {c["id"]: c for c in comps}
@@ -155,9 +162,13 @@ def unique(name, taken):
     return "%s_%d" % (name, i)
 
 REF = re.compile(r'(\bcomp|\.layer|\blayer)\(\s*(["\'])((?:(?!\2)[^\\\n])*)\2\s*\)')
+THIS_COMP = re.compile(r'\bthisComp\s*$')
 
-def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, suggestions, where):
-    """Rename name references inside one expression. Returns (new text, changed?)."""
+def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, suggestions, where, unresolved):
+    """Rename name references inside one expression. Returns (new text, changed?).
+    A layer("...") lookup is followed only when its comp is certain: it directly follows thisComp, or follows
+    comp("...") (whitespace and line breaks allowed between). Anything else (c.layer("x") on a variable, a
+    layer found through another call) is left alone and counted in `unresolved`."""
     out, pos, changed = [], 0, False
     last_comp_end, last_comp_name = -1, None
     for m in REF.finditer(text):
@@ -167,7 +178,14 @@ def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, su
             last_comp_end, last_comp_name = m.end(), name
             new = comp_new.get(name, name)
         else:
-            target = last_comp_name if (fn == ".layer" and m.start() == last_comp_end) else own_comp
+            if fn == "layer":
+                target = own_comp
+            elif last_comp_end >= 0 and text[last_comp_end:m.start()].strip() == "":
+                target = last_comp_name
+            elif THIS_COMP.search(text[:m.start()]):
+                target = own_comp
+            else:
+                unresolved.append(where); continue
             names = layer_names.get(target)
             if names is not None and name not in names and fix != "off":
                 close = difflib.get_close_matches(name, sorted(names), n=2, cutoff=0.8)
@@ -191,10 +209,17 @@ def plan_conform(doc, spec):
     for c in comps:
         names_count[c.get("name")] = names_count.get(c.get("name"), 0) + 1
     item_renames, comp_new, taken = [], {}, set()
+    # Names that already match the spec keep their name; reserve them first so a rename never lands on one.
+    for c in comps:
+        role0 = "precomp" if c["id"] in used_as_precomp else "main"
+        if prefixed(styled(c["name"], spec), spec.get("precompPrefix" if role0 == "precomp" else "mainCompPrefix", "")) == c["name"]:
+            taken.add(c["name"])
     for c in comps:
         role = "precomp" if c["id"] in used_as_precomp else "main"
         new = prefixed(styled(c["name"], spec), spec.get("precompPrefix" if role == "precomp" else "mainCompPrefix", ""))
-        new = unique(new, taken); taken.add(new)
+        if new != c["name"]:
+            new = unique(new, taken)
+        taken.add(new)
         c["_role"] = role
         if new != c["name"]:
             item_renames.append({"id": c["id"], "kind": "comp", "role": role, "from": c["name"], "to": new})
@@ -206,12 +231,16 @@ def plan_conform(doc, spec):
         seen, lc = set(), {}
         for l in c.get("layers") or []:
             lc[l.get("name")] = lc.get(l.get("name"), 0) + 1
+            if isinstance(l, dict) and prefixed(styled(l.get("name", ""), spec), spec.get("layerPrefix." + layer_kind(l, comp_ids), "")) == l.get("name"):
+                seen.add(l.get("name"))
         for l in c.get("layers") or []:
             if not isinstance(l, dict) or not isinstance(l.get("index"), int):
                 continue
             kind = layer_kind(l, comp_ids)
             new = prefixed(styled(l.get("name", ""), spec), spec.get("layerPrefix." + kind, ""))
-            new = unique(new, seen); seen.add(new)
+            if new != l.get("name"):
+                new = unique(new, seen)
+            seen.add(new)
             if new != l.get("name"):
                 layer_renames.append({"compId": c["id"], "comp": c["name"], "index": l["index"], "kind": kind, "from": l.get("name"), "to": new})
                 if lc[l.get("name")] == 1:
@@ -248,10 +277,13 @@ def plan_conform(doc, spec):
                     continue
                 text = e.get("expression", "")
                 where = {"comp": c["name"], "layer": l.get("name"), "path": e.get("propertyPath")}
-                new, changed = rewrite_expression(text, c["name"], comp_new, layer_new, layer_names, fix, suggestions, where)
+                unresolved = []
+                new, changed = rewrite_expression(text, c["name"], comp_new, layer_new, layer_names, fix, suggestions, where, unresolved)
+                if unresolved:
+                    dynamic += 1
                 if changed:
                     expressions.append({"compId": c["id"], "comp": c["name"], "index": l.get("index"), "layer": l.get("name"), "path": e.get("propertyPath"), "from": text, "to": new})
-                if re.search(r"\b(?:comp|layer)\(\s*[^\"'\s)]", text):
+                if re.search(r"\b(?:comp|layer)\(\s*[^\"'\s)]", text) and not unresolved:
                     dynamic += 1
     return {"itemRenames": item_renames, "layerRenames": layer_renames, "expressions": expressions, "layerLabels": layer_labels,
             "itemLabels": item_labels, "folders": folders, "moves": moves, "suggestions": suggestions, "dynamicReferences": dynamic}
@@ -305,8 +337,7 @@ if len(set(ids)) != len(ids):
     err("INVALID_ARGUMENT", "A comp id is listed twice.")
 warnings = []
 aep = os.environ["MJ_AEP"]
-if os.path.basename(doc.get("projectPath", "")) != os.path.basename(aep):
-    warnings.append({"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape is of %s, not %s." % (doc.get("projectName"), os.path.basename(aep))})
+require_same_project(doc, aep)
 keep, footage_ids = comp_closure(byid, ids)
 fnames = {f.get("id"): f.get("name") for f in doc["footage"] if isinstance(f, dict)}
 # Expressions in kept comps that name a comp which will not be in the new project break after extract
@@ -377,8 +408,7 @@ data = {"schema": "MJ_CONFORM_PLAN_1", "projectName": doc.get("projectName"), "s
         "counts": counts, "changes": sum(counts.values()), "plan": plan, "job": None}
 if os.environ["MJ_FMT"] == "job":
     aep = os.environ["MJ_AEP"]
-    if os.path.basename(doc.get("projectPath", "")) != os.path.basename(aep):
-        warnings.append({"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape is of %s, not %s." % (doc.get("projectName"), os.path.basename(aep))})
+    require_same_project(doc, aep)
 if os.environ["MJ_FMT"] == "job" and data["changes"] == 0:
     warnings.append({"code": "NOTHING_TO_DO", "message": "The project already matches the spec, so no job was made."})
 elif os.environ["MJ_FMT"] == "job":

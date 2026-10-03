@@ -106,7 +106,7 @@
             it = byId[String(ids[i])];
             log.steps++;
             if (!it || !(it instanceof CompItem)) { log.errors.push({ step: "comp " + ids[i], why: "comp not found in the copy" }); continue; }
-            if (it.name !== P.extract.compNames[i]) { skip("comp " + ids[i], "name is now \"" + it.name + "\", expected \"" + P.extract.compNames[i] + "\""); }
+            if (it.name !== P.extract.compNames[i]) { log.errors.push({ step: "comp " + ids[i], why: "name is \"" + it.name + "\", expected \"" + P.extract.compNames[i] + "\"; the ids do not match this project" }); continue; }
             keep.push(it);
         }
         if (keep.length === 0 || log.errors.length > 0) { return null; }

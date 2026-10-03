@@ -6,13 +6,12 @@ Development source is modular zsh. Deployment bundles deterministically to one `
 
 ## Install — designers (easy)
 
-Don't use the terminal much? Run **one command**, answer a few plain-English questions, done:
+1. Download **MographJailed-*version*.zip** from the [Releases page](https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/releases) and double-click it to unzip.
+2. Double-click **Install MographJailed.command** and follow the prompts. (If macOS says it can't be opened, open *System Settings > Privacy & Security*, click **Open Anyway**, and double-click it again. No password is needed.)
+3. Open a **new Terminal window** and type `mj setup`. Choose your folders (Enter accepts each suggestion), then run the After Effects script it shows you once.
+4. Type `mj check "My Project"`.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/NeuralIO444/Mograph_Jailed_OSX_CLI/main/tools/install-designer.zsh | zsh
-```
-
-It downloads MographJailed into `~/Documents/MographJailed`, checks that it runs, and offers to add the help pages (`mj-man`) and the automatic project-version watcher. No git, no sudo, no admin password. Full walkthrough: [Designer Install](https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/wiki/Designer-Install).
+No git, no sudo, no admin password, no internet needed after the download. It copies MographJailed into `~/Documents/MographJailed`, adds one marked line to your Terminal startup file (backed up first), and tests itself before it replaces anything. To remove it, double-click **Uninstall MographJailed.command**; your projects, versions and reports stay. Prefer one command? `curl -fsSL https://raw.githubusercontent.com/NeuralIO444/Mograph_Jailed_OSX_CLI/main/tools/install-designer.zsh | zsh` does the same from the web. Walkthrough: [Designer Install](https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/wiki/Designer-Install). Maintainers build the zip with `sh scripts/make-release.sh` (set `MJ_RELEASE_KEY` to sign it).
 
 ## Install — developers (quickstart)
 

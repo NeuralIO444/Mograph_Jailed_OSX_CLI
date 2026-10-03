@@ -103,7 +103,7 @@ mjz "mj check '$TMP/AE/receipts/summer.20261002T090000Z.scrape.json'"
 check has "$TMP/out.txt" "Summer Sale.aep: ready."
 check test "$(cat "$TMP/rc")" = 0
 mjz "mj check 'No Such Project'"
-check has "$TMP/out.txt" 'no scrape receipt for "No Such Project"'
+check has "$TMP/out.txt" 'no project report for "No Such Project"'
 mjz "mj check 'Spring Promo' --details"
 check has "$TMP/out.txt" "Checked 1 expression."
 mjz "mj snapshot 'Spring Promo' >/dev/null; mj timeline 'spring promo'"

@@ -401,7 +401,8 @@ def explain_timeline(folder):
             more = len(diff.get("changes", [])) - 3
             if more > 0:
                 what += "; and %d more" % more
-        rows.append((scrape["at"], "  %s   health %3s   %s" % (scrape["at"].replace("T", " ")[:16], health.get("score", "?"), what), scrape))
+        at = scrape.get("at") or ""
+        rows.append((at or "0000", "  %s   health %3s   %s" % (at.replace("T", " ")[:16] or "date unknown   ", health.get("score", "?"), what), scrape))
         i += 1
     snaps = os.path.join(folder, "snapshots.txt")
     if os.path.exists(snaps):

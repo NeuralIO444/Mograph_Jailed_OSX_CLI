@@ -44,32 +44,24 @@ MJ_HOST_MIN_YEAR=2024
 
 # --- src/core/json.zsh ---
 json_quote() {
-  # JSON-quote one shell string. Shell variables cannot contain NUL; all other
-  # ASCII controls are escaped. Unicode bytes are preserved.
-  JSON_INPUT="$1" /usr/bin/awk 'BEGIN {
-    ORS="";
-    s=ENVIRON["JSON_INPUT"];
-    printf "\"";
-    for (i=1; i<=length(s); i++) {
-      c=substr(s,i,1);
-      if (c=="\\") printf "\\\\";
-      else if (c=="\"") printf "\\\"";
-      else if (c=="\b") printf "\\b";
-      else if (c=="\f") printf "\\f";
-      else if (c=="\n") printf "\\n";
-      else if (c=="\r") printf "\\r";
-      else if (c=="\t") printf "\\t";
-      else {
-        code=-1;
-        for (j=1; j<32; j++) {
-          if (c==sprintf("%c",j)) { code=j; break; }
-        }
-        if (code>=0) printf "\\u%04x", code;
-        else printf "%s", c;
-      }
-    }
-    printf "\"";
-  }'
+  # JSON-quote one shell string in pure zsh (no process): backslash and quote escaped, ASCII controls
+  # below 0x20 escaped (\b \f \n \r \t by name, others \u00XX); all other bytes, Unicode included, as is.
+  setopt localoptions nomultibyte     # byte-wise: ASCII controls never occur inside a UTF-8 sequence
+  local _s="$1" _o="" _c _i
+  _s=${_s//\\/\\\\}
+  _s=${_s//\"/\\\"}
+  _s=${_s//$'\0'/\\u0000}        # zsh strings can hold a NUL; JSON needs it spelled out (after the backslash doubling)
+  if [[ "$_s" == *[$'\001'-$'\037']* ]]; then
+    _s=${_s//$'\n'/\\n}; _s=${_s//$'\r'/\\r}; _s=${_s//$'\t'/\\t}; _s=${_s//$'\b'/\\b}; _s=${_s//$'\f'/\\f}
+    if [[ "$_s" == *[$'\001'-$'\037']* ]]; then
+      for (( _i = 1; _i <= ${#_s}; _i++ )); do
+        _c=${_s[_i]}
+        if [[ "$_c" == [$'\001'-$'\037'] ]]; then _o+=$(printf '\\u%04x' "'$_c"); else _o+=$_c; fi
+      done
+      _s=$_o
+    fi
+  fi
+  printf '"%s"' "$_s"
 }
 
 json_bool() {
@@ -4527,7 +4519,7 @@ frames_emit_python_result() {
   emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
   case "$MJ_FRAMES_ERR_CODE" in
     INVALID_JSON|SCHEMA_MISMATCH|SCRAPE_TOO_LARGE) return 65 ;;    # the file you gave is not acceptable, same as ingest and lint
-    INVALID_ARGUMENT|INVALID_PATH|INVALID_TARGET|INVALID_SPEC) return 65 ;;
+    INVALID_ARGUMENT|INVALID_PATH|INVALID_TARGET|INVALID_SPEC|PROJECT_SCRAPE_MISMATCH) return 65 ;;
     NOT_FOUND) return 66 ;;
     UNSUPPORTED) return 69 ;;
     OUTPUT_EXISTS|OUTPUT_UNAVAILABLE) return 73 ;;
@@ -4975,7 +4967,7 @@ def parse_mounts(text):
     macOS: "dev on /path (apfs, local, ...)"; Linux: "dev on /path type ext4 (rw,...)"."""
     table = []
     for line in text.splitlines():
-        m = re.match(r"^.+? on (.+?) type (\S+)", line) or re.match(r"^.+? on (.+?) \(([^,)]+)", line)
+        m = re.match(r"^.+? on (.+?) type (\S+)", line) or re.match(r"^.+? on (.+) \(([^,()]+)[,)]", line)
         if m:
             table.append((m.group(1), m.group(2).lower()))
     table.sort(key=lambda t: -len(t[0]))
@@ -5561,6 +5553,9 @@ PY_LIBRARY
 library_store_dir() {
   printf '%s' "${MJ_STORE_DIR:-${HOME:-}/Library/Application Support/MographJailed}"
 }
+
+# True when the private store folder already exists (callers that only want to cache something use it; nothing is created).
+library_store_dir_ready() { [ -d "$(library_store_dir)" ]; }
 
 # Resolve and (when allowed) create the local store. Sets MJ_STORE.
 library_require_store() {
@@ -6601,9 +6596,19 @@ def font_names(path):
 def norm_font(s):
     return "".join(ch for ch in s.lower() if ch.isalnum())
 
-def scan_fonts(dirs):
-    """Set of normalized names from every font file under dirs, plus scan facts."""
-    names, files, scanned = set(), 0, []
+def scan_fonts(dirs, cache_path=""):
+    """Set of normalized names from every font file under dirs, plus scan facts. With cache_path, a file
+    whose size and modification time are unchanged is not read again (the index lives in the private store)."""
+    cache = {}
+    if cache_path:
+        try:
+            with open(cache_path, encoding="utf-8") as f:
+                doc = json.load(f)
+            if isinstance(doc, dict) and doc.get("v") == 1 and isinstance(doc.get("files"), dict):
+                cache = doc["files"]
+        except (OSError, ValueError):
+            cache = {}
+    fresh, names, files, scanned = {}, set(), 0, []
     for d in dirs:
         if not os.path.isdir(d) or storage_class(d) == "network":
             continue
@@ -6616,8 +6621,26 @@ def scan_fonts(dirs):
                 files += 1
                 if files > FONT_MAX_FILES:
                     return names, files, scanned, True
-                for n in font_names(os.path.join(root, fn)):
-                    names.add(norm_font(n))
+                p = os.path.join(root, fn)
+                try:
+                    st = os.stat(p)
+                except OSError:
+                    continue
+                hit = cache.get(p)
+                if isinstance(hit, list) and len(hit) == 3 and hit[0] == st.st_size and hit[1] == st.st_mtime_ns and isinstance(hit[2], list):
+                    found = hit[2]
+                else:
+                    found = sorted({norm_font(n) for n in font_names(p)})
+                fresh[p] = [st.st_size, st.st_mtime_ns, found]
+                names.update(found)
+    if cache_path and fresh != cache:
+        try:
+            tmp = "%s.%d" % (cache_path, os.getpid())
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"v": 1, "files": fresh}, f, separators=(",", ":"))
+            os.replace(tmp, cache_path)
+        except OSError:
+            pass
     return names, files, scanned, False
 PY_FONTS_LIB
 
@@ -6632,12 +6655,13 @@ handle_project_preflight() {
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
   project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
-  _out=$(MJ_SCRAPE="$_path" MJ_FONT_DIRS="${MJ_FONT_DIRS:-}" MJ_FONT_DIRS_ONLY="${MJ_FONT_DIRS_ONLY:-}" studio_python <<'PY_PREFLIGHT'
+  local _fc=""; library_store_dir_ready && _fc="$(library_store_dir)/fonts.json"
+  _out=$(MJ_SCRAPE="$_path" MJ_FONT_CACHE="$_fc" MJ_FONT_DIRS="${MJ_FONT_DIRS:-}" MJ_FONT_DIRS_ONLY="${MJ_FONT_DIRS_ONLY:-}" studio_python <<'PY_PREFLIGHT'
 id0 = tree_id(os.environ["MJ_SCRAPE"])
 d = load_scrape(os.environ["MJ_SCRAPE"])
 extra = [p for p in os.environ.get("MJ_FONT_DIRS", "").split(":") if p.startswith("/")]
 dirs = extra if os.environ.get("MJ_FONT_DIRS_ONLY") == "1" else extra + default_font_dirs()
-installed, nfiles, scanned, capped = scan_fonts(dirs)
+installed, nfiles, scanned, capped = scan_fonts(dirs, os.environ.get("MJ_FONT_CACHE", ""))
 
 # Which layers use each font, so a problem can be traced.
 uses = {}
@@ -6782,6 +6806,11 @@ def known_caches(home, apps):
     def add(cid, app, kind, path, version=None, cleanable=True, note=""):
         if not os.path.isdir(path) or os.path.islink(path) or storage_class(path) == "network":
             return
+        if any(c["id"] == cid for c in caches):          # two folders for one version (a custom cache drive and ~/Library/Caches)
+            n = 2
+            while any(c["id"] == "%s-%d" % (cid, n) for c in caches):
+                n += 1
+            cid = "%s-%d" % (cid, n)
         left_over = False
         if version is not None:
             left_over = version not in inst["ae" if app == "After Effects" else "c4d"]
@@ -6814,8 +6843,8 @@ def known_caches(home, apps):
 
 APP_PROCESSES = {
     "After Effects": ("After Effects", "aerender"),
-    "Adobe video apps": ("After Effects", "aerender", "Adobe Premiere Pro", "Adobe Media Encoder", "Adobe Audition", "Adobe Character Animator"),
-    "Cinema 4D": ("Cinema 4D", "Commandline", "c4dpy", "Redshift"),
+    "Adobe video apps": ("After Effects", "After Effects Render Engine", "aerender", "Adobe Premiere Pro", "Adobe Media Encoder", "Adobe Audition", "Adobe Character Animator", "Adobe Prelude"),
+    "Cinema 4D": ("Cinema 4D", "Commandline", "c4dpy", "Redshift", "Team Render Client", "Team Render Server", "Team Render"),
 }
 
 def running_processes(ps):
@@ -6880,7 +6909,8 @@ if delete:
     if procs is None:
         err("UNSUPPORTED", "Could not list running apps, so nothing was deleted.")
     # A cache left over from a version that is no longer installed cannot be in use by the installed one.
-    busy = [] if c["leftOver"] else sorted(p for p in APP_PROCESSES[c["app"]] if p in procs)
+    # Executables carry the year ("Adobe Media Encoder 2026"), so match a name or "<name> <anything>".
+    busy = [] if c["leftOver"] else sorted(p for p in APP_PROCESSES[c["app"]] if any(n == p or n.startswith(p + " ") for n in procs))
     if busy:
         err("HOST_BUSY", "Quit %s first; it may be using this cache." % ", ".join(busy))
     root = os.path.realpath(c["path"])
@@ -6961,6 +6991,40 @@ def parse_spec_file(path):
             err("INVALID_SPEC", "Spec line %d: unknown key %s (known: %s)." % (n, k, ", ".join(sorted(SPEC_KEYS))))
         spec[k] = v
     return spec
+
+NUM_KEYS = ("width", "height", "minDuration", "maxDuration", "audioChannels", "loudness", "loudnessTolerance", "peakMax")
+
+def validate_spec(spec):
+    """Every value is checked before the movie is touched, so a typo is an error, never a silently skipped check."""
+    for k in NUM_KEYS:
+        if k in spec:
+            try:
+                v = float(spec[k])
+            except ValueError:
+                err("INVALID_SPEC", "%s must be a number (got %s)." % (k, spec[k][:20]))
+            if v != v or v in (float("inf"), float("-inf")):
+                err("INVALID_SPEC", "%s must be a finite number." % k)
+    for k in ("fps", "audioSampleRate"):
+        if k in spec:
+            items = [x.strip() for x in spec[k].split(",") if x.strip()]
+            if not items:
+                err("INVALID_SPEC", "%s needs at least one number." % k)
+            for x in items:
+                try:
+                    float(x)
+                except ValueError:
+                    err("INVALID_SPEC", "%s must be numbers separated by commas (got %s)." % (k, x[:20]))
+    for k in ("container", "codec"):
+        if k in spec and not [x for x in spec[k].split(",") if x.strip()]:
+            err("INVALID_SPEC", "%s needs at least one value." % k)
+    if spec.get("audio", "any").lower() not in ("required", "none", "any"):
+        err("INVALID_SPEC", "audio must be required, none or any (got %s)." % spec["audio"][:20])
+    if spec.get("colorTags", "any").lower() not in ("required", "any"):
+        err("INVALID_SPEC", "colorTags must be required or any (got %s)." % spec["colorTags"][:20])
+    if spec.get("loudnessTolerance") is not None and "loudness" not in spec:
+        err("INVALID_SPEC", "loudnessTolerance needs loudness.")
+    if not any(k in spec for k in SPEC_KEYS - {"name", "loudnessTolerance"}) and spec.get("audio", "any").lower() == "any":
+        err("INVALID_SPEC", "The spec asks for nothing to check.")
 
 def spec_list(v):
     return [x.strip().lower() for x in str(v).split(",") if x.strip()]
@@ -7125,7 +7189,8 @@ def loudness(wav_path):
         g2 = [z for z in gated if lufs(z) > rel]
         if g2:
             integrated = round(lufs(sum(g2) / len(g2)), 1)
-    return {"integrated": integrated, "samplePeak": round(20 * math.log10(peak), 1) if peak > 0 else None, "seconds": round(total / float(rate), 3) if rate else 0}
+    return {"integrated": integrated, "samplePeak": round(20 * math.log10(peak), 1) if peak > 0 else None, "seconds": round(total / float(rate), 3) if rate else 0,
+            "tooShort": total < int(0.4 * rate)}
 PY_QC_LIB
 
 deliver_python() {
@@ -7165,6 +7230,7 @@ if os.environ["MJ_FMT"]:
     spec = dict(spec); spec_name = spec.pop("name"); spec_src = os.environ["MJ_FMT"]
 else:
     spec = parse_spec_file(os.environ["MJ_SPEC"]); spec_name = spec.pop("name", os.path.basename(os.environ["MJ_SPEC"])); spec_src = os.environ["MJ_SPEC"]
+validate_spec(spec)
 info = probe(os.environ["MJ_AVMEDIAINFO"], movie)
 v, a = info["video"] or {}, info["audio"]
 checks = []
@@ -7223,10 +7289,17 @@ if a:
 measured = None
 if a and ("loudness" in spec or "peakMax" in spec):
     afc = os.environ.get("MJ_AFCONVERT", "")
+    need = int((info["duration"] or 0) * (a.get("sampleRate") or 48000) * (a.get("channels") or 2) * 4)
+    free = shutil.disk_usage(tempfile.gettempdir()).free
+    skip_why = None
     if not afc:
+        skip_why = "afconvert is not available."
+    elif need > free - (512 << 20):
+        skip_why = "decoding the audio needs about %.1f GB of temporary space and only %.1f GB is free." % (need / 1e9, free / 1e9)
+    if skip_why:
         for key in ("loudness", "peakMax"):
             if key in spec:
-                add(key, "skipped", spec[key], None, "Not measured: afconvert is not available.")
+                add(key, "skipped", spec[key], None, "Not measured: " + skip_why)
     else:
         tmp = tempfile.mkdtemp(prefix="mj-qc.")
         wav = os.path.join(tmp, "audio.wav")
@@ -7244,8 +7317,10 @@ if a and ("loudness" in spec or "peakMax" in spec):
                 if key in spec:
                     add(key, "skipped", spec[key], None, "Not measured: macOS could not decode the audio.")
         else:
-            if "loudness" in spec:
-                w = spec_num(spec, "loudness"); tol = spec_num(spec, "loudnessTolerance") or 1.0; g = measured["integrated"]
+            if "loudness" in spec and measured.get("tooShort"):
+                add("loudness", "skipped", "%g LUFS" % spec_num(spec, "loudness"), None, "Not measured: the audio is under 0.4 s, too short for a loudness reading.")
+            elif "loudness" in spec:
+                w = spec_num(spec, "loudness"); tol = spec_num(spec, "loudnessTolerance"); tol = 1.0 if tol is None else tol; g = measured["integrated"]
                 if g is None:
                     add("loudness", "warn", "%g LUFS" % w, None, "The audio is silent (below the -70 LUFS gate).")
                 else:
@@ -7256,6 +7331,8 @@ if a and ("loudness" in spec or "peakMax" in spec):
                 w = spec_num(spec, "peakMax"); g = measured["samplePeak"]
                 ok = g is None or g <= w + 1e-9
                 add("peakMax", "pass" if ok else "fail", "%g dBFS" % w, g, "Sample peak is %s dBFS%s." % ("%.1f" % g if g is not None else "-inf", "" if ok else "; the spec allows %g" % w))
+if not checks:
+    err("INVALID_SPEC", "The spec produced no checks for this movie (for example it only asks about audio and the movie has none).")
 order = {"fail": 0, "warn": 1, "skipped": 2, "pass": 3}
 fails = sum(1 for c in checks if c["status"] == "fail")
 warns = []
@@ -7291,6 +7368,13 @@ PY_MEDIA_QC
 
 IFS= read -r -d '' MJ_PY_AEJOB <<'PY_AEJOB_LIB' || true
 import difflib
+
+def require_same_project(doc, aep):
+    """Comp ids and layer indexes only mean something for the project that was scraped. Two client folders
+    can each hold a Main.aep, so compare the full resolved path, not the file name."""
+    sp = doc.get("projectPath") or ""
+    if not sp or os.path.realpath(sp) != os.path.realpath(aep):
+        err("PROJECT_SCRAPE_MISMATCH", "The scrape was made from %s, not from %s; scrape this project again so the comp ids match." % (sp or "an unsaved project", aep))
 
 def comp_index(doc):
     comps = [c for c in doc["comps"] if isinstance(c, dict) and isinstance(c.get("id"), int)]
@@ -7432,9 +7516,13 @@ def unique(name, taken):
     return "%s_%d" % (name, i)
 
 REF = re.compile(r'(\bcomp|\.layer|\blayer)\(\s*(["\'])((?:(?!\2)[^\\\n])*)\2\s*\)')
+THIS_COMP = re.compile(r'\bthisComp\s*$')
 
-def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, suggestions, where):
-    """Rename name references inside one expression. Returns (new text, changed?)."""
+def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, suggestions, where, unresolved):
+    """Rename name references inside one expression. Returns (new text, changed?).
+    A layer("...") lookup is followed only when its comp is certain: it directly follows thisComp, or follows
+    comp("...") (whitespace and line breaks allowed between). Anything else (c.layer("x") on a variable, a
+    layer found through another call) is left alone and counted in `unresolved`."""
     out, pos, changed = [], 0, False
     last_comp_end, last_comp_name = -1, None
     for m in REF.finditer(text):
@@ -7444,7 +7532,14 @@ def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, su
             last_comp_end, last_comp_name = m.end(), name
             new = comp_new.get(name, name)
         else:
-            target = last_comp_name if (fn == ".layer" and m.start() == last_comp_end) else own_comp
+            if fn == "layer":
+                target = own_comp
+            elif last_comp_end >= 0 and text[last_comp_end:m.start()].strip() == "":
+                target = last_comp_name
+            elif THIS_COMP.search(text[:m.start()]):
+                target = own_comp
+            else:
+                unresolved.append(where); continue
             names = layer_names.get(target)
             if names is not None and name not in names and fix != "off":
                 close = difflib.get_close_matches(name, sorted(names), n=2, cutoff=0.8)
@@ -7468,10 +7563,17 @@ def plan_conform(doc, spec):
     for c in comps:
         names_count[c.get("name")] = names_count.get(c.get("name"), 0) + 1
     item_renames, comp_new, taken = [], {}, set()
+    # Names that already match the spec keep their name; reserve them first so a rename never lands on one.
+    for c in comps:
+        role0 = "precomp" if c["id"] in used_as_precomp else "main"
+        if prefixed(styled(c["name"], spec), spec.get("precompPrefix" if role0 == "precomp" else "mainCompPrefix", "")) == c["name"]:
+            taken.add(c["name"])
     for c in comps:
         role = "precomp" if c["id"] in used_as_precomp else "main"
         new = prefixed(styled(c["name"], spec), spec.get("precompPrefix" if role == "precomp" else "mainCompPrefix", ""))
-        new = unique(new, taken); taken.add(new)
+        if new != c["name"]:
+            new = unique(new, taken)
+        taken.add(new)
         c["_role"] = role
         if new != c["name"]:
             item_renames.append({"id": c["id"], "kind": "comp", "role": role, "from": c["name"], "to": new})
@@ -7483,12 +7585,16 @@ def plan_conform(doc, spec):
         seen, lc = set(), {}
         for l in c.get("layers") or []:
             lc[l.get("name")] = lc.get(l.get("name"), 0) + 1
+            if isinstance(l, dict) and prefixed(styled(l.get("name", ""), spec), spec.get("layerPrefix." + layer_kind(l, comp_ids), "")) == l.get("name"):
+                seen.add(l.get("name"))
         for l in c.get("layers") or []:
             if not isinstance(l, dict) or not isinstance(l.get("index"), int):
                 continue
             kind = layer_kind(l, comp_ids)
             new = prefixed(styled(l.get("name", ""), spec), spec.get("layerPrefix." + kind, ""))
-            new = unique(new, seen); seen.add(new)
+            if new != l.get("name"):
+                new = unique(new, seen)
+            seen.add(new)
             if new != l.get("name"):
                 layer_renames.append({"compId": c["id"], "comp": c["name"], "index": l["index"], "kind": kind, "from": l.get("name"), "to": new})
                 if lc[l.get("name")] == 1:
@@ -7525,10 +7631,13 @@ def plan_conform(doc, spec):
                     continue
                 text = e.get("expression", "")
                 where = {"comp": c["name"], "layer": l.get("name"), "path": e.get("propertyPath")}
-                new, changed = rewrite_expression(text, c["name"], comp_new, layer_new, layer_names, fix, suggestions, where)
+                unresolved = []
+                new, changed = rewrite_expression(text, c["name"], comp_new, layer_new, layer_names, fix, suggestions, where, unresolved)
+                if unresolved:
+                    dynamic += 1
                 if changed:
                     expressions.append({"compId": c["id"], "comp": c["name"], "index": l.get("index"), "layer": l.get("name"), "path": e.get("propertyPath"), "from": text, "to": new})
-                if re.search(r"\b(?:comp|layer)\(\s*[^\"'\s)]", text):
+                if re.search(r"\b(?:comp|layer)\(\s*[^\"'\s)]", text) and not unresolved:
                     dynamic += 1
     return {"itemRenames": item_renames, "layerRenames": layer_renames, "expressions": expressions, "layerLabels": layer_labels,
             "itemLabels": item_labels, "folders": folders, "moves": moves, "suggestions": suggestions, "dynamicReferences": dynamic}
@@ -7582,8 +7691,7 @@ if len(set(ids)) != len(ids):
     err("INVALID_ARGUMENT", "A comp id is listed twice.")
 warnings = []
 aep = os.environ["MJ_AEP"]
-if os.path.basename(doc.get("projectPath", "")) != os.path.basename(aep):
-    warnings.append({"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape is of %s, not %s." % (doc.get("projectName"), os.path.basename(aep))})
+require_same_project(doc, aep)
 keep, footage_ids = comp_closure(byid, ids)
 fnames = {f.get("id"): f.get("name") for f in doc["footage"] if isinstance(f, dict)}
 # Expressions in kept comps that name a comp which will not be in the new project break after extract
@@ -7654,8 +7762,7 @@ data = {"schema": "MJ_CONFORM_PLAN_1", "projectName": doc.get("projectName"), "s
         "counts": counts, "changes": sum(counts.values()), "plan": plan, "job": None}
 if os.environ["MJ_FMT"] == "job":
     aep = os.environ["MJ_AEP"]
-    if os.path.basename(doc.get("projectPath", "")) != os.path.basename(aep):
-        warnings.append({"code": "PROJECT_SCRAPE_MISMATCH", "message": "The scrape is of %s, not %s." % (doc.get("projectName"), os.path.basename(aep))})
+    require_same_project(doc, aep)
 if os.environ["MJ_FMT"] == "job" and data["changes"] == 0:
     warnings.append({"code": "NOTHING_TO_DO", "message": "The project already matches the spec, so no job was made."})
 elif os.environ["MJ_FMT"] == "job":

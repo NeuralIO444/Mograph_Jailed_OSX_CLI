@@ -40,7 +40,7 @@ ps_shows launchd Finder
 
 run "$TMP/i.json" cache.inspect
 check jq -e '.ok and .data.schema=="MJ_CACHE_INSPECT_1"' "$TMP/i.json"
-check jq -e '[.data.caches[].id]|sort==["adobe-media-cache","ae-disk-26.3","ae-disk-26.5","ae-disk-26.5","maxon-asset-cache","redshift-2025-ab12"]' "$TMP/i.json"
+check jq -e '[.data.caches[].id]|sort==["adobe-media-cache","ae-disk-26.3","ae-disk-26.5","ae-disk-26.5-2","maxon-asset-cache","redshift-2025-ab12"]' "$TMP/i.json"
 check jq -e '[.data.caches[]|select(.leftOver)|.id]|sort==["ae-disk-26.3","redshift-2025-ab12"]' "$TMP/i.json"
 check jq -e '(.data.caches[]|select(.id=="maxon-asset-cache")|.cleanable)==false' "$TMP/i.json"
 check jq -e '.data.caches[0].id=="ae-disk-26.3" and .data.caches[0].bytes>=300000' "$TMP/i.json"     # biggest first
@@ -57,13 +57,16 @@ run "$TMP/e1.json" cache.clean target=nope-1;               check jq -e '.error.
 run "$TMP/e2.json" cache.clean target=../../etc;            check jq -e '.error.code=="INVALID_ARGUMENT"' "$TMP/e2.json"; check test "$(cat "$TMP/e2.json.rc")" = 65
 run "$TMP/e3.json" cache.clean target=maxon-asset-cache format=delete; check jq -e '.error.code=="POLICY_DENIED"' "$TMP/e3.json"; check test "$(cat "$TMP/e3.json.rc")" = 77
 run "$TMP/e4.json" cache.clean target=ae-disk-26.3 format=yes; check jq -e '.error.code=="INVALID_ARGUMENT"' "$TMP/e4.json"
-ps_shows launchd "/Applications/Adobe After Effects 2026/Adobe After Effects 2026.app/Contents/MacOS/After Effects"
+ps_shows launchd "/Applications/Adobe Media Encoder 2026/Adobe Media Encoder 2026.app/Contents/MacOS/Adobe Media Encoder 2026"
 run "$TMP/e5.json" cache.clean target=adobe-media-cache format=delete
-check jq -e '.error.code=="HOST_BUSY" and (.error.message|test("After Effects"))' "$TMP/e5.json"
+check jq -e '.error.code=="HOST_BUSY" and (.error.message|test("Adobe Media Encoder"))' "$TMP/e5.json"
 check test -f "$HOME/Library/Application Support/Adobe/Common/Media Cache Files/a.bin"
 printf '#!/bin/sh\nexit 1\n' > "$TMP/ps"
 run "$TMP/e6.json" cache.clean target=adobe-media-cache format=delete; check jq -e '.error.code=="UNSUPPORTED"' "$TMP/e6.json"
 
+# Two folders for one version get distinct ids, and each can be cleaned on its own.
+run "$TMP/r2.json" cache.clean target=ae-disk-26.5-2
+check jq -e '.data.path|contains("fastdisk") or contains("Library/Caches")' "$TMP/r2.json"
 # A left-over cache can be emptied while the installed version runs; the folder stays, a symlink's target survives.
 ps_shows launchd "After Effects"
 run "$TMP/d.json" cache.clean target=ae-disk-26.3 format=delete

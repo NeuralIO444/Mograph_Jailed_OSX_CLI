@@ -117,6 +117,27 @@ check jq -e '(.data.checks[]|select(.check=="loudness")|.status)=="fail"' "$TMP/
 run "$TMP/e1.json" media.qc path="$TMP/good.mov" input="$TMP/bad.mjspec"
 check jq -e '.error.code=="INVALID_SPEC" and (.error.message|test("line 2: unknown key loudnes"))' "$TMP/e1.json"; check test "$(cat "$TMP/e1.json.rc")" = 65
 
+# Spec validation: typos and bad values are errors, tolerance 0 means exact, an empty spec is refused
+printf 'codec = prores\naudio = requried\n' > "$TMP/t1.mjspec"; printf 'fps = abc\n' > "$TMP/t2.mjspec"; printf 'audioSampleRate = 48k\n' > "$TMP/t3.mjspec"
+printf 'colorTags = yes\n' > "$TMP/t4.mjspec"; printf 'name = Nothing\n' > "$TMP/t5.mjspec"; printf 'width = nan\n' > "$TMP/t6.mjspec"
+for t in t1 t2 t3 t4 t5 t6; do run "$TMP/$t.json" media.qc path="$TMP/good.mov" input="$TMP/$t.mjspec"; check jq -e '.error.code=="INVALID_SPEC"' "$TMP/$t.json"; check test "$(cat "$TMP/$t.json.rc")" = 65; done
+printf 'loudness = -24\nloudnessTolerance = 0\n' > "$TMP/exact.mjspec"
+run "$TMP/ex1.json" media.qc path="$TMP/good.mov" input="$TMP/exact.mjspec"; check jq -e '.data.passed' "$TMP/ex1.json"
+run "$TMP/ex2.json" media.qc path="$TMP/loud.mov" input="$TMP/exact.mjspec"; check jq -e '.data.passed==false and ((.data.checks[]|select(.check=="loudness")|.expected)=="-24 LUFS (+/- 0)")' "$TMP/ex2.json"
+# A clip under 0.4 s cannot be measured: skipped, not "silent"
+python3 - "$TMP" <<'PY'
+import math, os, struct, sys
+d = sys.argv[1]; rate = 48000
+fr = [(0.1 * math.sin(2 * math.pi * 1000 * i / rate),) * 2 for i in range(int(0.2 * rate))]
+data = b"".join(struct.pack("<ff", *f) for f in fr); fmt = struct.pack("<HHIIHH", 3, 2, rate, rate * 8, 8, 32)
+body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data" + struct.pack("<I", len(data)) + data
+open(os.path.join(d, "short.mov.wav"), "wb").write(b"RIFF" + struct.pack("<I", len(body)) + body)
+open(os.path.join(d, "short.mov"), "wb").write(b"m")
+open(os.path.join(d, "short.mov.avmi"), "w").write(open(os.path.join(d, "good.mov.avmi")).read().replace("good.mov", "short.mov").replace("5.000", "0.200"))
+PY
+run "$TMP/sh.json" media.qc path="$TMP/short.mov" format=broadcast-us
+check jq -e '(.data.checks[]|select(.check=="loudness")|.status)=="skipped" and ((.data.checks[]|select(.check=="loudness")|.message)|test("under 0.4 s"))' "$TMP/sh.json"
+
 # Argument errors
 run "$TMP/e2.json" media.qc path="$TMP/good.mov";                                     check jq -e '.error.code=="MISSING_ARGUMENT"' "$TMP/e2.json"
 run "$TMP/e3.json" media.qc path="$TMP/good.mov" format=web input="$TMP/custom.mjspec"; check jq -e '.error.code=="INVALID_ARGUMENT"' "$TMP/e3.json"

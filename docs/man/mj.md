@@ -97,3 +97,15 @@ An example lives in `recipes/render-qa.mjrecipe`.
 ## Output
 
 On a terminal, `mj` pretty-prints JSON (needs `jq`, which ships with macOS). Piped, it prints the raw envelope: `{ok, data, error, ...}`. Exit codes follow the runtime (65 bad request, 69 unsupported, 73 output problem, 74 operation failed, 77 permission).
+
+## First time and getting help
+
+```text
+mj setup            choose your folders, then run the After Effects script once
+mj scraper          show (and reveal in Finder) the After Effects script
+mj doctor           what is set up and what to fix, one line each
+mj help             every command in plain language
+```
+
+A mistyped command is not an error dump: `mj chekc` answers `Did you mean "mj check"?`. Project names accept a prefix in any case (`mj check spring`); if two projects match, the names are listed.
+

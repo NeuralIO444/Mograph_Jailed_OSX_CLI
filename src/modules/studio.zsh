@@ -77,9 +77,19 @@ def font_names(path):
 def norm_font(s):
     return "".join(ch for ch in s.lower() if ch.isalnum())
 
-def scan_fonts(dirs):
-    """Set of normalized names from every font file under dirs, plus scan facts."""
-    names, files, scanned = set(), 0, []
+def scan_fonts(dirs, cache_path=""):
+    """Set of normalized names from every font file under dirs, plus scan facts. With cache_path, a file
+    whose size and modification time are unchanged is not read again (the index lives in the private store)."""
+    cache = {}
+    if cache_path:
+        try:
+            with open(cache_path, encoding="utf-8") as f:
+                doc = json.load(f)
+            if isinstance(doc, dict) and doc.get("v") == 1 and isinstance(doc.get("files"), dict):
+                cache = doc["files"]
+        except (OSError, ValueError):
+            cache = {}
+    fresh, names, files, scanned = {}, set(), 0, []
     for d in dirs:
         if not os.path.isdir(d) or storage_class(d) == "network":
             continue
@@ -92,8 +102,26 @@ def scan_fonts(dirs):
                 files += 1
                 if files > FONT_MAX_FILES:
                     return names, files, scanned, True
-                for n in font_names(os.path.join(root, fn)):
-                    names.add(norm_font(n))
+                p = os.path.join(root, fn)
+                try:
+                    st = os.stat(p)
+                except OSError:
+                    continue
+                hit = cache.get(p)
+                if isinstance(hit, list) and len(hit) == 3 and hit[0] == st.st_size and hit[1] == st.st_mtime_ns and isinstance(hit[2], list):
+                    found = hit[2]
+                else:
+                    found = sorted({norm_font(n) for n in font_names(p)})
+                fresh[p] = [st.st_size, st.st_mtime_ns, found]
+                names.update(found)
+    if cache_path and fresh != cache:
+        try:
+            tmp = "%s.%d" % (cache_path, os.getpid())
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"v": 1, "files": fresh}, f, separators=(",", ":"))
+            os.replace(tmp, cache_path)
+        except OSError:
+            pass
     return names, files, scanned, False
 PY_FONTS_LIB
 
@@ -108,12 +136,13 @@ handle_project_preflight() {
   require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   _path="$MJ_REQUIRED_ARG_VALUE"
   project_require_scrape_file "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
-  _out=$(MJ_SCRAPE="$_path" MJ_FONT_DIRS="${MJ_FONT_DIRS:-}" MJ_FONT_DIRS_ONLY="${MJ_FONT_DIRS_ONLY:-}" studio_python <<'PY_PREFLIGHT'
+  local _fc=""; library_store_dir_ready && _fc="$(library_store_dir)/fonts.json"
+  _out=$(MJ_SCRAPE="$_path" MJ_FONT_CACHE="$_fc" MJ_FONT_DIRS="${MJ_FONT_DIRS:-}" MJ_FONT_DIRS_ONLY="${MJ_FONT_DIRS_ONLY:-}" studio_python <<'PY_PREFLIGHT'
 id0 = tree_id(os.environ["MJ_SCRAPE"])
 d = load_scrape(os.environ["MJ_SCRAPE"])
 extra = [p for p in os.environ.get("MJ_FONT_DIRS", "").split(":") if p.startswith("/")]
 dirs = extra if os.environ.get("MJ_FONT_DIRS_ONLY") == "1" else extra + default_font_dirs()
-installed, nfiles, scanned, capped = scan_fonts(dirs)
+installed, nfiles, scanned, capped = scan_fonts(dirs, os.environ.get("MJ_FONT_CACHE", ""))
 
 # Which layers use each font, so a problem can be traced.
 uses = {}

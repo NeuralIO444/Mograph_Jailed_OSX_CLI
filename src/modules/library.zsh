@@ -218,6 +218,9 @@ library_store_dir() {
   printf '%s' "${MJ_STORE_DIR:-${HOME:-}/Library/Application Support/MographJailed}"
 }
 
+# True when the private store folder already exists (callers that only want to cache something use it; nothing is created).
+library_store_dir_ready() { [ -d "$(library_store_dir)" ]; }
+
 # Resolve and (when allowed) create the local store. Sets MJ_STORE.
 library_require_store() {
   local _create="$1" _dir=""

@@ -135,7 +135,41 @@ run "$TMP/xe3.json" project.extract path="$AEP" input="$SCRAPE" target=1,1 outpu
 run "$TMP/xe4.json" project.extract path="$SCRAPE" input="$SCRAPE" target=1 output="$TMP/jobs" label=e4; check jq -e '.error.code=="INVALID_TARGET"' "$TMP/xe4.json"
 cp "$AEP" "$TMP/Other.aep"
 run "$TMP/xe5.json" project.extract path="$TMP/Other.aep" input="$SCRAPE" target=1 output="$TMP/jobs" label=e5
-check jq -e '.ok and ([.warnings[].code]|index("PROJECT_SCRAPE_MISMATCH"))!=null' "$TMP/xe5.json"
+check jq -e '.error.code=="PROJECT_SCRAPE_MISMATCH"' "$TMP/xe5.json"; check test "$(cat "$TMP/xe5.json.rc")" = 65; check test ! -e "$TMP/jobs/e5.mjjob"
+# Same file name in another folder (two clients each have a Main.aep) is a different project.
+mkdir -p "$TMP/AE/projects/Other"; cp "$AEP" "$TMP/AE/projects/Other/Promo.aep"
+run "$TMP/xe6.json" project.extract path="$TMP/AE/projects/Other/Promo.aep" input="$SCRAPE" target=1 output="$TMP/jobs" label=e6
+check jq -e '.error.code=="PROJECT_SCRAPE_MISMATCH"' "$TMP/xe6.json"
+run "$TMP/xe7.json" project.conform input="$SCRAPE" format=job path="$TMP/AE/projects/Other/Promo.aep" output="$TMP/jobs" label=e7
+check jq -e '.error.code=="PROJECT_SCRAPE_MISMATCH"' "$TMP/xe7.json"
+rm -rf "$TMP/AE/projects/Other"
+
+# Cross-comp layer references follow only a certain comp (thisComp, or comp("..") directly before .layer)
+python3 - "$SCRAPE" "$TMP/cross.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+main, lt = d["comps"][0], d["comps"][1]
+lt["layers"].append({"index": 3, "name": "Color", "type": "NullLayer", "enabled": True, "hasVideo": True, "hasAudio": False, "sourceName": "", "sourcePath": "", "sourceId": 0, "sourceKind": "solid", "label": 1, "adjustment": False, "effects": [], "expressions": []})
+main["layers"].append({"index": 6, "name": "Color", "type": "TextLayer", "enabled": True, "hasVideo": True, "hasAudio": False, "sourceName": "", "sourcePath": "", "sourceId": 0, "sourceKind": "", "label": 1, "adjustment": False, "effects": [], "expressions": [
+    {"propertyPath": "Transform/Position", "expression": 'comp("Lower Third").layer("Color").transform.position'},
+    {"propertyPath": "Transform/Scale", "expression": 'comp("Lower Third")\n  .layer("Color").transform.scale'},
+    {"propertyPath": "Transform/Rotation", "expression": 'var c = comp("Lower Third"); c.layer("Color").transform.rotation'},
+    {"propertyPath": "Transform/Opacity", "expression": 'thisComp.layer("Color").transform.opacity'}]})
+json.dump(d, open(sys.argv[2], "w"))
+PY
+run "$TMP/cr.json" project.conform input="$TMP/cross.json"
+check jq -e '[.data.plan.expressions[]|select(.layer=="Color")|.to]==["comp(\"PRE_Lower_Third\").layer(\"NULL_Color\").transform.position","comp(\"PRE_Lower_Third\")\n  .layer(\"NULL_Color\").transform.scale","var c = comp(\"PRE_Lower_Third\"); c.layer(\"Color\").transform.rotation","thisComp.layer(\"TXT_Color\").transform.opacity"]' "$TMP/cr.json"
+check jq -e '[.warnings[].code]|index("DYNAMIC_REFERENCES")!=null' "$TMP/cr.json"
+# Names that already match the spec are never the target of a collision rename
+python3 - "$SCRAPE" "$TMP/res.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); m = d["comps"][0]
+base = {"type": "TextLayer", "enabled": True, "hasVideo": True, "hasAudio": False, "sourceName": "", "sourcePath": "", "sourceId": 0, "sourceKind": "", "label": 1, "adjustment": False, "effects": [], "expressions": []}
+m["layers"] = [dict(base, index=1, name="A"), dict(base, index=2, name="TXT_A")]
+json.dump(d, open(sys.argv[2], "w"))
+PY
+run "$TMP/rs.json" project.conform input="$TMP/res.json"
+check jq -e '[.data.plan.layerRenames[]|select(.comp=="Main Comp" or .comp=="Main")|[.from,.to]]==[["A","TXT_A_2"]]' "$TMP/rs.json"
 
 # ---- jobcheck: before running, after a good run, and when something is off ----
 X="$TMP/jobs/main-only.mjjob"
@@ -203,6 +237,14 @@ check has "$TMP/out.txt" "Made a conform job:"
 check has "$TMP/out.txt" 'The conform job "pc" was applied.'
 mjz "mj ae verify '$TMP/versions/pc.mjjob'"
 check has "$TMP/out.txt" "ok The original project is byte-for-byte what it was when the job was made."
+mjz "mj conform Promo --spec"
+check test "$(cat "$TMP/rc")" = 64
+mjz "mj extract Promo 'Lower Third' --label"
+check test "$(cat "$TMP/rc")" = 64
+mjz "mj check promo"
+check has "$TMP/out.txt" "Promo.aep:"
+mjz "mj timeline PRO"
+check has "$TMP/out.txt" "Promo.aep:"
 mjz "mj ae run '$TMP/nope'"
 check test "$(cat "$TMP/rc")" = 64
 

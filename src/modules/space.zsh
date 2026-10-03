@@ -63,6 +63,11 @@ def known_caches(home, apps):
     def add(cid, app, kind, path, version=None, cleanable=True, note=""):
         if not os.path.isdir(path) or os.path.islink(path) or storage_class(path) == "network":
             return
+        if any(c["id"] == cid for c in caches):          # two folders for one version (a custom cache drive and ~/Library/Caches)
+            n = 2
+            while any(c["id"] == "%s-%d" % (cid, n) for c in caches):
+                n += 1
+            cid = "%s-%d" % (cid, n)
         left_over = False
         if version is not None:
             left_over = version not in inst["ae" if app == "After Effects" else "c4d"]
@@ -95,8 +100,8 @@ def known_caches(home, apps):
 
 APP_PROCESSES = {
     "After Effects": ("After Effects", "aerender"),
-    "Adobe video apps": ("After Effects", "aerender", "Adobe Premiere Pro", "Adobe Media Encoder", "Adobe Audition", "Adobe Character Animator"),
-    "Cinema 4D": ("Cinema 4D", "Commandline", "c4dpy", "Redshift"),
+    "Adobe video apps": ("After Effects", "After Effects Render Engine", "aerender", "Adobe Premiere Pro", "Adobe Media Encoder", "Adobe Audition", "Adobe Character Animator", "Adobe Prelude"),
+    "Cinema 4D": ("Cinema 4D", "Commandline", "c4dpy", "Redshift", "Team Render Client", "Team Render Server", "Team Render"),
 }
 
 def running_processes(ps):
@@ -161,7 +166,8 @@ if delete:
     if procs is None:
         err("UNSUPPORTED", "Could not list running apps, so nothing was deleted.")
     # A cache left over from a version that is no longer installed cannot be in use by the installed one.
-    busy = [] if c["leftOver"] else sorted(p for p in APP_PROCESSES[c["app"]] if p in procs)
+    # Executables carry the year ("Adobe Media Encoder 2026"), so match a name or "<name> <anything>".
+    busy = [] if c["leftOver"] else sorted(p for p in APP_PROCESSES[c["app"]] if any(n == p or n.startswith(p + " ") for n in procs))
     if busy:
         err("HOST_BUSY", "Quit %s first; it may be using this cache." % ", ".join(busy))
     root = os.path.realpath(c["path"])

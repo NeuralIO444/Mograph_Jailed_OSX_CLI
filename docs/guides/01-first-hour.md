@@ -1,6 +1,16 @@
 # Tutorial 1: Your first hour
 
-You will check that the Mac is ready, tell `mj` where your folders are, and save your first verified project copy. About 10 minutes.
+You will install MographJailed, tell it where your folders are, and save your first verified project copy. About 10 minutes.
+
+## 0. Install
+
+Unzip the download and double-click **Install MographJailed.command** (if macOS objects, *System Settings > Privacy & Security > Open Anyway*). Then open a new Terminal window. There is nothing to type to install it.
+
+```text
+$ mj setup
+```
+
+`mj setup` asks where your projects live and where to keep reports and versions (Enter accepts each suggestion), then shows the one After Effects step left: File > Scripts > Run Script File, pick the script it names, and save the report into your Reports folder. The rest of this tutorial shows the same settings being made by hand, so you can see what `mj setup` did.
 
 ## 1. Check the Mac
 

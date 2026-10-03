@@ -104,7 +104,7 @@ def parse_mounts(text):
     macOS: "dev on /path (apfs, local, ...)"; Linux: "dev on /path type ext4 (rw,...)"."""
     table = []
     for line in text.splitlines():
-        m = re.match(r"^.+? on (.+?) type (\S+)", line) or re.match(r"^.+? on (.+?) \(([^,)]+)", line)
+        m = re.match(r"^.+? on (.+?) type (\S+)", line) or re.match(r"^.+? on (.+) \(([^,()]+)[,)]", line)
         if m:
             table.append((m.group(1), m.group(2).lower()))
     table.sort(key=lambda t: -len(t[0]))

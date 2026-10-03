@@ -23,26 +23,41 @@ These are starting points; check your client's sheet.
 
 ## Spec files
 
-`key = value` lines, `#` comments. Lists are comma-separated.
+`key = value` lines, `#` comments on their own lines (a comment after a value becomes part of the value). Lists are comma-separated.
 
 ```text
 name = Client X master
 container = mov
-codec = prores                 prores, h264, hevc, mjpeg, png, animation, mpeg4
+codec = prores
 width = 3840
 height = 2160
 fps = 23.976, 24
 minDuration = 15
 maxDuration = 30.5
-audio = required               required, none or any
+audio = required
 audioChannels = 2
 audioSampleRate = 48000
-loudness = -24                 integrated LUFS
+loudness = -24
 loudnessTolerance = 1
-peakMax = -2                   dBFS
+peakMax = -2
 colorTags = required
 ```
 
+| Key | Values |
+|---|---|
+| `container` | file extensions: mov, mp4, m4v, ... |
+| `codec` | prores, h264, hevc, mjpeg, png, animation, mpeg4 |
+| `width`, `height` | pixels |
+| `fps` | one or more frame rates |
+| `minDuration`, `maxDuration` | seconds |
+| `audio` | `required`, `none` or `any` |
+| `audioChannels`, `audioSampleRate` | a number (a list for the sample rate) |
+| `loudness`, `loudnessTolerance` | integrated LUFS, and how far off is allowed (default 1; 0 means exact) |
+| `peakMax` | dBFS |
+| `colorTags` | `required` or `any` |
+
+Every value is checked before the movie is read. A typo such as `audio = requried`, a word where a number belongs, or a spec that asks for nothing is an `INVALID_SPEC` error, never a silent pass.
+
 ## How loudness is measured
 
-ITU-R BS.1770-4 K-weighting with EBU R128 gating (absolute -70 LUFS, relative -10 LU), computed in Python on the decoded audio. It agrees with ffmpeg's ebur128 meter within 0.1 LU in the test suite. The peak is the sample peak; a true-peak meter can read up to about 0.5 dB higher on bright material, so leave headroom. Black and frozen frames are not checked.
+ITU-R BS.1770-4 K-weighting with EBU R128 gating (absolute -70 LUFS, relative -10 LU), computed in Python on the decoded audio. It agrees with ffmpeg's ebur128 meter within 0.1 LU in the test suite. The peak is the sample peak; a true-peak meter can read up to about 0.5 dB higher on bright material, so leave headroom. Black and frozen frames are not checked. Audio shorter than 0.4 s cannot be measured and is reported as not measured. The audio is decoded to a temporary folder first (about 11 MB per minute of stereo 48 kHz); if that does not fit in free space the loudness checks are skipped and say why.

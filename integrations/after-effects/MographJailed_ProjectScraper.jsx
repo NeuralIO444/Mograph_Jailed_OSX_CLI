@@ -289,7 +289,9 @@
         /* Unattended use (mj scrape): a wrapper sets MJ_SCRAPE_OUT_DIR (and MJ_SCRAPE_QUIET) before this file. */
         var unattended = (typeof MJ_SCRAPE_OUT_DIR === "string" && MJ_SCRAPE_OUT_DIR.length > 0);
         var quiet = unattended && (typeof MJ_SCRAPE_QUIET !== "undefined") && MJ_SCRAPE_QUIET === true;
-        var outFolder = unattended ? new Folder(MJ_SCRAPE_OUT_DIR) : Folder.selectDialog("Choose Tier 0 receipts folder");
+        var suggested = new Folder("~/AE_Receipts");
+        var outFolder = unattended ? new Folder(MJ_SCRAPE_OUT_DIR)
+            : Folder.selectDialog("Where should this project report be saved? (the Reports folder you chose in mj setup)", suggested.exists ? suggested : undefined);
         if (!outFolder || !outFolder.exists) { if (!quiet) { alert("MographJailed scraper: no receipts folder."); } return; }
 
         var projFile = proj.file;

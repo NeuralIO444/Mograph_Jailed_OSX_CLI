@@ -162,17 +162,28 @@ _mj_resolve_scrape() {
     else print -u2 "mj: no such receipt: $arg"; return 66; fi
 }
 
-# Newest scrape of a project given by name (or last / a receipt path). Receipts are matched on the
-# projectName inside them, so renamed receipt files still count.
+# Newest scrape report of a project, by name (exact, else prefix, any case), or last / a report path.
+_mj_find() { /usr/bin/python3 "$_MJ_CLI_DIR/../terminal/mj_find.py" "$@"; }
+
 _mj_scrape_for() {
-    local arg="${1:-last}" d f stem
+    local arg="${1:-last}" d f rc
     if [ "$arg" = last ] || [ -f "$arg" ]; then _mj_resolve_scrape "$arg"; return; fi
     d=$(_mj_need_dir receipts_dir receipts) || return $?
-    stem="${(L)${arg%.[aA][eE][pP]}}"
-    for f in "$d"/*.scrape.json(.Nom[1,500]); do
-        [ "${(L)$(/usr/bin/jq -r '.projectName // empty' "$f" 2>/dev/null)%.aep}" = "$stem" ] && { print -r -- "$f"; return 0; }
-    done
-    print -u2 "mj: no scrape receipt for \"$arg\" in $d (run the After Effects scraper on it first)"
+    f=$(_mj_find "$d" name "$arg" 1 2>"${TMPDIR:-/tmp}/mj-find.$$"); rc=$?
+    if [ $rc -eq 0 ]; then /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; print -r -- "$f"; return 0; fi
+    if [ $rc -eq 65 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; /bin/cat "${TMPDIR:-/tmp}/mj-find.$$" >&2; /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; return 65; fi
+    /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"
+    print -u2 "mj: no project report for \"$arg\" in $d yet."
+    print -u2 "  In After Effects run the MographJailed scraper on it first (File > Scripts > Run Script File)."
+    return 66
+}
+
+# The newest report made from exactly this .aep (full path), so two clients' Main.aep never get mixed up.
+_mj_scrape_for_aep() {
+    local d f; d=$(_mj_need_dir receipts_dir receipts) || return $?
+    f=$(_mj_find "$d" path "$1" 1 2>/dev/null) && { print -r -- "$f"; return 0; }
+    print -u2 "mj: there is no project report for $1 yet."
+    print -u2 "  In After Effects, open it and run the MographJailed scraper (File > Scripts > Run Script File), then try again."
     return 66
 }
 
@@ -267,9 +278,28 @@ _mj_print() {
     if [ -t 1 ] && [ -x /usr/bin/jq ]; then /usr/bin/jq .; else /bin/cat; fi
 }
 
+# The operation registry (system.describe) costs about half a second, and recipes, batches, tab completion and
+# `mj ops` all want it. It is kept on disk, keyed on the runtime file's size and modification time, so a new
+# build gets a new copy and a stale one is never used; it is also refreshed daily. Safe to delete at any time.
 _MJ_DESCRIBE=""
 _mj_describe() {
-    [ -n "$_MJ_DESCRIBE" ] || _MJ_DESCRIBE=$(_mj_run system.describe 2>/dev/null) || { _MJ_DESCRIBE=""; return 1; }
+    if [ -z "$_MJ_DESCRIBE" ]; then
+        local cli f store out; local -a st sz
+        zmodload -F zsh/stat b:zstat 2>/dev/null
+        cli=$(_mj_cli_path); store=$(_mj_store)
+        if zstat -A st +mtime -- "$cli" 2>/dev/null && zstat -A sz +size -- "$cli" 2>/dev/null; then
+            f="$store/describe-${st[1]}-${sz[1]}.json"
+            if [ -r "$f" ] && [ -z "$(print -r -- $f(N.mm+1440))" ]; then _MJ_DESCRIBE=$(<"$f"); fi
+        fi
+        if [ -z "$_MJ_DESCRIBE" ]; then
+            out=$(_mj_run system.describe 2>/dev/null) || return 1
+            _MJ_DESCRIBE="$out"
+            if [ -n "$f" ] && [ -d "$store" ]; then
+                print -r -- "$out" > "$f.$$" 2>/dev/null && /bin/mv -f "$f.$$" "$f" 2>/dev/null
+                /bin/rm -f ${store}/describe-*.json(N.e:'[[ $REPLY != "'"$f"'" ]]':) 2>/dev/null
+            fi
+        fi
+    fi
     print -r -- "$_MJ_DESCRIBE"
 }
 
@@ -292,7 +322,7 @@ _mj_recipe() {
     [ -r "$file" ] || { print -u2 "mj: recipe not readable: $file"; return 66; }
     _mj_check_args "$@" || return
     for v in "$@"; do params[${v%%=*}]="${v#*=}"; done
-    allowed=$(_mj_describe | /usr/bin/jq -c '.data.operations | map_values(.args.allowed)') || { print -u2 "mj: cannot read the operation registry"; return 69; }
+    _mj_describe >/dev/null; allowed=$(print -r -- "$_MJ_DESCRIBE" | /usr/bin/jq -c '.data.operations | map_values(.args.allowed)') || { print -u2 "mj: cannot read the operation registry"; return 69; }
 
     # Pass 1: validate every step before running anything.
     lines=("${(@f)$(<"$file")}")
@@ -382,6 +412,95 @@ _mj_batch() {
     [ $bad -eq 0 ]
 }
 
+# --- first-run setup, health checklist, typo help -------------------------------------------------------------
+_mj_ask() {   # _mj_ask <prompt> <default> -> the answer (Enter takes the default; no terminal means the default)
+    local ans=""
+    if [ "${MJ_YES:-0}" = 1 ] || [ ! -r /dev/tty ] || [ ! -t 0 ]; then print -r -- "$2"; return; fi
+    printf '   %s [%s]: ' "$1" "$2" >&2
+    IFS= read -r ans < /dev/tty || ans=""
+    case "$ans" in "~"*) ans="$HOME${ans#\~}" ;; esac
+    print -r -- "${ans:-$2}"
+}
+
+# The projects folder most likely to hold After Effects work: the usual places, the one with the most projects.
+_mj_guess_projects_dir() {
+    local d n best="" bn=0
+    for d in "$HOME/Movies" "$HOME/Documents" "$HOME/Desktop" "$HOME/Creative Cloud Files" "$HOME/Library/CloudStorage"; do
+        [ -d "$d" ] || continue
+        n=$(/usr/bin/find "$d" -maxdepth 3 -type f \( -iname '*.aep' -o -iname '*.c4d' \) 2>/dev/null | /usr/bin/head -200 | /usr/bin/wc -l)
+        (( n > bn )) && { bn=$n; best="$d"; }
+    done
+    [ -n "$best" ] || { [ -d "$HOME/Documents" ] && best="$HOME/Documents" || best="$HOME"; }
+    print -r -- "$best"
+}
+
+_mj_scraper_path() { print -r -- "${_MJ_CLI_DIR:A}/../../integrations/after-effects/MographJailed_ProjectScraper.jsx"(:A); }
+
+_mj_setup() {
+    local a rec ver w scraper
+    for a in "$@"; do [ "$a" = --yes ] && export MJ_YES=1; done
+    print "Setting up MographJailed. Press Enter to accept the suggestion in [brackets]."
+    print
+    w=$(mj_config_get watch_dir); { [ -n "$w" ] && [ -d "$w" ]; } || w=$(_mj_guess_projects_dir)
+    print "Where do you keep your project files? (.aep and .c4d are looked for in here)"
+    w=$(_mj_ask "Projects folder" "$w")
+    rec=$(mj_config_get receipts_dir); ver=$(mj_config_get versions_dir)
+    print "Where should project reports (the checks you run) be kept?"
+    rec=$(_mj_ask "Reports folder" "$rec")
+    print "Where should saved versions of your projects go?"
+    ver=$(_mj_ask "Versions folder" "$ver")
+    [ -d "$w" ] || { print -u2 "mj: the projects folder does not exist: $w"; return 66; }
+    /bin/mkdir -p "$rec" "$ver" || { print -u2 "mj: could not create the folders"; return 73; }
+    mj_config_set watch_dir "$w" >/dev/null && mj_config_set receipts_dir "$rec" >/dev/null && mj_config_set versions_dir "$ver" >/dev/null || return 73
+    print
+    print "  Saved. Projects: $w"
+    print "         Reports:  $rec"
+    print "         Versions: $ver"
+    scraper=$(_mj_scraper_path)
+    print
+    print "One thing is left, and it happens in After Effects:"
+    print "  1. Open a project, then choose  File > Scripts > Run Script File..."
+    print "  2. Pick this file:  $scraper"
+    print "  3. When it asks where to save, choose:  $rec"
+    print "Then come back here and type:  mj check"
+    if [ "${MJ_YES:-0}" != 1 ] && [ -t 0 ] && [ "$(_mj_ask "Show that file in Finder now? (y/n)" "y")" = y ]; then /usr/bin/open -R "$scraper" 2>/dev/null; fi
+    return 0
+}
+
+# A plain checklist of what this Mac and this setup can do, with one fix per line.
+_mj_doctor() {
+    local out rc=0 ae c4d w rec ver tick="  ok " cross="  !! " n
+    out=$(_mj_run system.doctor); rc=$?
+    print -r -- "$out" | _mj_explain - || true
+    print
+    print "Your setup:"
+    local hosts; hosts=$(_mj_run host.detect 2>/dev/null)
+    ae=$(print -r -- "$hosts" | /usr/bin/jq -r '[.data.afterEffects[]? | select(.supported)] | sort_by(.year) | last | .year // empty' 2>/dev/null)
+    c4d=$(print -r -- "$hosts" | /usr/bin/jq -r '[.data.cinema4d[]? | select(.supported)] | sort_by(.year) | last | .year // empty' 2>/dev/null)
+    if [ -n "$ae" ]; then print "${tick}After Effects $ae found"; else print "${cross}After Effects 2024 or newer was not found in /Applications. Checks on saved reports still work; rendering and project jobs need it."; fi
+    if [ -n "$c4d" ]; then print "${tick}Cinema 4D $c4d found"; else print "     Cinema 4D 2024 or newer was not found (only needed for Cinema 4D scene checks and renders)"; fi
+    w=$(mj_config_get watch_dir); rec=$(mj_config_get receipts_dir); ver=$(mj_config_get versions_dir)
+    if [ -n "$w" ] && [ -d "$w" ]; then print "${tick}Projects folder: $w"; else print "${cross}No projects folder set. Fix:  mj setup"; fi
+    if [ -d "$rec" ]; then
+        local -a rf; rf=("$rec"/*.scrape.json(N)); n=${#rf}
+        if [ "$n" -gt 0 ]; then print "${tick}Reports folder: $rec ($n report$([ "$n" = 1 ] || print s))"; else print "${cross}No project reports yet in $rec. Fix: in After Effects run the MographJailed script (mj scraper shows how)"; fi
+    else print "${cross}Reports folder not found: $rec. Fix:  mj setup"; fi
+    if [ -d "$ver" ]; then print "${tick}Versions folder: $ver"; else print "${cross}Versions folder not found: $ver. Fix:  mj setup"; fi
+    if /bin/launchctl list 2>/dev/null | /usr/bin/grep -q com.neuralio.mograph-jailed.watcher; then print "${tick}Automatic versioning is on"; else print "     Automatic versioning is off (optional):  mj watch on"; fi
+    return $rc
+}
+
+# "mj frobnicate": the nearest command, if there is one.
+_mj_suggest() {
+    local word="$1" cands
+    cands="snapshot versions lint health check timeline space qc extract conform scene bridge diff explain watch doctor setup scraper config notify status last ui help"
+    /usr/bin/python3 -c '
+import difflib, sys
+w, c = sys.argv[1], sys.argv[2].split()
+m = difflib.get_close_matches(w, c, n=1, cutoff=0.6)
+print(m[0] if m else "")' "$word" "$cands"
+}
+
 mj() {
     case "${1:-}" in
         ""|home)
@@ -397,40 +516,48 @@ mj() {
             return ;;
         -h|--help|help)
             /bin/cat <<'USAGE'
-mj                                 launch screen: status of hosts, library, audit log, renders
-mj ui [--tab renders|library|audit]  live dashboard (q quits, 1-4 or Tab switches)
-mj cd                              go to the MographJailed folder
-mj <operation> [name=value ...]    run one allowlisted operation
-mj ops                             list operations and their arguments
-mj recipe <file> [name=value ...]  run a recipe file, stopping at the first failure
-mj snapshot <project>              save a verified version of a project (path or name)
-mj versions [project]              list saved versions
-mj lint [last|<scrape>]            check expressions, in plain language
-mj health [last|<scrape>] [--record]  project health score (0-100)
-mj check [project|last|<scrape>] [--details]  one verdict: expressions, health, fonts, footage
-mj extract <project> <comp> [...] [--run]   keep chosen comps (and what they use) as a new project
-mj conform <project> [--spec F] [--apply|--run]   studio names, labels, folders, expression fixes (plan first)
-mj ae run|verify <job>             send a job to After Effects / check it ran and the original is untouched
-mj qc <movie> [spec]               check a render against a delivery spec (codec, size, fps, audio, loudness)
-mj space [clean <id>|leftovers [--yes]]  disk taken by After Effects, Adobe and Redshift caches; empty one safely
-mj timeline <project> [--all]      every scrape and snapshot of a project, with health and what changed
-mj scene [last|<c4d scrape>] [--summary]   check a Cinema 4D scene receipt, in plain language
-mj bridge <c4d scrape> [<ae scrape>|last] [comp]   does the AE comp match the C4D scene?
-mj diff last | <older> <newer>     what changed between two scrapes
-mj explain [last|<file>]           any receipt, in plain language
-mj watch on|off|status             automatic versioning of your .aep and .c4d files
-mj doctor                          is this Mac ready? what is missing?
-mj batch <recipe> <folder>         run a recipe over every file in a folder, with a summary
-mj last                            show the newest render receipt
-mj status                          one-line status (rendering progress, last render)
-mj notify on|off|test|status       macOS notifications when renders, golden checks, recipes or long operations finish
-mj config [set <key> <value>]      remembered settings (versions_dir, receipts_dir, watch_dir, cli, post_snapshot_hook)
-mj open-last                       open the newest render folder in Finder
+mj  -  look at, check and protect your After Effects and Cinema 4D work. It never changes your projects.
+
+First time:
+  mj setup                           choose your folders (takes a minute); then run the After Effects script once
+  mj scraper                         show the After Effects script that makes a project report
+
+Every day:
+  mj check <project>                 is this project ready? expressions, fonts, footage, health score
+  mj snapshot <project>              save a safe, verified copy of a project
+  mj versions [project]              see the saved copies
+  mj timeline <project>              the history of a project: what changed, when
+  mj qc <movie> [spec]               check a render against a delivery spec (broadcast, web, social)
+  mj space                           see what is filling your disk (caches); `mj space clean ...` empties one safely
+  mj doctor                          is everything set up? shows what to fix
+
+Fix and tidy (these work on a copy and never touch your original):
+  mj extract <project> <comp> ...    keep just some comps, as a new project
+  mj conform <project>               apply your studio naming, labels and folders (shows a plan first)
+  mj ae run|verify <job>             send one of those jobs to After Effects / check the result
+
+Look closer:
+  mj lint [project]                  check expressions, in plain language
+  mj health [project] [--record]     health score out of 100
+  mj diff last                       what changed since the previous report
+  mj scene / mj bridge               Cinema 4D scene checks, and Cinema 4D against an After Effects comp
+  mj explain <file>                  turn any result file into plain language
+  mj watch on|off|status             save a version automatically whenever a project is saved
+  mj notify on|off                   a Mac notification when a long job finishes
+  mj config                          show or change your folders and settings
+  mj status | mj last | mj open-last | mj ui | mj batch ...
+
+For scripts and pros:
+  mj ops                             every operation and its arguments
+  mj <operation> [name=value ...]    run one operation (prints JSON when not on a terminal)
+  mj recipe <file> | mj batch <recipe> <folder>
+  mj-man                             full help pages (mj-man list)
 USAGE
             return 0 ;;
         ops)
             # Required arguments are marked with *.
-            _mj_describe | /usr/bin/jq -r '.data.operations | to_entries[] | .value.args as $g
+            _mj_describe >/dev/null
+            print -r -- "$_MJ_DESCRIBE" | /usr/bin/jq -r '.data.operations | to_entries[] | .value.args as $g
                 | "\(.key)\t\(.value.state)\t\($g.allowed | map(. as $a | if ($g.required | index($a)) != null then $a + "*" else $a end) | join(" "))"' 2>/dev/null \
             || { print -u2 "mj: cannot read the operation registry"; return 69; }
             return ;;
@@ -475,9 +602,10 @@ USAGE
             cks=$(_mj_scrape_for "$ckt") || return $?
             ckd=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/mj-check.XXXXXX") || return 73
             local -a hargs; hargs=("path=$cks"); [ -d "$(mj_config_get versions_dir)" ] && hargs+=("input=$(mj_config_get versions_dir)")
-            _mj_run expression.lint "path=$cks" > "$ckd/lint.json"
-            _mj_run project.health "${hargs[@]}" > "$ckd/health.json"
-            _mj_run project.preflight "path=$cks" > "$ckd/pre.json"
+            _mj_run expression.lint "path=$cks" > "$ckd/lint.json" &
+            _mj_run project.health "${hargs[@]}" > "$ckd/health.json" &
+            _mj_run project.preflight "path=$cks" > "$ckd/pre.json" &
+            wait
             _mj_explain --check "$ckd/lint.json" "$ckd/health.json" "$ckd/pre.json"; rc1=$?
             if (( det )); then
                 for a in lint pre health; do print; _mj_explain "$ckd/$a.json"; done
@@ -489,20 +617,21 @@ USAGE
             local ep="" eo="" el="" erun=0 a; local -a ecomps
             while [ $# -gt 0 ]; do
                 case "$1" in
-                    --label) el="${2:-}"; shift 2 ;;
-                    --out) eo="${2:-}"; shift 2 ;;
+                    --label) [ $# -ge 2 ] || { print -u2 "mj: --label needs a value"; return 64; }; el="${2:-}"; shift 2 ;;
+                    --out) [ $# -ge 2 ] || { print -u2 "mj: --out needs a value"; return 64; }; eo="${2:-}"; shift 2 ;;
                     --run) erun=1; shift ;;
                     *) if [ -z "$ep" ]; then ep="$1"; else ecomps+=("$1"); fi; shift ;;
                 esac
             done
             [ -n "$ep" ] && [ ${#ecomps} -gt 0 ] || { print -u2 "usage: mj extract <project> <comp> [<comp> ...] [--label NAME] [--out FOLDER] [--run]"; return 64; }
-            local eaep escr eids
+            local eaep escr eids erc
             eaep=$(_mj_resolve_project "$ep") || return $?
-            escr=$(_mj_scrape_for "${${eaep:t}%.[aA][eE][pP]}") || return $?
+            escr=$(_mj_scrape_for_aep "$eaep") || return $?
             eids=$(_mj_comp_ids "$escr" "${ecomps[@]}") || return $?
             [ -n "$eo" ] || eo=$(_mj_need_dir versions_dir versions) || return $?
-            [ -n "$el" ] || el="${${${eaep:t}%.[aA][eE][pP]}//[^A-Za-z0-9._-]/_}-extract-$(strftime %Y%m%d-%H%M%S $EPOCHSECONDS)"
-            local eout; eout=$(_mj_run project.extract "path=$eaep" "input=$escr" "target=$eids" "output=${eo:A}" "label=$el") || { print -r -- "$eout" | _mj_explain -; return 1; }
+            [ -n "$el" ] || el="${${${${eaep:t}%.[aA][eE][pP]}//[^A-Za-z0-9._-]/_}[1,40]}-extract-$(strftime %Y%m%d-%H%M%S $EPOCHSECONDS)"
+            local eout; eout=$(_mj_run project.extract "path=$eaep" "input=$escr" "target=$eids" "output=${eo:A}" "label=$el"); erc=$?
+            [ $erc -eq 0 ] || { print -r -- "$eout" | _mj_explain -; return $erc; }
             print -r -- "$eout" | _mj_explain -
             (( erun )) && { print; _mj_ae run "$(print -r -- "$eout" | /usr/bin/jq -r .data.job)"; }
             return 0 ;;
@@ -511,11 +640,11 @@ USAGE
             local cp="" cspec="" capply=0 crun=0 cl="" co=""
             while [ $# -gt 0 ]; do
                 case "$1" in
-                    --spec) cspec="${2:-}"; shift 2 ;;
+                    --spec) [ $# -ge 2 ] || { print -u2 "mj: --spec needs a value"; return 64; }; cspec="${2:-}"; shift 2 ;;
                     --apply) capply=1; shift ;;
                     --run) capply=1; crun=1; shift ;;
-                    --label) cl="${2:-}"; shift 2 ;;
-                    --out) co="${2:-}"; shift 2 ;;
+                    --label) [ $# -ge 2 ] || { print -u2 "mj: --label needs a value"; return 64; }; cl="${2:-}"; shift 2 ;;
+                    --out) [ $# -ge 2 ] || { print -u2 "mj: --out needs a value"; return 64; }; co="${2:-}"; shift 2 ;;
                     *) cp="$1"; shift ;;
                 esac
             done
@@ -523,14 +652,15 @@ USAGE
             [ -n "$cspec" ] || cspec=$(mj_config_get studio_spec)
             local caep cscr; local -a cargs
             caep=$(_mj_resolve_project "$cp") || return $?
-            cscr=$(_mj_scrape_for "${${caep:t}%.[aA][eE][pP]}") || return $?
+            cscr=$(_mj_scrape_for_aep "$caep") || return $?
             cargs=("input=$cscr"); [ -n "$cspec" ] && cargs+=("spec=${cspec:A}")
             if (( capply )); then
                 [ -n "$co" ] || co=$(_mj_need_dir versions_dir versions) || return $?
-                [ -n "$cl" ] || cl="${${${caep:t}%.[aA][eE][pP]}//[^A-Za-z0-9._-]/_}-conform-$(strftime %Y%m%d-%H%M%S $EPOCHSECONDS)"
+                [ -n "$cl" ] || cl="${${${${caep:t}%.[aA][eE][pP]}//[^A-Za-z0-9._-]/_}[1,40]}-conform-$(strftime %Y%m%d-%H%M%S $EPOCHSECONDS)"
                 cargs+=(format=job "path=$caep" "output=${co:A}" "label=$cl")
             fi
-            local cout; cout=$(_mj_run project.conform "${cargs[@]}") || { print -r -- "$cout" | _mj_explain -; return 1; }
+            local cout crc; cout=$(_mj_run project.conform "${cargs[@]}"); crc=$?
+            [ $crc -eq 0 ] || { print -r -- "$cout" | _mj_explain -; return $crc; }
             print -r -- "$cout" | _mj_explain -
             (( crun )) && [ "$(print -r -- "$cout" | /usr/bin/jq -r '.data.job.folder // empty')" != "" ] && { print; _mj_ae run "$(print -r -- "$cout" | /usr/bin/jq -r .data.job.folder)"; }
             return 0 ;;
@@ -538,10 +668,7 @@ USAGE
             shift; _mj_ae "$@"; return ;;
         qc)
             shift
-            [ -n "${1:-}" ] || { print -u2 "usage: mj extract <project> <comp> [...] [--run]   keep chosen comps (and what they use) as a new project
-mj conform <project> [--spec F] [--apply|--run]   studio names, labels, folders, expression fixes (plan first)
-mj ae run|verify <job>             send a job to After Effects / check it ran and the original is untouched
-mj qc <movie> [spec]   (built-in specs: broadcast-us broadcast-eu web social-vertical prores-master, or a spec file; default: qc_spec setting, else web)"; return 64; }
+            [ -n "${1:-}" ] || { print -u2 "usage: mj qc <movie> [spec]   (specs: broadcast-us broadcast-eu web social-vertical prores-master, or a spec file; default: the qc_spec setting, else web)"; return 64; }
             local qm="${1:A}" qs="${2:-$(mj_config_get qc_spec)}"
             [ -n "$qs" ] || qs=web
             local qout qrc
@@ -573,29 +700,31 @@ mj qc <movie> [spec]   (built-in specs: broadcast-us broadcast-eu web social-ver
         timeline)
             shift
             [ -n "${1:-}" ] || { print -u2 "usage: mj timeline <project name> [--all]"; return 64; }
-            local td tn tf prev="" i=0 max=10 vd tstem; local -a trs
+            local td tn tf prev="" i=0 max=10 vd tstem tname trd tout; local -a trs
             [ "${2:-}" = --all ] && max=50
-            local trd; trd=$(_mj_need_dir receipts_dir receipts) || return $?
-            tstem="${(L)${1%.[aA][eE][pP]}}"
-            for tf in "$trd"/*.scrape.json(.Nom[1,500]); do
-                [ "${(L)$(/usr/bin/jq -r '.projectName // empty' "$tf" 2>/dev/null)%.aep}" = "$tstem" ] && trs+=("$tf")
-                [ ${#trs} -ge $max ] && break
-            done
+            trd=$(_mj_need_dir receipts_dir receipts) || return $?
+            tout=$(_mj_find "$trd" name "$1" $max 2>"${TMPDIR:-/tmp}/mj-find.$$"); i=$?
+            if [ $i -eq 65 ]; then print -u2 "mj: \"$1\" matches more than one project; be more specific:"; /bin/cat "${TMPDIR:-/tmp}/mj-find.$$" >&2; /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; return 65; fi
+            /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"
+            if [ $i -ne 0 ]; then print "Nothing recorded for \"$1\" yet. Run the MographJailed scraper on it in After Effects first."; return 0; fi
+            trs=("${(@f)tout}"); i=0
+            tname=$(/usr/bin/jq -r '.projectName // empty' "${trs[1]}" 2>/dev/null); tstem="${(L)tname%.[aA][eE][pP]}"
             td=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/mj-timeline.XXXXXX") || return 73
-            for tf in "${(Oa)trs[@]}"; do     # oldest first
+            vd=$(mj_config_get versions_dir)
+            for tf in "${(Oa)trs[@]}"; do     # oldest first; every report's health and diff run side by side
                 tn=$(printf '%s/%03d' "$td" $i)
-                /usr/bin/jq -c '{at: .scrapedAt, name: .projectName}' "$tf" > "$tn.scrape"
-                if [ -d "$(mj_config_get versions_dir)" ]; then _mj_run project.health "path=$tf" "input=$(mj_config_get versions_dir)" > "$tn.health.json"; else _mj_run project.health "path=$tf" > "$tn.health.json"; fi
-                [ -n "$prev" ] && _mj_run project.diff "path=$prev" "input=$tf" > "$tn.diff.json"
+                /usr/bin/jq -c '{at: (.scrapedAt // ""), name: .projectName}' "$tf" > "$tn.scrape"
+                if [ -d "$vd" ]; then _mj_run project.health "path=$tf" "input=$vd" > "$tn.health.json" & else _mj_run project.health "path=$tf" > "$tn.health.json" & fi
+                [ -n "$prev" ] && { _mj_run project.diff "path=$prev" "input=$tf" > "$tn.diff.json" & }
                 prev="$tf"; i=$((i + 1))
             done
-            vd=$(mj_config_get versions_dir)
+            wait
             if [ -d "$vd" ]; then
                 local sf sb; for sf in "$vd"/*.(aep|c4d)(.N); do sb=${${sf:t}%.<->T<->Z.*}; [[ "${(L)sb}" == "$tstem" ]] && print -r -- "$sf"; done > "$td/snapshots.txt"
             fi
-            _mj_explain --timeline "$td"
+            _mj_explain --timeline "$td"; i=$?
             /bin/rm -rf "$td"
-            return 0 ;;
+            return $i ;;
         scene)
             shift
             local cs; cs=$(_mj_resolve_c4d "${1:-last}") || return $?
@@ -616,7 +745,12 @@ mj qc <movie> [spec]   (built-in specs: broadcast-us broadcast-eu web social-ver
             _mj_explain "$ef"; return ;;
         versions) shift; _mj_versions "$@"; return ;;
         watch) shift; _mj_watch "$@"; return ;;
-        doctor) _mj_say system.doctor; return ;;
+        doctor) _mj_doctor; return ;;
+        setup) shift; _mj_setup "$@"; return ;;
+        scraper)
+            local sp; sp=$(_mj_scraper_path); print "The After Effects script that makes a project report is here:"; print "  $sp"
+            print "In After Effects: File > Scripts > Run Script File..., pick that file, and choose your reports folder: $(mj_config_get receipts_dir)"
+            [ -t 1 ] && /usr/bin/open -R "$sp" 2>/dev/null; return 0 ;;
         notify)
             shift
             _mj_notify_cmd "$@"
@@ -657,11 +791,17 @@ mj qc <movie> [spec]   (built-in specs: broadcast-us broadcast-eu web social-ver
     esac
     local op="$1" out rc
     shift
+    case "$op" in
+        *.*) ;;                                              # an operation name: handled below
+        *) local near; near=$(_mj_suggest "$op")
+           print -u2 "mj: \"$op\" is not a command.${near:+ Did you mean \"mj $near\"?}"
+           print -u2 "  See the list with:  mj help"; return 64 ;;
+    esac
     _mj_check_args "$@" || return
     local t0=$EPOCHREALTIME
     out=$(_mj_run "$op" "$@")
     rc=$?
-    print -r -- "$out" | _mj_print
+    if [ $rc -ne 0 ] && [ -t 1 ]; then print -r -- "$out" | _mj_explain - ; else print -r -- "$out" | _mj_print; fi   # a failure on a terminal is explained; scripts still get JSON
     _mj_notify_op "$op" $(( EPOCHREALTIME - t0 )) "$out"
     return $rc
 }
@@ -672,7 +812,7 @@ mj qc <movie> [spec]   (built-in specs: broadcast-us broadcast-eu web social-ver
 _mj_complete() {
     local -a items
     local json cmd="${words[2]}"
-    local -a verbs; verbs=(snapshot versions lint health check timeline space qc extract conform ae diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
+    local -a verbs; verbs=(snapshot versions lint health check timeline space qc extract conform ae setup scraper diff scene bridge explain watch doctor config notify status last open-last ui home cd ops recipe batch help)
     if (( CURRENT == 2 )); then
         json=$(_mj_describe) || json=""
         items=($verbs ${(f)"$(print -r -- "$json" | /usr/bin/jq -r '.data.operations | keys[]' 2>/dev/null)"})
@@ -699,7 +839,7 @@ _mj_complete() {
         versions) ;;
         recipe) _files ;;
         batch) if (( CURRENT == 3 )); then _files; elif (( CURRENT == 4 )); then _files -/; else items=(--pattern); compadd -a items; fi ;;
-        last|open-last|home|cd|doctor|status|ops|help) ;;
+        last|open-last|home|cd|doctor|setup|scraper|status|ops|help) ;;
         *)
             json=$(_mj_describe) || return 1
             if [[ "$PREFIX" == *=* ]]; then

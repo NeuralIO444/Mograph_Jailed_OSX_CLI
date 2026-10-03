@@ -144,10 +144,9 @@ else
   else
     warn "this download has no checksum list (older release); file check skipped"
   fi
-  /bin/mkdir -p "$ROOT" || die "Can't create $ROOT."
-  # copy contents (not the wrapper dir) into place
-  /bin/cp -R "$SRC/." "$ROOT/" || die "Copy failed."
-  ok "installed to $ROOT"
+  # The shared install core stages the copy, tests it, swaps it in cleanly (no stale files), connects Terminal and
+  # offers `mj setup`. The files were verified just above, so it does not repeat that.
+  MJ_YES="$YES" MJ_INSTALL_VERIFIED=1 /bin/zsh -f "$SRC/tools/install-local.zsh" "$SRC" "$ROOT" || die "The install did not finish - see above. Your previous folder (if any) is unchanged."
   FRESH_ROOT="$ROOT"
 fi
 
@@ -172,11 +171,6 @@ say ""
 /bin/echo "  │  Optional extras                             │"
 /bin/echo "  └──────────────────────────────────────────────┘"
 
-if confirm "Add terminal helpers (mj-man help pages, mj-top dashboard)?"; then
-  MOGRAPHJAILED_ROOT="$FRESH_ROOT" /bin/bash "$FRESH_ROOT/scripts/shell/install-terminal-ux.sh" \
-    && ok "terminal helpers installed — open a new Terminal and type:  mj-man"
-fi
-
 if confirm "Auto-version your After Effects projects when they change? (the watcher)"; then
   WATCH_DIR=$(ask "Folder with your .aep projects" "$HOME/Movies")
   VERSIONS_DIR=$(ask "Folder to keep versions in" "$HOME/AE_Versions")
@@ -199,17 +193,17 @@ fi
 /bin/echo "  └──────────────────────────────────────────────┘"
 /bin/echo ""
 /bin/echo "  • Everyday commands (open a new Terminal first):"
-/bin/echo "      mj              status of everything at a glance"
-/bin/echo "      mj ui           live dashboard"
-/bin/echo "      mj doctor       is this Mac ready?"
+/bin/echo "      mj setup        choose your folders (first time)"
+/bin/echo "      mj check X      is project X ready? expressions, fonts, footage"
 /bin/echo "      mj snapshot X   save a verified version of a project"
-/bin/echo "      mj lint last    check your newest scrape, in plain language"
+/bin/echo "      mj doctor       is everything set up?"
+/bin/echo "      mj help         every command, in plain language"
 /bin/echo ""
 /bin/echo "  • Project scraper (run inside After Effects):"
 /bin/echo "      File → Scripts → Run Script File, then pick:"
 /bin/echo "      $FRESH_ROOT/integrations/after-effects/MographJailed_ProjectScraper.jsx"
 /bin/echo ""
-/bin/echo "  • Help any time:  mj-man   (if you installed terminal helpers)"
+/bin/echo "  • Help any time:  mj help      (full pages: mj-man)"
 /bin/echo "  • Guides: https://github.com/NeuralIO444/Mograph_Jailed_OSX_CLI/wiki"
 /bin/echo ""
 /bin/echo "  It can look at everything and change nothing."

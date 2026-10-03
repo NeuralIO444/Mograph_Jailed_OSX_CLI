@@ -45,6 +45,40 @@ def parse_spec_file(path):
         spec[k] = v
     return spec
 
+NUM_KEYS = ("width", "height", "minDuration", "maxDuration", "audioChannels", "loudness", "loudnessTolerance", "peakMax")
+
+def validate_spec(spec):
+    """Every value is checked before the movie is touched, so a typo is an error, never a silently skipped check."""
+    for k in NUM_KEYS:
+        if k in spec:
+            try:
+                v = float(spec[k])
+            except ValueError:
+                err("INVALID_SPEC", "%s must be a number (got %s)." % (k, spec[k][:20]))
+            if v != v or v in (float("inf"), float("-inf")):
+                err("INVALID_SPEC", "%s must be a finite number." % k)
+    for k in ("fps", "audioSampleRate"):
+        if k in spec:
+            items = [x.strip() for x in spec[k].split(",") if x.strip()]
+            if not items:
+                err("INVALID_SPEC", "%s needs at least one number." % k)
+            for x in items:
+                try:
+                    float(x)
+                except ValueError:
+                    err("INVALID_SPEC", "%s must be numbers separated by commas (got %s)." % (k, x[:20]))
+    for k in ("container", "codec"):
+        if k in spec and not [x for x in spec[k].split(",") if x.strip()]:
+            err("INVALID_SPEC", "%s needs at least one value." % k)
+    if spec.get("audio", "any").lower() not in ("required", "none", "any"):
+        err("INVALID_SPEC", "audio must be required, none or any (got %s)." % spec["audio"][:20])
+    if spec.get("colorTags", "any").lower() not in ("required", "any"):
+        err("INVALID_SPEC", "colorTags must be required or any (got %s)." % spec["colorTags"][:20])
+    if spec.get("loudnessTolerance") is not None and "loudness" not in spec:
+        err("INVALID_SPEC", "loudnessTolerance needs loudness.")
+    if not any(k in spec for k in SPEC_KEYS - {"name", "loudnessTolerance"}) and spec.get("audio", "any").lower() == "any":
+        err("INVALID_SPEC", "The spec asks for nothing to check.")
+
 def spec_list(v):
     return [x.strip().lower() for x in str(v).split(",") if x.strip()]
 
@@ -208,7 +242,8 @@ def loudness(wav_path):
         g2 = [z for z in gated if lufs(z) > rel]
         if g2:
             integrated = round(lufs(sum(g2) / len(g2)), 1)
-    return {"integrated": integrated, "samplePeak": round(20 * math.log10(peak), 1) if peak > 0 else None, "seconds": round(total / float(rate), 3) if rate else 0}
+    return {"integrated": integrated, "samplePeak": round(20 * math.log10(peak), 1) if peak > 0 else None, "seconds": round(total / float(rate), 3) if rate else 0,
+            "tooShort": total < int(0.4 * rate)}
 PY_QC_LIB
 
 deliver_python() {
@@ -248,6 +283,7 @@ if os.environ["MJ_FMT"]:
     spec = dict(spec); spec_name = spec.pop("name"); spec_src = os.environ["MJ_FMT"]
 else:
     spec = parse_spec_file(os.environ["MJ_SPEC"]); spec_name = spec.pop("name", os.path.basename(os.environ["MJ_SPEC"])); spec_src = os.environ["MJ_SPEC"]
+validate_spec(spec)
 info = probe(os.environ["MJ_AVMEDIAINFO"], movie)
 v, a = info["video"] or {}, info["audio"]
 checks = []
@@ -306,10 +342,17 @@ if a:
 measured = None
 if a and ("loudness" in spec or "peakMax" in spec):
     afc = os.environ.get("MJ_AFCONVERT", "")
+    need = int((info["duration"] or 0) * (a.get("sampleRate") or 48000) * (a.get("channels") or 2) * 4)
+    free = shutil.disk_usage(tempfile.gettempdir()).free
+    skip_why = None
     if not afc:
+        skip_why = "afconvert is not available."
+    elif need > free - (512 << 20):
+        skip_why = "decoding the audio needs about %.1f GB of temporary space and only %.1f GB is free." % (need / 1e9, free / 1e9)
+    if skip_why:
         for key in ("loudness", "peakMax"):
             if key in spec:
-                add(key, "skipped", spec[key], None, "Not measured: afconvert is not available.")
+                add(key, "skipped", spec[key], None, "Not measured: " + skip_why)
     else:
         tmp = tempfile.mkdtemp(prefix="mj-qc.")
         wav = os.path.join(tmp, "audio.wav")
@@ -327,8 +370,10 @@ if a and ("loudness" in spec or "peakMax" in spec):
                 if key in spec:
                     add(key, "skipped", spec[key], None, "Not measured: macOS could not decode the audio.")
         else:
-            if "loudness" in spec:
-                w = spec_num(spec, "loudness"); tol = spec_num(spec, "loudnessTolerance") or 1.0; g = measured["integrated"]
+            if "loudness" in spec and measured.get("tooShort"):
+                add("loudness", "skipped", "%g LUFS" % spec_num(spec, "loudness"), None, "Not measured: the audio is under 0.4 s, too short for a loudness reading.")
+            elif "loudness" in spec:
+                w = spec_num(spec, "loudness"); tol = spec_num(spec, "loudnessTolerance"); tol = 1.0 if tol is None else tol; g = measured["integrated"]
                 if g is None:
                     add("loudness", "warn", "%g LUFS" % w, None, "The audio is silent (below the -70 LUFS gate).")
                 else:
@@ -339,6 +384,8 @@ if a and ("loudness" in spec or "peakMax" in spec):
                 w = spec_num(spec, "peakMax"); g = measured["samplePeak"]
                 ok = g is None or g <= w + 1e-9
                 add("peakMax", "pass" if ok else "fail", "%g dBFS" % w, g, "Sample peak is %s dBFS%s." % ("%.1f" % g if g is not None else "-inf", "" if ok else "; the spec allows %g" % w))
+if not checks:
+    err("INVALID_SPEC", "The spec produced no checks for this movie (for example it only asks about audio and the movie has none).")
 order = {"fail": 0, "warn": 1, "skipped": 2, "pass": 3}
 fails = sum(1 for c in checks if c["status"] == "fail")
 warns = []

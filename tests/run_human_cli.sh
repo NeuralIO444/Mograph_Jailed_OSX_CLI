@@ -496,7 +496,8 @@ check test -f "$TMP/inst/r1/dist/mograph-jailed.zsh"
 check grep -q 'every file matches its checksum' "$TMP/inst/o1.txt"
 check grep -q "download SHA-256: $GOODSHA" "$TMP/inst/o1.txt"
 check grep -q 'it runs' "$TMP/inst/o1.txt"
-check grep -q 'mj ui' "$TMP/inst/o1.txt"                                       # farewell teaches the everyday commands
+check grep -q 'mj setup' "$TMP/inst/o1.txt"                                    # farewell teaches the everyday commands
+check grep -q 'mj check' "$TMP/inst/o1.txt"
 check test ! -e "$TMP/inst/home/Library/LaunchAgents" -a ! -e "$TMP/inst/home/.config"   # scripted install adds no extras, no watcher, no config
 check bash -c "! grep -q 'Open the live dashboard' '$TMP/inst/o1.txt'"       # and never launches the dashboard
 # pinned hash: right -> proceeds, wrong -> refuses with nothing installed
