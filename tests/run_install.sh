@@ -158,5 +158,22 @@ printf 'export A=1\n  %s\nexport KEEP=1\n' "$OPEN" > "$TMP/rc_look"
 env MJ_YES=1 MJ_INSTALL_ZSHRC=1 MJ_ZSHRC="$TMP/rc_look" zsh -f "$ROOT/tools/install-local.zsh" "$TMP/src" "$TMP/shape_look" </dev/null > /dev/null 2>&1
 check has "$TMP/rc_look" "export KEEP=1"; check test "$(grep -c '^# >>> MographJailed' "$TMP/rc_look")" = 1
 
+# ---- #41: only ordinary files and folders may be in a download; permissions are tightened
+odd(){ # odd <name> <command that adds the odd thing to $d>
+  local d="$TMP/odd_$1"; cp -R "$TMP/src" "$d"; eval "$2"
+  ( perl -e 'alarm 25; exec @ARGV' env MJ_YES=1 zsh -f "$ROOT/tools/install-local.zsh" "$d" "$TMP/odd_inst_$1" </dev/null > "$TMP/odd_$1.out" 2>&1 ); local rc=$?
+  check test $rc -ne 0; check test $rc -ne 142                       # refused, and not by running out of time
+  check test ! -e "$TMP/odd_inst_$1"; check has "$TMP/odd_$1.out" "not an ordinary file"
+}
+odd symlink 'ln -s /etc "$d/docs/etc-link"'
+odd dangling 'ln -s /nonexistent "$d/docs/dangling"'
+odd fifo 'mkfifo "$d/docs/pipe"'
+odd socket 'python3 -c "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1])" "$d/docs/sock"'
+cp -R "$TMP/src" "$TMP/perm"; chmod 4755 "$TMP/perm/tools/uninstall-local.zsh"; chmod 2755 "$TMP/perm/tools/install-local.zsh"; chmod 777 "$TMP/perm/dist/mograph-jailed.zsh"; chmod 775 "$TMP/perm/docs"
+env MJ_YES=1 zsh -f "$ROOT/tools/install-local.zsh" "$TMP/perm" "$TMP/perm_inst" </dev/null > "$TMP/perm.out" 2>&1; check test $? = 0
+check test -z "$(find "$TMP/perm_inst" \( -perm -4000 -o -perm -2000 \) 2>/dev/null)"        # no set-user-id / set-group-id anywhere
+check test -z "$(find "$TMP/perm_inst" -perm -020 -o -perm -002 2>/dev/null | head -1)"       # nothing writable by group or others
+check test -x "$TMP/perm_inst/dist/mograph-jailed.zsh" -a -x "$TMP/perm_inst/tools/install-local.zsh"   # but it still runs
+
 echo "Install tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

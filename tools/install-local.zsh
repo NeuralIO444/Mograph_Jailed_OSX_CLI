@@ -57,6 +57,13 @@ if [ "$(/usr/bin/uname -s)" != "Darwin" ] && [ "${MJ_INSTALL_ALLOW_NONMAC:-}" !=
 
 # ---- 1. verify
 step "Checking the files"
+# Only ordinary files and folders belong in a download. A link could point anywhere on this Mac, and a pipe or device
+# can make the copy wait forever, so any of those stops the install before a single file is copied or read.
+ODD=$(/usr/bin/find "$SRC" ! -type f ! -type d 2>/dev/null | /usr/bin/head -3)
+if [ -n "$ODD" ]; then
+  FIRST=$(/bin/echo "$ODD" | /usr/bin/head -1); KIND=$(/usr/bin/stat -f '%HT' "$FIRST" 2>/dev/null || /usr/bin/stat -c '%F' "$FIRST" 2>/dev/null)
+  die "The download contains something that is not an ordinary file (${KIND:-link, pipe or device}: ${FIRST#$SRC/}) - nothing installed. A real MographJailed download has none; please download it again from the official page."
+fi
 if [ "${MJ_INSTALL_VERIFIED:-0}" = 1 ]; then
   ok "files were already checked against their checksums"
 elif [ -f "$SRC/SHA256SUMS" ]; then
@@ -81,6 +88,7 @@ STAGE="$ROOT.installing.$$"
 trap '/bin/rm -rf "$STAGE"' EXIT
 (cd "$SRC" && /usr/bin/tar -cf - --exclude=./tests --exclude=./research --exclude=./.github --exclude=./.git --exclude=./.gitignore --exclude=.DS_Store --exclude='._*' --exclude=__MACOSX .) \
   | (cd "$STAGE" && /usr/bin/tar -xf -) || die "Copy failed."
+/bin/chmod -R go-w,a-s "$STAGE" 2>/dev/null                      # nothing in the install is writable by others or set-user-id, whatever the download said
 /usr/bin/xattr -dr com.apple.quarantine "$STAGE" 2>/dev/null     # your own copy of files you chose to install; no sudo needed
 ok "copied (the tests and developer files stay out of your install)"
 
