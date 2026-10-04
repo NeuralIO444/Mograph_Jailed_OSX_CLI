@@ -554,6 +554,16 @@ mj() {
     _mj_fix_pasted "$@" || return $?
     set -- "${reply[@]}"
     case "${1:-}" in
+        version|--version|-V|-v)
+            local cli version rc
+            cli=$(_mj_cli_path) || return $?
+            [ -x "$cli" ] || { print -u2 "mj: runtime not found or not executable: $cli"; return 69; }
+            version=$("$cli" --version); rc=$?
+            [ "$rc" -eq 0 ] || { print -u2 "mj: could not read the runtime version (exit $rc): $cli"; return "$rc"; }
+            print -r -- "$version"
+            print -r -- "Install folder: ${cli:h}"
+            print -r -- "Runtime path: $cli"
+            return 0 ;;
         ""|home)
             _mj_ui home
             return ;;

@@ -24,6 +24,7 @@ These are plain-language wrappers over the operations below; every one prints se
 ```text
 mj snapshot "Spring Promo"       save a verified version (a path or a name searched under watch_dir)
 mj versions [name]               list saved versions, newest first
+mj version                       print the runtime version, install folder and runtime path (-V and --version also work)
 mj lint [last|<scrape>]          check expressions: what is wrong, why, and the fix
 mj health [last|<scrape>] [--record]   0-100 score; --record keeps it for the trend
 mj diff last                     what changed between your two newest scrapes
@@ -108,4 +109,3 @@ mj help             every command in plain language
 ```
 
 A mistyped command is not an error dump: `mj chekc` answers `Did you mean "mj check"?`. Project names accept a prefix in any case (`mj check spring`); if two projects match, the names are listed.
-

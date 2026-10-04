@@ -100,30 +100,37 @@ STUDIO_KEYS = {"name", "precompPrefix", "mainCompPrefix", "spaces", "fixBrokenRe
     {"folder." + k for k in ("mainComps", "precomps", "footage", "solids", "audio")}
 
 def parse_studio_spec(path):
-    spec = {}
+    spec, first_lines, duplicate_lines = {}, {}, {}
     try:
         lines = open(path, encoding="utf-8").read(65536).splitlines()
     except (OSError, UnicodeDecodeError):
         err("INVALID_SPEC", "The studio spec could not be read as UTF-8 text.")
+    if lines and lines[0].startswith("\ufeff"):
+        lines[0] = lines[0][1:]
     for n, line in enumerate(lines, 1):
         s = line.strip()
         if not s or s.startswith("#"):
             continue
         if "=" not in s:
-            err("INVALID_SPEC", "Spec line %d is not key = value." % n)
+            err("INVALID_SPEC", "Studio spec line %d is not key = value." % n)
         k, v = (x.strip() for x in s.split("=", 1))
         if k not in STUDIO_KEYS:
-            err("INVALID_SPEC", "Spec line %d: unknown key %s." % (n, k))
+            err("INVALID_SPEC", "Studio spec line %d: unknown key %s." % (n, k))
         if k.startswith("label.") and v and not (v.isdigit() and 0 <= int(v) <= 16):
-            err("INVALID_SPEC", "Spec line %d: %s must be a label number 0-16 (or empty to leave labels alone)." % (n, k))
+            err("INVALID_SPEC", "Studio spec line %d: %s must be a label number 0-16 (or empty to leave labels alone)." % (n, k))
         if k == "spaces" and v not in ("keep", "_", "-"):
-            err("INVALID_SPEC", "Spec line %d: spaces must be keep, _ or -." % n)
+            err("INVALID_SPEC", "Studio spec line %d: spaces must be keep, _ or -." % n)
         if k == "fixBrokenRefs" and v not in ("off", "suggest", "apply"):
-            err("INVALID_SPEC", "Spec line %d: fixBrokenRefs must be off, suggest or apply." % n)
+            err("INVALID_SPEC", "Studio spec line %d: fixBrokenRefs must be off, suggest or apply." % n)
         if any(ch in v for ch in '"\\') or len(v) > 64:
-            err("INVALID_SPEC", "Spec line %d: values may not contain quotes or backslashes and must be short." % n)
+            err("INVALID_SPEC", "Studio spec line %d: values may not contain quotes or backslashes and must be short." % n)
+        if k in first_lines:
+            duplicate_lines[k] = n
+        else:
+            first_lines[k] = n
         spec[k] = v
-    return spec
+    duplicates = [{"key": k, "firstLine": first_lines[k], "duplicateLine": n} for k, n in duplicate_lines.items()]
+    return spec, duplicates
 
 def layer_kind(l, comp_ids):
     t = l.get("type")
@@ -166,12 +173,43 @@ THIS_COMP = re.compile(r'\bthisComp\s*$')
 
 def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, suggestions, where, unresolved):
     """Rename name references inside one expression. Returns (new text, changed?).
+    Comments and unrelated string literals are ignored.
     A layer("...") lookup is followed only when its comp is certain: it directly follows thisComp, or follows
     comp("...") (whitespace and line breaks allowed between). Anything else (c.layer("x") on a variable, a
     layer found through another call) is left alone and counted in `unresolved`."""
+    code = list(text)
+    i = 0
+    while i < len(text):
+        start = i
+        if text.startswith("//", i):
+            end = text.find("\n", i + 2)
+            i = len(text) if end < 0 else end
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = len(text) if end < 0 else end + 2
+        elif text[i] in ("'", '"', "`"):
+            quote = text[i]
+            i += 1
+            while i < len(text):
+                if text[i] == "\\":
+                    i += 2
+                elif text[i] == quote:
+                    i += 1
+                    break
+                else:
+                    i += 1
+        else:
+            i += 1
+            continue
+        for j in range(start, min(i, len(text))):
+            if text[j] != "\n":
+                code[j] = " "
+    code = "".join(code)
     out, pos, changed = [], 0, False
     last_comp_end, last_comp_name = -1, None
     for m in REF.finditer(text):
+        if code[m.start()] == " ":
+            continue
         fn, q, name = m.group(1), m.group(2), m.group(3)
         new = name
         if fn == "comp":
@@ -182,7 +220,7 @@ def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, su
                 target = own_comp
             elif last_comp_end >= 0 and text[last_comp_end:m.start()].strip() == "":
                 target = last_comp_name
-            elif THIS_COMP.search(text[:m.start()]):
+            elif THIS_COMP.search(code[:m.start()]):
                 target = own_comp
             else:
                 unresolved.append(where); continue
@@ -410,10 +448,13 @@ handle_project_conform() {
 id0 = tree_id(os.environ["MJ_SCRAPE"])
 doc = load_scrape(os.environ["MJ_SCRAPE"])
 spec = dict(DEFAULT_STUDIO_SPEC)
+duplicate_spec_keys = []
 if os.environ["MJ_SPEC"]:
-    spec.update(parse_studio_spec(os.environ["MJ_SPEC"]))
+    parsed_spec, duplicate_spec_keys = parse_studio_spec(os.environ["MJ_SPEC"])
+    spec.update(parsed_spec)
 plan = plan_conform(doc, spec)
-warnings = []
+warnings = [{"code": "DUPLICATE_SPEC_KEY", "message": "Studio spec key %s appears on lines %d and %d; line %d is used." %
+        (d["key"], d["firstLine"], d["duplicateLine"], d["duplicateLine"])} for d in duplicate_spec_keys]
 old = str(doc.get("scraperVersion", "")) < "1.1"
 if old:
     warnings.append({"code": "SCRAPE_TOO_OLD", "message": "This scrape is from scraper %s; labels, folders, solids and adjustment layers need scraper 1.1, so only names and expressions are planned." % doc.get("scraperVersion")})

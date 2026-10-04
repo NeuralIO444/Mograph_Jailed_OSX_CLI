@@ -536,6 +536,30 @@ snapshot_lock() {
 }
 snapshot_unlock() { [ -n "$MJ_SNAPSHOT_LOCK" ] && /bin/rm -rf "$MJ_SNAPSHOT_LOCK" 2>/dev/null; MJ_SNAPSHOT_LOCK=""; }
 
+snapshot_sweep_partials() {
+  /usr/bin/python3 - "$1" 2>/dev/null <<'PY_SNAPSHOT_SWEEP'
+import os, re, sys, time
+
+folder = sys.argv[1]
+now = time.time()
+for entry in os.scandir(folder):
+    match = re.fullmatch(r"\..*\.partial\.([0-9]+)", entry.name)
+    if not match or not entry.is_file(follow_symlinks=False):
+        continue
+    pid = int(match.group(1))
+    if pid == 0 or pid > 2147483647:
+        continue
+    if now - entry.stat(follow_symlinks=False).st_mtime < 60:
+        continue
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        os.unlink(entry.path)
+    except PermissionError:
+        continue
+PY_SNAPSHOT_SWEEP
+}
+
 handle_project_snapshot() {
   local _path=""
   local _outdir=""
@@ -593,6 +617,11 @@ handle_project_snapshot() {
   # publish all happen under a per-project lock, so the watcher and a manual mj snapshot can never both
   # save the same bytes (found by tests/run_hall_of_horror.sh: 16 racers across a second boundary).
   snapshot_lock "$_outdir_real/.$_latest_name.lock" || { set_error "CONFLICT" "Another snapshot of this project is still running; try again."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74; }
+  snapshot_sweep_partials "$_outdir_real" || {
+    snapshot_unlock
+    set_error "SNAPSHOT_FAILED" "Could not inspect or remove stale partial snapshots in the versions folder."
+    emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 74
+  }
   local _snap_rc=0
   snapshot_publish || _snap_rc=$?
   snapshot_unlock

@@ -103,7 +103,7 @@ The runtime protects the evidence it reports.
 | `STATS_FAILED` | 74 | Image signatures could not be computed (bad or unsupported PNG). | Use 8- or 16-bit RGB/RGBA, non-interlaced PNGs. |
 | `DECODE_FAILED` | 74 | A PNG frame could not be decoded; the message names the frame. | Re-render or remove the damaged frame. |
 | `COMPARE_FAILED` | 74 | Two image signatures could not be compared. | Retry; check both images with `image.inspect`. |
-| `INVALID_SPEC` | 65 | A delivery spec file is not readable `key = value` text, or uses an unknown key or a non-numeric value. | Fix the line named in the message; see `docs/man/qc.md` for the keys. |
+| `INVALID_SPEC` | 65 | A delivery or studio spec is not readable `key = value` text, or uses an unknown key or an invalid value. | Fix the line named in the message; see `docs/man/qc.md` or `docs/man/studio.md` for the keys. |
 | `NO_VIDEO_TRACK` | 65 | The media has no video track. | Choose a file with video. |
 | `TIME_OUT_OF_RANGE` | 65 | The requested time is outside the media duration. | Use a time inside the clip. |
 | `FRAME_EXTRACTION_FAILED` | 74 | A frame could not be extracted; the message may name an adapter detail (see the last section). | Try another time, or check the media plays in QuickTime. |
@@ -213,6 +213,7 @@ A successful response can still carry `warnings`: a list of `{ "code", "message"
 | `FONT_SCAN_CAPPED` | The font scan stopped at its file limit. | Some installed fonts may not have been seen. |
 | `CACHE_PARTLY_CLEANED` | Some entries in a cache folder could not be removed. | They are listed in `problems`; check permissions or quit the app and run it again. |
 | `PEAK_IS_SAMPLE_PEAK` | The peak check uses the sample peak, not a 4x-oversampled true peak. | Leave about 0.5 dB of extra headroom on bright material. |
+| `DUPLICATE_SPEC_KEY` | A delivery or studio spec sets the same key more than once. | The last value is used; check the two line numbers in the warning and remove the duplicate. |
 | `SCRAPE_TOO_OLD` | The scrape comes from scraper 1.0, which does not record labels, folders, solids or adjustment layers. | Only names and expressions are planned; re-scrape with scraper 1.1 for the rest. |
 | `SCRAPE_TRUNCATED` | The scrape hit its comp or layer limits. | Comps or layers past the limits are not in the plan. |
 | `DYNAMIC_REFERENCES` | Some expressions look layers or comps up by a computed name. | Those references cannot be followed when renaming; check them after the job runs. |

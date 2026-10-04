@@ -23,7 +23,7 @@ These are starting points; check your client's sheet.
 
 ## Spec files
 
-`key = value` lines, `#` comments on their own lines (a comment after a value becomes part of the value). Lists are comma-separated.
+UTF-8 `key = value` lines, `#` comments on their own lines (a comment after a value becomes part of the value). A leading UTF-8 BOM is ignored. If a key is repeated, the last value is used and the result carries a `DUPLICATE_SPEC_KEY` warning naming both line numbers. Lists are comma-separated.
 
 ```text
 name = Client X master

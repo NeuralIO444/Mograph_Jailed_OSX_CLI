@@ -112,6 +112,12 @@ check jq -e '(.data.checks[]|select(.check=="loudness")|.message)=="Not measured
 # Spec files
 run "$TMP/c.json" media.qc path="$TMP/good.mov" input="$TMP/custom.mjspec"
 check jq -e '.data.passed and .data.specName=="House master" and (.data.checks|length)==4' "$TMP/c.json"
+printf '\357\273\277name = BOM master\ncodec = prores\nfps = 29.97\n' > "$TMP/bom.mjspec"
+run "$TMP/bom.json" media.qc path="$TMP/good.mov" input="$TMP/bom.mjspec"
+check jq -e '.data.passed and .data.specName=="BOM master"' "$TMP/bom.json"
+printf '\357\273\277name = Duplicate master\ncodec = prores\ncodec = h264\ncodec = prores\nfps = 29.97\n' > "$TMP/duplicate.mjspec"
+run "$TMP/duplicate.json" media.qc path="$TMP/good.mov" input="$TMP/duplicate.mjspec"
+check jq -e '.data.passed and ([.warnings[]|select(.code=="DUPLICATE_SPEC_KEY" and (.message|test("lines 2 and 4.*line 4 is used")))]|length)==1' "$TMP/duplicate.json"
 run "$TMP/c2.json" media.qc path="$TMP/loud.mov" input="$TMP/custom.mjspec"
 check jq -e '(.data.checks[]|select(.check=="loudness")|.status)=="fail"' "$TMP/c2.json"
 run "$TMP/e1.json" media.qc path="$TMP/good.mov" input="$TMP/bad.mjspec"

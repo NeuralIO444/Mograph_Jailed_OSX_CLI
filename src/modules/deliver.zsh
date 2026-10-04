@@ -28,22 +28,29 @@ CODEC_FAMILY = {"apch": "prores", "apcn": "prores", "apcs": "prores", "apco": "p
                 "avc1": "h264", "avc3": "h264", "hvc1": "hevc", "hev1": "hevc", "dvh1": "hevc", "jpeg": "mjpeg", "png ": "png", "rle ": "animation", "mp4v": "mpeg4"}
 
 def parse_spec_file(path):
-    spec = {}
+    spec, first_lines, duplicate_lines = {}, {}, {}
     try:
         lines = open(path, encoding="utf-8").read(65536).splitlines()
     except (OSError, UnicodeDecodeError):
-        err("INVALID_SPEC", "The spec file could not be read as UTF-8 text.")
+        err("INVALID_SPEC", "The delivery spec file could not be read as UTF-8 text.")
+    if lines and lines[0].startswith("\ufeff"):
+        lines[0] = lines[0][1:]
     for n, line in enumerate(lines, 1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         if "=" not in line:
-            err("INVALID_SPEC", "Spec line %d is not key = value." % n)
+            err("INVALID_SPEC", "Delivery spec line %d is not key = value." % n)
         k, v = (x.strip() for x in line.split("=", 1))
         if k not in SPEC_KEYS:
-            err("INVALID_SPEC", "Spec line %d: unknown key %s (known: %s)." % (n, k, ", ".join(sorted(SPEC_KEYS))))
+            err("INVALID_SPEC", "Delivery spec line %d: unknown key %s (known: %s)." % (n, k, ", ".join(sorted(SPEC_KEYS))))
+        if k in first_lines:
+            duplicate_lines[k] = n
+        else:
+            first_lines[k] = n
         spec[k] = v
-    return spec
+    duplicates = [{"key": k, "firstLine": first_lines[k], "duplicateLine": n} for k, n in duplicate_lines.items()]
+    return spec, duplicates
 
 NUM_KEYS = ("width", "height", "minDuration", "maxDuration", "audioChannels", "loudness", "loudnessTolerance", "peakMax")
 
@@ -276,13 +283,15 @@ handle_media_qc() {
          MJ_AFCONVERT="$(cap_available afconvert && cap_path afconvert)" deliver_python <<'PY_MEDIA_QC'
 movie = os.environ["MJ_MOVIE"]
 id0 = tree_id(movie)
+duplicate_spec_keys = []
 if os.environ["MJ_FMT"]:
     spec = BUILTIN_SPECS.get(os.environ["MJ_FMT"])
     if spec is None:
         err("INVALID_ARGUMENT", "Unknown spec %s; built-in specs: %s." % (os.environ["MJ_FMT"], ", ".join(sorted(BUILTIN_SPECS))))
     spec = dict(spec); spec_name = spec.pop("name"); spec_src = os.environ["MJ_FMT"]
 else:
-    spec = parse_spec_file(os.environ["MJ_SPEC"]); spec_name = spec.pop("name", os.path.basename(os.environ["MJ_SPEC"])); spec_src = os.environ["MJ_SPEC"]
+    spec, duplicate_spec_keys = parse_spec_file(os.environ["MJ_SPEC"])
+    spec_name = spec.pop("name", os.path.basename(os.environ["MJ_SPEC"])); spec_src = os.environ["MJ_SPEC"]
 validate_spec(spec)
 info = probe(os.environ["MJ_AVMEDIAINFO"], movie)
 v, a = info["video"] or {}, info["audio"]
@@ -388,7 +397,8 @@ if not checks:
     err("INVALID_SPEC", "The spec produced no checks for this movie (for example it only asks about audio and the movie has none).")
 order = {"fail": 0, "warn": 1, "skipped": 2, "pass": 3}
 fails = sum(1 for c in checks if c["status"] == "fail")
-warns = []
+warns = [{"code": "DUPLICATE_SPEC_KEY", "message": "Delivery spec key %s appears on lines %d and %d; line %d is used." %
+          (d["key"], d["firstLine"], d["duplicateLine"], d["duplicateLine"])} for d in duplicate_spec_keys]
 if any(c["check"] == "peakMax" and c["status"] != "skipped" for c in checks):
     warns.append({"code": "PEAK_IS_SAMPLE_PEAK", "message": "Peak is the sample peak; a true-peak meter can read up to about 0.5 dB higher on bright material."})
 print(json.dumps({"ok": True, "data": {

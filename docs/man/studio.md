@@ -45,7 +45,7 @@ mj conform "Spring Promo" --spec house.mjstudio
 
 Brings a project to a studio spec: comp names (precomps get a prefix), layer names by kind, labels by kind, project-panel folders, and every expression that refers by name to a comp or layer being renamed. A broken reference with exactly one close match (`"Nme"` when `"Name"` exists) is suggested; with `fixBrokenRefs = apply` it is fixed. Names are only ever prefixed once; duplicates get `_2`, `_3`.
 
-The studio spec is `key = value` text (`mj config set studio_spec <file>` to make it the default). Every key, with the built-in default:
+The studio spec is UTF-8 `key = value` text (`mj config set studio_spec <file>` to make it the default); a leading UTF-8 BOM is ignored. If a key is repeated, the last value is used and the result carries a `DUPLICATE_SPEC_KEY` warning naming both line numbers. Every key, with the built-in default:
 
 ```text
 name = MographJailed studio default

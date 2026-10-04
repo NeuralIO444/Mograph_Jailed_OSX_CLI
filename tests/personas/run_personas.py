@@ -279,6 +279,8 @@ def k06(t):
         r = b.mj(line)
         if r.rc != 0 or not re.search(r"\d+\.\d+\.\d+", r.text):
             t.fail("low", "`mj %s` does not print a version (support will ask for it): %s" % (line, r.short(140)))
+        if "Install folder:" not in r.text or "Runtime path:" not in r.text:
+            t.fail("low", "`mj %s` does not identify the install folder and runtime path: %s" % (line, r.short(140)))
 
 
 @sc("K07", "Kiki", "dumb terminal and a narrow window")
@@ -382,6 +384,14 @@ def m07(t):
         pass
     p.wait()
     leftovers = [f for f in os.listdir(b.path("AE_Versions"))]
+    stale_pid = p.pid
+    stale_partial = b.path("AE_Versions/.Big.stale.hash.partial.%d" % stale_pid)
+    with open(stale_partial, "wb") as f:
+        f.write(b"orphaned partial")
+    os.utime(stale_partial, (time.time() - 61, time.time() - 61))
+    for name in leftovers:
+        if ".partial." in name:
+            os.utime(b.path("AE_Versions", name), (time.time() - 61, time.time() - 61))
     r = b.mj("snapshot Big", timeout=120)
     t.plain(r, "snapshot after a kill")
     if "Saved a verified copy" not in r.text and "Nothing to save" not in r.text:
@@ -702,7 +712,7 @@ def s05(t):
     p = b.path("AE/projects/Sp/Sp.aep"); put(p, b"sp")
     d = scrape(p, [comp(1, "Main", [layer(1, "Title", "TextLayer")])]); report(b, "sp", d, "20261002T100000Z")
     cases = {"bom": ("﻿name = House\nlayerPrefix.text = T_\n", "ok"), "crlf": ("name = House\r\nlayerPrefix.text = T_\r\n", "ok"), "tabs": ("layerPrefix.text\t=\tT_\n", "ok"),
-             "dup keys": ("layerPrefix.text = A_\nlayerPrefix.text = B_\n", "any"), "space prefix": ("layerPrefix.text = my text \n", "any"), "slash prefix": ("layerPrefix.text = a/b_\n", "any"),
+             "dup keys": ("layerPrefix.text = A_\nlayerPrefix.text = B_\nlayerPrefix.text = C_\n", "any"), "space prefix": ("layerPrefix.text = my text \n", "any"), "slash prefix": ("layerPrefix.text = a/b_\n", "any"),
              "percent": ("layerPrefix.text = %s%d_\n", "any"), "long": ("layerPrefix.text = " + "x" * 64 + "\n", "any"), "too long": ("layerPrefix.text = " + "x" * 65 + "\n", "err"),
              "label 16": ("label.text = 16\n", "ok"), "label 17": ("label.text = 17\n", "err"), "unicode prefix": ("layerPrefix.text = 🎬_\n", "any"), "dollar": ("layerPrefix.text = $(x)_\n", "any"),
              "no equals": ("layerPrefix.text T_\n", "err")}
@@ -719,6 +729,12 @@ def s05(t):
             bad.append("%s should be refused but was accepted" % n)
         if want == "err" and not okrun and not re.search(r"line \d", r.text):
             bad.append("%s: refusal does not name the line (%s)" % (n, r.short(80)))
+        if n == "dup keys":
+            raw = b.op("project.conform", input=b.path("AE_Receipts/sp.20261002T100000Z.scrape.json"), spec=sp)
+            warnings = raw.j.get("warnings", []) if raw.j else []
+            duplicate = next((w for w in warnings if w.get("code") == "DUPLICATE_SPEC_KEY"), None)
+            if not duplicate or not re.search(r"lines 1 and 3", duplicate.get("message", "")) or "line 3 is used" not in duplicate.get("message", ""):
+                bad.append("dup keys should name both lines: %s" % raw.short(120))
     if bad:
         t.fail("medium", "; ".join(bad))
 
