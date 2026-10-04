@@ -4085,11 +4085,20 @@ findings = []
 num_expressions = 0
 truncated = False
 
+NAME_CAP = 255      # After Effects will not make a name longer than this; anything longer is not from After Effects
+
+def short(text, n=NAME_CAP):
+    text = str(text)
+    if len(text) <= n:
+        return text
+    tail = "...(%d characters)" % len(text)
+    return text[:n - len(tail)] + tail
+
 def add(code, severity, comp, layer, prop, message):
     findings.append({
         "code": code, "severity": severity,
-        "comp": comp, "layer": layer, "propertyPath": prop,
-        "message": message,
+        "comp": short(comp), "layer": short(layer), "propertyPath": short(prop),
+        "message": short(message, 600),
     })
 
 for comp in doc["comps"]:
@@ -7627,8 +7636,25 @@ def rewrite_expression(text, own_comp, comp_new, layer_new, layer_names, fix, su
     out.append(text[pos:])
     return "".join(out), changed
 
+NAME_CAP = 255      # After Effects will not make a comp, layer or footage name longer than this
+
 def plan_conform(doc, spec):
     comps, byid = comp_index(doc)
+    # A name longer than After Effects allows did not come from After Effects. Such comps and layers are left out of the
+    # plan entirely (never renamed, never copied into a job), and counted so the person is told.
+    too_long, kept = 0, []
+    for c in comps:
+        if len(str(c.get("name", ""))) > NAME_CAP:
+            too_long += 1
+            continue
+        all_layers = [l for l in c.get("layers") or [] if isinstance(l, dict)]
+        ok_layers = [l for l in all_layers if len(str(l.get("name", ""))) <= NAME_CAP]
+        too_long += len(all_layers) - len(ok_layers)
+        c = dict(c)
+        c["layers"] = ok_layers
+        kept.append(c)
+    comps = kept
+    byid = {c["id"]: c for c in comps}
     comp_ids = set(byid)
     used_as_precomp = {l.get("sourceId") for c in comps for l in (c.get("layers") or []) if isinstance(l, dict) and l.get("sourceId") in comp_ids}
     names_count = {}
@@ -7688,7 +7714,7 @@ def plan_conform(doc, spec):
         if "folder" in c:
             move(c["id"], "comp", c.get("folder", ""), "folder.precomps" if c["_role"] == "precomp" else "folder.mainComps", c["name"])
     for f in doc["footage"]:
-        if not isinstance(f, dict) or not isinstance(f.get("id"), int) or "folder" not in f:
+        if not isinstance(f, dict) or not isinstance(f.get("id"), int) or "folder" not in f or len(str(f.get("name", ""))) > NAME_CAP:
             continue
         key = "folder.solids" if f.get("kind") == "solid" else "folder.audio" if (f.get("hasAudio") and not f.get("hasVideo")) else "folder.footage"
         move(f["id"], "footage", f.get("folder", ""), key, f.get("name", ""))
@@ -7711,7 +7737,7 @@ def plan_conform(doc, spec):
                     expressions.append({"compId": c["id"], "comp": c["name"], "index": l.get("index"), "layer": l.get("name"), "path": e.get("propertyPath"), "from": text, "to": new})
                 if re.search(r"\b(?:comp|layer)\(\s*[^\"'\s)]", text) and not unresolved:
                     dynamic += 1
-    return {"itemRenames": item_renames, "layerRenames": layer_renames, "expressions": expressions, "layerLabels": layer_labels,
+    return {"nameTooLong": too_long, "itemRenames": item_renames, "layerRenames": layer_renames, "expressions": expressions, "layerLabels": layer_labels,
             "itemLabels": item_labels, "folders": folders, "moves": moves, "suggestions": suggestions, "dynamicReferences": dynamic}
 PY_AEJOB_LIB
 
@@ -7828,6 +7854,8 @@ if old:
     warnings.append({"code": "SCRAPE_TOO_OLD", "message": "This scrape is from scraper %s; labels, folders, solids and adjustment layers need scraper 1.1, so only names and expressions are planned." % doc.get("scraperVersion")})
 if any(c.get("layersTruncated") for c in doc["comps"] if isinstance(c, dict)) or doc.get("compsTruncated"):
     warnings.append({"code": "SCRAPE_TRUNCATED", "message": "The scrape is truncated; comps or layers beyond its limits are not in the plan."})
+if plan.get("nameTooLong"):
+    warnings.append({"code": "NAME_TOO_LONG", "message": "%d comp or layer name(s) are longer than After Effects allows (255 characters), so they are not from After Effects and were left out of the plan." % plan["nameTooLong"]})
 if plan["dynamicReferences"]:
     warnings.append({"code": "DYNAMIC_REFERENCES", "message": "%d expression(s) look layers or comps up by a computed name; those references cannot be followed and may need a look after renaming." % plan["dynamicReferences"]})
 counts = {k: len(plan[k]) for k in ("itemRenames", "layerRenames", "expressions", "layerLabels", "itemLabels", "moves")}

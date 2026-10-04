@@ -238,11 +238,20 @@ findings = []
 num_expressions = 0
 truncated = False
 
+NAME_CAP = 255      # After Effects will not make a name longer than this; anything longer is not from After Effects
+
+def short(text, n=NAME_CAP):
+    text = str(text)
+    if len(text) <= n:
+        return text
+    tail = "...(%d characters)" % len(text)
+    return text[:n - len(tail)] + tail
+
 def add(code, severity, comp, layer, prop, message):
     findings.append({
         "code": code, "severity": severity,
-        "comp": comp, "layer": layer, "propertyPath": prop,
-        "message": message,
+        "comp": short(comp), "layer": short(layer), "propertyPath": short(prop),
+        "message": short(message, 600),
     })
 
 for comp in doc["comps"]:

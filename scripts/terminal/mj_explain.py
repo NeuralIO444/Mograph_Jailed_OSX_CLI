@@ -17,8 +17,21 @@ def clean_text(s):
     return UNSAFE.sub(lambda m: "\\x%02x" % ord(m.group()) if ord(m.group()) < 256 else "\\u%04x" % ord(m.group()) if ord(m.group()) < 0x10000 else "\\U%08x" % ord(m.group()), s)
 
 
+LONG_WORD = re.compile(r"\S{200,}")
+MAX_LINES = 4000
+
+
+def tidy(text):
+    """Clean the text, shorten any single run of 200+ characters (names can be megabytes), and cap the number of lines."""
+    text = LONG_WORD.sub(lambda m: m.group(0)[:120] + "...(%d characters)" % len(m.group(0)), clean_text(text))
+    lines = text.split("\n")
+    if len(lines) > MAX_LINES:
+        lines = lines[:MAX_LINES] + ["... and %d more lines (use mj <operation> for the full data)" % (len(lines) - MAX_LINES)]
+    return "\n".join(lines)
+
+
 def out(text):
-    print(clean_text(text))
+    print(tidy(text))
 
 
 ROOT = os.environ.get("MOGRAPHJAILED_ROOT") or os.path.join(os.path.expanduser("~"), "Documents", "MographJailed")
@@ -397,7 +410,15 @@ def explain_check(lint, health, pre):
     if stale:
         out.append("  !! Report: " + stale_line(stale))
     out.append(mark(errs == 0) + "Expressions: %s, %s." % (plural(errs, "error"), plural(warns, "warning")))
-    out.append(mark(health.get("score", 0) >= 90) + "Health: %d out of 100 (%s)." % (health.get("score", 0), health.get("band", "?")))
+    # Health is context, not a second verdict: what it lost for footage and expressions is already listed (and flagged)
+    # on its own line, so it only gets a mark of its own when everything is fine. The one loss with no line of its own is
+    # "no saved version yet", which is about protection, not about whether the project is ready.
+    score = health.get("score", 0)
+    unsaved = [c for c in health.get("components", []) if c.get("name") == "snapshots" and c.get("measured") and c.get("points", 25) < c.get("max", 25)]
+    health_line = "Health: %d out of 100 (%s)." % (score, health.get("band", "?"))
+    if score < 90 and unsaved and not errs and not pre.get("problems"):
+        health_line = "Health: %d out of 100 (%s): %s Keep one with:  mj snapshot \"%s\"" % (score, health.get("band", "?"), "no saved version of this project is recent enough." if "recent" in str(unsaved[0].get("why", "")) or "older" in str(unsaved[0].get("why", "")) else "no version of this project is saved yet.", name.replace(".aep", ""))
+    out.append(("  ok " if score >= 90 else "  -- ") + health_line)
     bad_fonts = [f["name"] for f in pre.get("fonts", []) if f["state"] != "installed"]
     out.append(mark(not bad_fonts) + ("Fonts: all %d found." % len(pre.get("fonts", [])) if not bad_fonts else "Fonts: %s missing (%s)." % (len(bad_fonts), names(bad_fonts))))
     gone = [f["name"] for f in pre.get("footage", [])]
@@ -597,7 +618,7 @@ def explain(doc):
 
 def main(argv):
     if len(argv) == 2 and argv[1] == "--clean":
-        sys.stdout.write(clean_text(sys.stdin.read()))
+        sys.stdout.write(tidy(sys.stdin.read()))
         return 0
     if len(argv) == 5 and argv[1] == "--check":
         try:

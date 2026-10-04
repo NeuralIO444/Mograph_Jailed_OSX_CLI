@@ -218,5 +218,6 @@ A successful response can still carry `warnings`: a list of `{ "code", "message"
 | `DYNAMIC_REFERENCES` | Some expressions look layers or comps up by a computed name. | Those references cannot be followed when renaming; check them after the job runs. |
 | `EXTERNAL_REFERENCES` | Expressions in the comps being extracted refer to comps that will not be in the new project. | Add those comps to the extract, or fix the expressions afterwards (`externalReferences` lists them). |
 | `REPORT_OLDER_THAN_PROJECT` | The project was saved after the report was made, so the report describes an older version of it. | Run the After Effects script on the project again. `mj check` will not call it ready until you do. |
+| `NAME_TOO_LONG` | A comp or layer name is longer than After Effects allows (255 characters), so it did not come from After Effects. | It is left out of the conform plan and never renamed; check how the report was made. |
 | `NOTHING_TO_DO` | The project already matches the studio spec. | No job was made. |
 | `SOURCE_CHANGED_DURING_RENDER` | The project or scene changed while rendering. | The frames may mix two versions; re-render. |

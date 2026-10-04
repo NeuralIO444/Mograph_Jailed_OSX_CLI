@@ -459,8 +459,8 @@ def d08(t):
     if re.search(r"Tidy\.aep: ready\.", r.text) and "!!" in r.text:
         t.fail("medium", "the headline says ready but a line is flagged !! (%s)" % re.sub(r"\s+", " ", r.text)[:240])
     r2 = b.mj("health Tidy")
-    if re.search(r"needs a look", r2.text) and re.search(r"Tidy\.aep: ready\.", r.text):
-        t.fail("medium", "mj check says ready while mj health says needs a look: %s | %s" % (r.short(90), r2.short(120)))
+    if re.search(r"needs a look", r2.text) and re.search(r"Tidy\.aep: ready\.", r.text) and "mj snapshot" not in r.text:
+        t.fail("medium", "mj check says ready while mj health says needs a look, and does not say why or what to do: %s | %s" % (r.short(160), r2.short(120)))
 
 
 @sc("D02", "Dana", "project saved again after the report was made")
