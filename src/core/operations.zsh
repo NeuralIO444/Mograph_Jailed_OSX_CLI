@@ -60,7 +60,7 @@ operation_names() {
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|report.tech|package.create|dimension.probe|dimension.safezone|dimension.conform) return 0 ;;
     *) return 1 ;;
   esac
 }
