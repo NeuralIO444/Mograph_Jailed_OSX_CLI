@@ -82,13 +82,18 @@ def rescan(folder, cache):
 
 
 def match_projects(paths, query):
+    """-> (exact, prefix). A typed .aep / .c4d limits the search to that kind. When some project has exactly this
+    name, only exact matches count (a longer name that merely starts with it is not offered)."""
     q = nfc(query)
+    want_ext = None
     for ext in PROJECT_EXTS:
         if q.endswith(ext):
-            q = q[: -len(ext)]
+            q, want_ext = q[: -len(ext)], ext
             break
     exact, prefix = [], []
     for p in paths:
+        if want_ext and not p.lower().endswith(want_ext):
+            continue
         stem = nfc(os.path.splitext(os.path.basename(p))[0])
         if stem == q:
             exact.append(p)
@@ -133,7 +138,7 @@ def main(argv):
             print(exact[0]); return 0
         if len(prefix) == 1 and not exact:
             print(prefix[0]); return 0
-        allhits = exact + prefix
+        allhits = exact if exact else prefix                  # an exact name is never diluted with longer names that start with it
         if not allhits:
             if limited:
                 print("%d" % seen)
