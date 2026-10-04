@@ -2673,6 +2673,30 @@ handle_file_hash() {
   emit_success_end
 }
 
+# macOS file flags (st_flags). SF_DATALESS (0x40000000) marks a file whose bytes live in the cloud (Dropbox, iCloud,
+# OneDrive "online only"): reading it would download it, or hand back nothing. Prints 0 off macOS.
+file_stat_flags() {
+  if [ "$(/usr/bin/uname -s 2>/dev/null)" = "Darwin" ]; then /usr/bin/stat -f '%f' "$1" 2>/dev/null || printf '0'; else printf '0'; fi
+}
+
+# A project or scene must have its bytes on this Mac before anything hashes, copies or opens it. Looks at the file's
+# metadata only (never reads it, so it cannot start a download). Sets the error and returns 65 (empty) or 74 (cloud only).
+file_require_materialized() {
+  local _p="$1" _flags _size
+  _flags=$(file_stat_flags "$_p"); _flags=${_flags:-0}
+  if [ $(( _flags & 1073741824 )) -ne 0 ]; then
+    set_error "FILE_NOT_DOWNLOADED" "$(basename -- "$_p") is stored online only (Dropbox, iCloud or similar) and is not on this Mac yet. Make it available offline, wait for it to finish downloading, then try again."
+    return 74
+  fi
+  _size=$(file_stat_size "$_p"); _size=${_size:-0}
+  if [ "$_size" -le 0 ]; then
+    set_error "FILE_EMPTY" "$(basename -- "$_p") is empty (0 bytes). If it lives in Dropbox or iCloud it may not have downloaded yet: open it once, or make it available offline, then try again."
+    return 65
+  fi
+  return 0
+}
+functions -c file_stat_flags _mj_file_stat_flags_real; file_stat_flags() { if [ -n "${MJ_TEST_DATALESS:-}" ] && [ "$1" = "$MJ_TEST_DATALESS" ]; then printf 1073741824; else _mj_file_stat_flags_real "$1"; fi; }
+
 # --- src/modules/runtime.zsh ---
 runtime_self_path() {
   local _self="$0"
@@ -4325,6 +4349,7 @@ handle_project_snapshot() {
   local _ts=""
   local _short=""
   local _dest=""
+  local _rc=0
   local _receipt=""
   local _bytes=""
   local _clone_used=false
@@ -4341,6 +4366,7 @@ handle_project_snapshot() {
   is_absolute_path "$_path" && is_absolute_path "$_outdir" || { set_error "INVALID_PATH" "Snapshot path and output directory must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Snapshot target must be a regular file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Snapshot target is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
+  file_require_materialized "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
   case "${_path##*/}" in
     *.[aA][eE][pP]) _ext=aep ;;
     *.[cC]4[dD]) _ext=c4d ;;
@@ -5031,6 +5057,7 @@ protect_require_snapshot() {
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Snapshot path must be absolute."; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Snapshot must be a regular file."; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Snapshot is not readable."; return 77; }
+  file_require_materialized "$_path" || return $?
   case "${_path##*/}" in *.[aA][eE][pP]|*.[cC]4[dD]) ;; *) set_error "INVALID_TARGET" "Snapshot must be an After Effects project (.aep) or a Cinema 4D scene (.c4d)."; return 65 ;; esac
   cap_available python3 || { set_error "UNSUPPORTED" "This operation requires python3."; return 69; }
   mj_require_local_existing_path "$_path" || return 73
@@ -5041,6 +5068,7 @@ protect_require_aep() {
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Project path must be absolute."; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Project must be a regular file."; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Project is not readable."; return 77; }
+  file_require_materialized "$_path" || return $?
   case "${_path##*/}" in *.[aA][eE][pP]) ;; *) set_error "INVALID_TARGET" "Project must be an After Effects project (.aep)."; return 65 ;; esac
   cap_available python3 || { set_error "UNSUPPORTED" "This operation requires python3."; return 69; }
   mj_require_local_existing_path "$_path" || return 73
@@ -7667,6 +7695,7 @@ aejob_require_inputs() {
   case "${_aep##*/}" in *.[aA][eE][pP]) ;; *) set_error "INVALID_TARGET" "Project must be an After Effects .aep file."; return 65 ;; esac
   [ -f "$_aep" ] || { set_error "NOT_FOUND" "Project not found."; return 66; }
   mj_require_local_existing_path "$_aep" || return 73
+  file_require_materialized "$_aep" || return $?
   project_require_scrape_file "$_scrape" || return $?
 }
 
@@ -8140,6 +8169,7 @@ host_render_args() {
   [ -f "$MJ_RENDER_SRC" ] && [ -r "$MJ_RENDER_SRC" ] || { set_error "INVALID_TARGET" "Scene/project must be a readable file."; return 65; }
   case "${MJ_RENDER_SRC##*/}" in *."$_ext") ;; *) set_error "INVALID_TARGET" "Expected a .$_ext file."; return 65 ;; esac
   mj_require_local_existing_path "$MJ_RENDER_SRC" || return 73
+  file_require_materialized "$MJ_RENDER_SRC" || return $?
   protect_require_output_dir "$MJ_RENDER_OUT" || return $?
   MJ_RENDER_OUT=$(canonical_existing_dir "$MJ_RENDER_OUT")
   request_arg_present range && MJ_RENDER_RANGE=$(request_arg_get range)

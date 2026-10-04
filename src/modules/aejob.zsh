@@ -308,6 +308,7 @@ aejob_require_inputs() {
   case "${_aep##*/}" in *.[aA][eE][pP]) ;; *) set_error "INVALID_TARGET" "Project must be an After Effects .aep file."; return 65 ;; esac
   [ -f "$_aep" ] || { set_error "NOT_FOUND" "Project not found."; return 66; }
   mj_require_local_existing_path "$_aep" || return 73
+  file_require_materialized "$_aep" || return $?
   project_require_scrape_file "$_scrape" || return $?
 }
 

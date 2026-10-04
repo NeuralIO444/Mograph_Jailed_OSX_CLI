@@ -10,6 +10,10 @@ set -u
 ROOT="${1:-}"; YES="${MJ_YES:-0}"; RC="${MJ_ZSHRC:-$HOME/.zshrc}"
 B="# >>> MographJailed (added by the installer; the uninstaller removes exactly this block) >>>"
 E="# <<< MographJailed <<<"
+block_state() {
+  [ -f "$1" ] || { /bin/echo none; return; }
+  /usr/bin/awk -v b="$B" -v e="$E" 'BEGIN{st=0;n=0;bad=0} $0==b{if(st==1)bad=1; st=1; n++; next} $0==e{if(st==0)bad=1; st=0; n++; next} END{if(bad||st==1)print "bad"; else if(n==0)print "none"; else print "ok"}' "$1"
+}
 say()  { /bin/echo ""; /bin/echo "$*"; }
 ok()   { /bin/echo "   ✓ $*"; }
 die()  { /bin/echo ""; /bin/echo "   ✗ $*"; /bin/echo ""; exit 1; }
@@ -19,7 +23,10 @@ ROOT="${ROOT%/}"
 [ -f "$ROOT/dist/mograph-jailed.zsh" ] || die "$ROOT does not look like a MographJailed install - nothing removed."
 
 say "Removing MographJailed from $ROOT"
-if [ -f "$RC" ] && /usr/bin/grep -qxF "$B" "$RC"; then
+if [ "$(block_state "$RC")" = bad ]; then
+  /bin/echo "   ! $RC has a MographJailed section that is incomplete (a start or end line is missing, out of order, or repeated)."
+  /bin/echo "     I left the file exactly as it is. Delete the lines that start with  # >>> MographJailed  or  # <<< MographJailed  by hand."
+elif [ "$(block_state "$RC")" = ok ]; then
   BK="$RC.mj-backup-$(/bin/date +%Y%m%d-%H%M%S)"; /bin/cp "$RC" "$BK" && ok "backed up $RC to $BK"
   T=$(/usr/bin/mktemp "${TMPDIR:-/tmp}/mj-zshrc.XXXXXX") && /usr/bin/awk -v b="$B" -v e="$E" '$0==b{skip=1;next} $0==e{skip=0;next} !skip{print}' "$RC" > "$T" && /bin/cat "$T" > "$RC" && /bin/rm -f "$T"
   ok "removed the MographJailed lines from $RC"

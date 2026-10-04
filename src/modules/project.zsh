@@ -502,6 +502,7 @@ handle_project_snapshot() {
   local _ts=""
   local _short=""
   local _dest=""
+  local _rc=0
   local _receipt=""
   local _bytes=""
   local _clone_used=false
@@ -518,6 +519,7 @@ handle_project_snapshot() {
   is_absolute_path "$_path" && is_absolute_path "$_outdir" || { set_error "INVALID_PATH" "Snapshot path and output directory must be absolute."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Snapshot target must be a regular file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Snapshot target is not readable."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 77; }
+  file_require_materialized "$_path" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
   case "${_path##*/}" in
     *.[aA][eE][pP]) _ext=aep ;;
     *.[cC]4[dD]) _ext=c4d ;;

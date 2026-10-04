@@ -298,6 +298,7 @@ host_render_args() {
   [ -f "$MJ_RENDER_SRC" ] && [ -r "$MJ_RENDER_SRC" ] || { set_error "INVALID_TARGET" "Scene/project must be a readable file."; return 65; }
   case "${MJ_RENDER_SRC##*/}" in *."$_ext") ;; *) set_error "INVALID_TARGET" "Expected a .$_ext file."; return 65 ;; esac
   mj_require_local_existing_path "$MJ_RENDER_SRC" || return 73
+  file_require_materialized "$MJ_RENDER_SRC" || return $?
   protect_require_output_dir "$MJ_RENDER_OUT" || return $?
   MJ_RENDER_OUT=$(canonical_existing_dir "$MJ_RENDER_OUT")
   request_arg_present range && MJ_RENDER_RANGE=$(request_arg_get range)

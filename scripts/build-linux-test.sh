@@ -60,6 +60,10 @@ for f in \
     printf '%s\n' 'functions -c cap_path _mj_cap_path_real; cap_path() { case "$1" in avmediainfo) [ -n "${MJ_TEST_AVMEDIAINFO:-}" ] && { printf "%s" "$MJ_TEST_AVMEDIAINFO"; return 0; } ;; afconvert) [ -n "${MJ_TEST_AFCONVERT:-}" ] && { printf "%s" "$MJ_TEST_AFCONVERT"; return 0; } ;; esac; _mj_cap_path_real "$1"; }' >> "$OUT"
     printf '%s\n' 'cap_available() { case " ${MJ_TEST_MISSING_CAPS:-} " in *" $1 "*) return 1 ;; esac; local _cap_path; _cap_path=$(cap_path "$1") || return 1; [ -x "$_cap_path" ]; }' >> "$OUT"
   fi
+  if [ "$f" = "src/modules/file.zsh" ]; then
+    # Test bundle only: MJ_TEST_DATALESS=<path> makes that one file look like an online-only cloud placeholder.
+    printf '%s\n' 'functions -c file_stat_flags _mj_file_stat_flags_real; file_stat_flags() { if [ -n "${MJ_TEST_DATALESS:-}" ] && [ "$1" = "$MJ_TEST_DATALESS" ]; then printf 1073741824; else _mj_file_stat_flags_real "$1"; fi; }' >> "$OUT"
+  fi
   if [ "$f" = "src/modules/project.zsh" ]; then
     printf '%s\n' 'PROJECT_OBSERVE_MAX_PLUGIN_FILE_BYTES="${MJ_TEST_PLUGIN_FILE_LIMIT:-2147483648}"' >> "$OUT"
     printf '%s\n' 'snapshot_test_hook() { [ -n "${MJ_TEST_SNAPSHOT_APPEND:-}" ] && printf x >> "$1"; [ -n "${MJ_TEST_SNAPSHOT_CORRUPT_COPY:-}" ] && printf x >> "$2"; return 0; }' >> "$OUT"

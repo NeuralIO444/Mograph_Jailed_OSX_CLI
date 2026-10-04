@@ -131,5 +131,32 @@ echo "# evil" >> "$REL2/payload/src/core/constants.zsh"
 MJ_YES=1 MOGRAPHJAILED_INSTALL_ROOT="$TMP/Forged" "$REL2/Install MographJailed.command" </dev/null > "$TMP/df.txt" 2>&1
 check test ! -e "$TMP/Forged"; check has "$TMP/df.txt" "signature on this download does not match"
 
+# ---- #34: a startup file with a broken MographJailed section is never edited (nothing the person wrote may be dropped)
+OPEN="# >>> MographJailed (added by the installer; the uninstaller removes exactly this block) >>>"; CLOSE="# <<< MographJailed <<<"
+shape(){ # shape <name> <file content>: install then uninstall must leave a malformed file byte-identical
+  local f="$TMP/rc_$1"; printf '%b' "$2" > "$f"; local before; before=$(shasum -a 256 "$f" | cut -d' ' -f1)
+  env MJ_YES=1 MJ_INSTALL_ZSHRC=1 MJ_ZSHRC="$f" zsh -f "$ROOT/tools/install-local.zsh" "$TMP/src" "$TMP/shape_$1" </dev/null > "$TMP/shape_$1.out" 2>&1
+  check test $? = 0
+  check test "$(shasum -a 256 "$f" | cut -d' ' -f1)" = "$before"
+  check has "$TMP/shape_$1.out" "incomplete"
+  check test -z "$(ls "$f".mj-backup-* 2>/dev/null)"                  # nothing was changed, so nothing needed backing up
+  env MJ_YES=1 MJ_ZSHRC="$f" zsh -f "$ROOT/tools/uninstall-local.zsh" "$TMP/shape_$1" > "$TMP/shape_$1.un" 2>&1
+  check test "$(shasum -a 256 "$f" | cut -d' ' -f1)" = "$before"
+  check has "$TMP/shape_$1.un" "incomplete"
+}
+shape only_open   "export A=1\n$OPEN\nexport MY_IMPORTANT_PATH=/work/bin\nalias ll='ls -l'\n"
+shape only_close  "export A=1\n$CLOSE\nexport KEEP=1\n"
+shape reversed    "export A=1\n$CLOSE\nexport KEEP=1\n$OPEN\n"
+shape nested      "$OPEN\nexport KEEP=1\n$OPEN\n$CLOSE\n"
+shape two_opens   "$OPEN\n$CLOSE\nexport KEEP=1\n$OPEN\n"
+# a complete block is still replaced, and duplicate complete blocks (an older buggy install) collapse into one
+printf 'export A=1\n%s\nold line\n%s\nexport B=2\n%s\nold again\n%s\n' "$OPEN" "$CLOSE" "$OPEN" "$CLOSE" > "$TMP/rc_dup"
+env MJ_YES=1 MJ_INSTALL_ZSHRC=1 MJ_ZSHRC="$TMP/rc_dup" zsh -f "$ROOT/tools/install-local.zsh" "$TMP/src" "$TMP/shape_dup" </dev/null > /dev/null 2>&1
+check test "$(grep -c '^# >>> MographJailed' "$TMP/rc_dup")" = 1; check has "$TMP/rc_dup" "export A=1"; check has "$TMP/rc_dup" "export B=2"; check test "$(grep -c 'old line\|old again' "$TMP/rc_dup")" = 0
+# a lookalike line is not a marker
+printf 'export A=1\n  %s\nexport KEEP=1\n' "$OPEN" > "$TMP/rc_look"
+env MJ_YES=1 MJ_INSTALL_ZSHRC=1 MJ_ZSHRC="$TMP/rc_look" zsh -f "$ROOT/tools/install-local.zsh" "$TMP/src" "$TMP/shape_look" </dev/null > /dev/null 2>&1
+check has "$TMP/rc_look" "export KEEP=1"; check test "$(grep -c '^# >>> MographJailed' "$TMP/rc_look")" = 1
+
 echo "Install tests: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

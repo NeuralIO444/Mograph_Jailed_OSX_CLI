@@ -70,6 +70,8 @@ Where the result was supposed to go. The source was not touched.
 
 | Code | Exit | What it means | What to do |
 |---|---|---|---|
+| `FILE_EMPTY` | 65 | A project or scene is 0 bytes. This is what a Dropbox or iCloud file looks like before it has downloaded. | Open it once or make it available offline, wait for the download, then try again. Nothing was saved. |
+| `FILE_NOT_DOWNLOADED` | 74 | The file is stored online only (macOS marks it "dataless"), so its bytes are not on this Mac. Reading it would start a download. | Make it available offline in Dropbox, iCloud or your sync app, wait for it to finish, then try again. |
 | `OUTPUT_EXISTS` | 73 | The destination already exists; MographJailed never overwrites. | Choose a different name or folder. |
 | `OUTPUT_UNAVAILABLE` | 73 | The output folder is missing, not writable, or on unsuitable storage. | Create it, fix its permissions, or use a local folder. |
 | `INSUFFICIENT_SPACE` | 74 | Not enough free disk space for the handoff. | Free space or pick another drive; the message gives the size needed. |

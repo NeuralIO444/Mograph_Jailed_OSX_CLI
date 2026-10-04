@@ -137,3 +137,26 @@ handle_file_hash() {
   printf '{"path":'; json_quote "$_path"; printf ',"algorithm":"SHA-256","hash":'; json_quote "$_hash"; printf ',"source":'; json_quote "$MJ_HASH_SOURCE"; printf ',"stabilityCheck":"device+inode+size+mtime"}'
   emit_success_end
 }
+
+# macOS file flags (st_flags). SF_DATALESS (0x40000000) marks a file whose bytes live in the cloud (Dropbox, iCloud,
+# OneDrive "online only"): reading it would download it, or hand back nothing. Prints 0 off macOS.
+file_stat_flags() {
+  if [ "$(/usr/bin/uname -s 2>/dev/null)" = "Darwin" ]; then /usr/bin/stat -f '%f' "$1" 2>/dev/null || printf '0'; else printf '0'; fi
+}
+
+# A project or scene must have its bytes on this Mac before anything hashes, copies or opens it. Looks at the file's
+# metadata only (never reads it, so it cannot start a download). Sets the error and returns 65 (empty) or 74 (cloud only).
+file_require_materialized() {
+  local _p="$1" _flags _size
+  _flags=$(file_stat_flags "$_p"); _flags=${_flags:-0}
+  if [ $(( _flags & 1073741824 )) -ne 0 ]; then
+    set_error "FILE_NOT_DOWNLOADED" "$(basename -- "$_p") is stored online only (Dropbox, iCloud or similar) and is not on this Mac yet. Make it available offline, wait for it to finish downloading, then try again."
+    return 74
+  fi
+  _size=$(file_stat_size "$_p"); _size=${_size:-0}
+  if [ "$_size" -le 0 ]; then
+    set_error "FILE_EMPTY" "$(basename -- "$_p") is empty (0 bytes). If it lives in Dropbox or iCloud it may not have downloaded yet: open it once, or make it available offline, then try again."
+    return 65
+  fi
+  return 0
+}

@@ -28,6 +28,13 @@ step() { /bin/echo ""; /bin/echo "── $*"; }
 ok()   { /bin/echo "   ✓ $*"; }
 warn() { /bin/echo "   ! $*"; }
 die()  { /bin/echo ""; /bin/echo "   ✗ $*"; /bin/echo ""; exit 1; }
+# State of the MographJailed block in a shell startup file: none (no markers), ok (complete, in order, never nested) or bad
+# (a lone opening or closing marker, reversed, or nested). Only "ok" blocks are ever removed; anything else is left alone.
+block_state() {
+  [ -f "$1" ] || { /bin/echo none; return; }
+  /usr/bin/awk -v b="$B" -v e="$E" 'BEGIN{st=0;n=0;bad=0} $0==b{if(st==1)bad=1; st=1; n++; next} $0==e{if(st==0)bad=1; st=0; n++; next} END{if(bad||st==1)print "bad"; else if(n==0)print "none"; else print "ok"}' "$1"
+}
+
 ask_yes() {   # ask_yes <question> <default y|n>
   local ans=""
   if [ "$YES" = 1 ]; then [ "$2" = y ]; return; fi
@@ -121,6 +128,15 @@ else
   /bin/echo "   To type  mj  in Terminal, one line is added to your Terminal startup file ($RC)."
   /bin/echo "   Your file is backed up first, and the uninstaller removes exactly that line."
   ask_yes "Add it?" y && WIRE=1
+fi
+if [ "$WIRE" = 1 ] && [ "$(block_state "$RC")" = bad ]; then
+  # Never edit a file we cannot read safely: removing "our" lines between a lone marker and the end of the file
+  # would delete the person's own settings.
+  WIRE=0
+  /bin/echo "   ! Your Terminal startup file ($RC) has a MographJailed section that is incomplete"
+  /bin/echo "     (a start or end line is missing, out of order, or repeated). I left that file exactly as it is."
+  /bin/echo "     To connect Terminal, delete any line that starts with  # >>> MographJailed  or  # <<< MographJailed,"
+  /bin/echo "     then run this installer again, or add the two lines below by hand."
 fi
 if [ "$WIRE" = 1 ]; then
   if [ -f "$RC" ]; then BK="$RC.mj-backup-$(/bin/date +%Y%m%d-%H%M%S)"; /bin/cp "$RC" "$BK" && ok "backed up $RC to $BK"; fi

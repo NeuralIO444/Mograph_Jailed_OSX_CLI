@@ -163,6 +163,7 @@ protect_require_snapshot() {
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Snapshot path must be absolute."; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Snapshot must be a regular file."; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Snapshot is not readable."; return 77; }
+  file_require_materialized "$_path" || return $?
   case "${_path##*/}" in *.[aA][eE][pP]|*.[cC]4[dD]) ;; *) set_error "INVALID_TARGET" "Snapshot must be an After Effects project (.aep) or a Cinema 4D scene (.c4d)."; return 65 ;; esac
   cap_available python3 || { set_error "UNSUPPORTED" "This operation requires python3."; return 69; }
   mj_require_local_existing_path "$_path" || return 73
@@ -173,6 +174,7 @@ protect_require_aep() {
   is_absolute_path "$_path" || { set_error "INVALID_PATH" "Project path must be absolute."; return 65; }
   [ -f "$_path" ] || { set_error "INVALID_TARGET" "Project must be a regular file."; return 65; }
   [ -r "$_path" ] || { set_error "PERMISSION_DENIED" "Project is not readable."; return 77; }
+  file_require_materialized "$_path" || return $?
   case "${_path##*/}" in *.[aA][eE][pP]) ;; *) set_error "INVALID_TARGET" "Project must be an After Effects project (.aep)."; return 65 ;; esac
   cap_available python3 || { set_error "UNSUPPORTED" "This operation requires python3."; return 69; }
   mj_require_local_existing_path "$_path" || return 73
