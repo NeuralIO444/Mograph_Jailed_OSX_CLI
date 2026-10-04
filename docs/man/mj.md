@@ -33,7 +33,7 @@ mj watch on|off|status           automatic versioning of your .aep files
 mj doctor                        is this Mac ready? what is missing, and what to do
 ```
 
-`last` means the newest scrape receipt in your receipts folder (or, for `mj explain`, the newest render).
+`last` means the newest project report in your reports folder (or, for `mj explain`, the newest render).
 
 ## Batches
 

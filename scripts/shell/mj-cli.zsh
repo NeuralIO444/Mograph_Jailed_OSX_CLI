@@ -113,7 +113,13 @@ _mj_newest() { local d="$1" pat="$2" f; local -a m; m=("$d"/${~pat}(.Nom[1])); [
 
 _mj_need_dir() {   # _mj_need_dir <config key> <what>  -> prints the folder, or explains how to set it
     local d; d=$(mj_config_get "$1")
-    [ -d "$d" ] || { print -u2 "mj: your $2 folder was not found${d:+: $d}"; print -u2 "  Set it once:  mj config set $1 <folder>"; return 66; }
+    [ -d "$d" ] || {
+        # The first answer to "a folder is missing" is always the same one command; the power-user way comes second.
+        print -u2 "mj: this is not set up yet. Run:  mj setup"
+        print -u2 "  (it chooses your folders and takes about a minute. The $2 folder was not found${d:+: $d})"
+        print -u2 "  To set just this one by hand:  mj config set $1 <folder>"
+        return 66
+    }
     print -r -- "$d"
 }
 
@@ -133,8 +139,13 @@ _mj_resolve_project() {
         if [ ${#hits} -eq 1 ]; then print -r -- "${hits[1]}"; return 0; fi
         if [ ${#hits} -gt 1 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; printf '  %s\n' "${hits[@]}" >&2; return 65; fi
     fi
-    print -u2 "mj: no project found for \"$arg\""
-    [ -d "$w" ] || print -u2 "  To search by name, set your projects folder once:  mj config set watch_dir <folder>"
+    if [ -d "$w" ]; then
+        print -u2 "mj: no project found for \"$arg\" in $w"
+    else
+        print -u2 "mj: this is not set up yet. Run:  mj setup"
+        print -u2 "  (to find \"$arg\" by name it needs to know where your projects are; or give the full path to the file)"
+        print -u2 "  To set just this one by hand:  mj config set watch_dir <folder>"
+    fi
     return 66
 }
 
@@ -142,9 +153,9 @@ _mj_resolve_project() {
 _mj_resolve_c4d() {
     local arg="${1:-last}" d f
     if [ "$arg" = last ]; then
-        d=$(_mj_need_dir receipts_dir receipts) || return $?
+        d=$(_mj_need_dir receipts_dir reports) || return $?
         f=$(_mj_newest "$d" '*.c4dscrape.json')
-        [ -n "$f" ] || { print -u2 "mj: no Cinema 4D scene receipts in $d yet (run integrations/cinema4d/MographJailed_C4DScraper.py under c4dpy)"; return 66; }
+        [ -n "$f" ] || { print -u2 "mj: no Cinema 4D scene reports in $d yet. Make one by running integrations/cinema4d/MographJailed_C4DScraper.py under c4dpy."; return 66; }
         print -r -- "$f"
     elif [ -f "$arg" ]; then print -r -- "${arg:A}"
     else print -u2 "mj: no such receipt: $arg"; return 66; fi
@@ -154,9 +165,9 @@ _mj_resolve_c4d() {
 _mj_resolve_scrape() {
     local arg="${1:-last}" d f
     if [ "$arg" = last ]; then
-        d=$(_mj_need_dir receipts_dir receipts) || return $?
+        d=$(_mj_need_dir receipts_dir reports) || return $?
         f=$(_mj_newest "$d" '*.scrape.json')
-        [ -n "$f" ] || { print -u2 "mj: no scrape receipts in $d yet (run the After Effects scraper first)"; return 66; }
+        [ -n "$f" ] || { print -u2 "mj: there are no project reports in $d yet."; print -u2 "  In After Effects run the MographJailed script on a project (File > Scripts > Run Script File). To see which file:  mj scraper"; return 66; }
         print -r -- "$f"
     elif [ -f "$arg" ]; then print -r -- "${arg:A}"
     else print -u2 "mj: no such receipt: $arg"; return 66; fi
@@ -168,22 +179,22 @@ _mj_find() { /usr/bin/python3 "$_MJ_CLI_DIR/../terminal/mj_find.py" "$@"; }
 _mj_scrape_for() {
     local arg="${1:-last}" d f rc
     if [ "$arg" = last ] || [ -f "$arg" ]; then _mj_resolve_scrape "$arg"; return; fi
-    d=$(_mj_need_dir receipts_dir receipts) || return $?
+    d=$(_mj_need_dir receipts_dir reports) || return $?
     f=$(_mj_find "$d" name "$arg" 1 2>"${TMPDIR:-/tmp}/mj-find.$$"); rc=$?
     if [ $rc -eq 0 ]; then /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; print -r -- "$f"; return 0; fi
     if [ $rc -eq 65 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; /bin/cat "${TMPDIR:-/tmp}/mj-find.$$" >&2; /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; return 65; fi
     /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"
     print -u2 "mj: no project report for \"$arg\" in $d yet."
-    print -u2 "  In After Effects run the MographJailed scraper on it first (File > Scripts > Run Script File)."
+    print -u2 "  In After Effects run the MographJailed script on it first (File > Scripts > Run Script File)."
     return 66
 }
 
 # The newest report made from exactly this .aep (full path), so two clients' Main.aep never get mixed up.
 _mj_scrape_for_aep() {
-    local d f; d=$(_mj_need_dir receipts_dir receipts) || return $?
+    local d f; d=$(_mj_need_dir receipts_dir reports) || return $?
     f=$(_mj_find "$d" path "$1" 1 2>/dev/null) && { print -r -- "$f"; return 0; }
     print -u2 "mj: there is no project report for $1 yet."
-    print -u2 "  In After Effects, open it and run the MographJailed scraper (File > Scripts > Run Script File), then try again."
+    print -u2 "  In After Effects, open it and run the MographJailed script (File > Scripts > Run Script File), then try again."
     return 66
 }
 
@@ -262,7 +273,7 @@ _mj_watch() {
     local tools="$_MJ_CLI_DIR/../../tools" w v label="com.neuralio.mograph-jailed.watcher"
     case "${1:-status}" in
         on)
-            w=$(_mj_need_dir watch_dir "projects (watch)") || return $?
+            w=$(_mj_need_dir watch_dir projects) || return $?
             v=$(mj_config_get versions_dir); [ -n "$v" ] || { print -u2 "mj: set a versions folder first:  mj config set versions_dir <folder>"; return 66; }
             /bin/zsh -f "$tools/watch-install.zsh" --yes "$w" "$v" ;;
         off) /bin/zsh -f "$tools/watch-uninstall.zsh" --yes ;;
@@ -581,10 +592,10 @@ USAGE
             shift
             local da db
             if [ "${1:-last}" = last ] && [ -z "${2:-}" ]; then
-                local rd; rd=$(_mj_need_dir receipts_dir receipts) || return $?
+                local rd; rd=$(_mj_need_dir receipts_dir reports) || return $?
                 # The newest scrape, and the newest earlier scrape of the SAME project.
                 local -a all; all=("$rd"/*.scrape.json(.Nom)); local pp cand
-                [ ${#all} -ge 1 ] || { print -u2 "mj: no scrape receipts in $rd yet"; return 66; }
+                [ ${#all} -ge 1 ] || { print -u2 "mj: there are no project reports in $rd yet. To make one:  mj scraper"; return 66; }
                 db="${all[1]}"; pp=$(/usr/bin/jq -r '.projectPath // empty' "$db" 2>/dev/null); da=""
                 for cand in "${all[@]:1}"; do
                     [ "$(/usr/bin/jq -r '.projectPath // empty' "$cand" 2>/dev/null)" = "$pp" ] && { da="$cand"; break; }
@@ -702,7 +713,7 @@ USAGE
             [ -n "${1:-}" ] || { print -u2 "usage: mj timeline <project name> [--all]"; return 64; }
             local td tn tf prev="" i=0 max=10 vd tstem tname trd tout; local -a trs
             [ "${2:-}" = --all ] && max=50
-            trd=$(_mj_need_dir receipts_dir receipts) || return $?
+            trd=$(_mj_need_dir receipts_dir reports) || return $?
             tout=$(_mj_find "$trd" name "$1" $max 2>"${TMPDIR:-/tmp}/mj-find.$$"); i=$?
             if [ $i -eq 65 ]; then print -u2 "mj: \"$1\" matches more than one project; be more specific:"; /bin/cat "${TMPDIR:-/tmp}/mj-find.$$" >&2; /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; return 65; fi
             /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"
