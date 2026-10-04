@@ -156,7 +156,7 @@ is_safe_request_id() {
 
 is_safe_command_name() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|package.create|report.tech) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|package.create|report.tech|dimension.probe|dimension.safezone|dimension.conform) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -452,6 +452,18 @@ request_schema_for() {
     project.jobcheck)
       MJ_SCHEMA_ALLOWED=" path "
       MJ_SCHEMA_REQUIRED=" path "
+      ;;
+    dimension.probe)
+      MJ_SCHEMA_ALLOWED=""
+      MJ_SCHEMA_REQUIRED=""
+      ;;
+    dimension.safezone)
+      MJ_SCHEMA_ALLOWED=" spec "
+      MJ_SCHEMA_REQUIRED=" spec "
+      ;;
+    dimension.conform)
+      MJ_SCHEMA_ALLOWED=" path spec "
+      MJ_SCHEMA_REQUIRED=" path spec "
       ;;
     *) return 1 ;;
   esac
@@ -858,7 +870,7 @@ operation_names() {
 
 operation_known() {
   case "$1" in
-    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|report.tech|package.create) return 0 ;;
+    system.probe|system.doctor|system.describe|runtime.verify|file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|temp.create|temp.clean|media.inspect|media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|cache.inspect|cache.clean|media.qc|project.extract|project.conform|project.jobcheck|report.tech|package.create|dimension.probe|dimension.safezone|dimension.conform) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1032,6 +1044,9 @@ operation_summary() {
     project.jobcheck) printf '%s' 'Did an After Effects job run, save its result, and leave the original untouched?' ;;
     report.tech) printf 'Native diagnostic receipt for support.' ;;
     package.create) printf 'Zip a file or folder with ditto; never overwrites.' ;;
+    dimension.probe) printf 'Is the Dimension CLI installed and answering --json?' ;;
+    dimension.safezone) printf 'Dimension safe-zone plan for one preset id (spec).' ;;
+    dimension.conform) printf 'Dimension conform of a manifest (path) to a preset (spec).' ;;
     *) printf '' ;;
   esac
 }
@@ -1139,7 +1154,7 @@ operation_interactive_safe() {
 
 operation_network_sensitive() {
   case "$1" in
-    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc|project.extract|project.conform|project.jobcheck) return 0 ;;
+    file.inspect|file.hash|file.provenance|asset.manifest|asset.verify|search.candidate|image.inspect|image.derivative|image.stats|image.compare|storage.preflight|volume.inspect|media.inspect|media.timing|media.frame|package.create|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc|project.extract|project.conform|project.jobcheck|dimension.probe|dimension.safezone|dimension.conform) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1214,7 +1229,7 @@ emit_operation_descriptor() {
   printf ',"authority":'; json_quote "$(operation_authority "$_name")"
   printf ',"interactiveSafe":'; $_interactive && printf 'true' || printf 'false'
   printf ',"networkSensitive":'; $_network && printf 'true' || printf 'false'
-  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc|project.extract|project.conform|project.jobcheck) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
+  printf ',"executionScope":'; case "$_name" in media.timing|media.frame|project.ingest|expression.lint|plugin.audit|project.snapshot|loop.seams|golden.record|golden.check|audit.verify|project.restore|deps.graph|handoff.package|index.add|index.search|index.verify|preset.add|preset.get|host.detect|ae.render|c4d.render|trace.asset|audit.plugins|project.diff|project.health|c4d.inspect|c4d.lint|bridge.check|project.preflight|media.qc|project.extract|project.conform|project.jobcheck|dimension.probe|dimension.safezone|dimension.conform) json_quote "LOCAL_ONLY" ;; *) json_quote "EXPLICIT_PATH_OR_NONE" ;; esac
   printf ',"requires":'; emit_operation_requires "$_name"
   printf ',"optionalCapabilities":'; operation_optional_capabilities "$_name" | emit_string_array_lines
   request_schema_for "$_name"
@@ -8406,6 +8421,101 @@ PY_C4D_RENDER
   frames_emit_python_result "$_out"
 }
 
+# --- src/modules/dimension.zsh ---
+# Dimension_CLI prong. Allowlisted subprocess only.
+# MJ does not grow a shell. These three commands exec `dimension` with a
+# fixed argv. Preset ids are a closed character class. Paths are existing
+# local files. stdout must be one JSON document (dimension --json).
+
+dimension_bin() {
+  if [ -n "${MJ_DIMENSION_BIN:-}" ] && [ -x "$MJ_DIMENSION_BIN" ]; then
+    printf '%s' "$MJ_DIMENSION_BIN"
+    return 0
+  fi
+  command -v dimension 2>/dev/null
+}
+
+dimension_preset_ok() {
+  case "$1" in
+    ""|*[!A-Za-z0-9_:-]*) return 1 ;;
+    *) [ ${#1} -le 128 ] ;;
+  esac
+}
+
+# dimension_exec <outvar> -- dimension-args...
+dimension_exec() {
+  local _outvar="$1"
+  shift
+  local _bin="" _stdout="" _stderr="" _rc=0
+  _bin=$(dimension_bin) || {
+    set_error "UNSUPPORTED" "dimension is not on PATH. Set MJ_DIMENSION_BIN or install dimension-cli."
+    return 69
+  }
+  _stdout=$(mktemp "${TMPDIR:-/tmp}/mj-dimension.XXXXXX") || {
+    set_error "INTERNAL" "Could not stage dimension stdout."
+    return 1
+  }
+  _stderr=$(mktemp "${TMPDIR:-/tmp}/mj-dimension.XXXXXX") || {
+    /bin/rm -f "$_stdout"
+    set_error "INTERNAL" "Could not stage dimension stderr."
+    return 1
+  }
+  "$_bin" "$@" >"$_stdout" 2>"$_stderr"
+  _rc=$?
+  if [ "$_rc" -ne 0 ]; then
+    set_error "DIMENSION_FAILED" "dimension exited ${_rc}. stderr was kept off the response."
+    /bin/rm -f "$_stdout" "$_stderr"
+    return 1
+  fi
+  if ! /usr/bin/python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$_stdout" 2>/dev/null; then
+    set_error "DIMENSION_RESULT_INVALID" "dimension did not return one JSON document."
+    /bin/rm -f "$_stdout" "$_stderr"
+    return 1
+  fi
+  eval "$_outvar=\$_stdout"
+  /bin/rm -f "$_stderr"
+  return 0
+}
+
+handle_dimension_probe() {
+  local _stdout="" _rc=0
+  dimension_exec _stdout --json catalog profiles || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+  /usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps({"engine":"dimension","reachable":True,"result":d},separators=(",",":")))' "$_stdout"
+  emit_success_end
+  /bin/rm -f "$_stdout"
+  return 0
+}
+
+handle_dimension_safezone() {
+  local _preset="" _stdout="" _rc=0
+  require_arg spec || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _preset="$MJ_REQUIRED_ARG_VALUE"
+  dimension_preset_ok "$_preset" || { set_error "INVALID_ARGUMENT" "spec must be a preset id (letters, digits, underscore, colon, hyphen)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  dimension_exec _stdout --json safe-zone plan --preset "$_preset" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+  /usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps({"engine":"dimension","op":"safe-zone","preset":sys.argv[2],"result":d},separators=(",",":")))' "$_stdout" "$_preset"
+  emit_success_end
+  /bin/rm -f "$_stdout"
+  return 0
+}
+
+handle_dimension_conform() {
+  local _path="" _preset="" _stdout="" _rc=0
+  require_arg path || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _path="$MJ_REQUIRED_ARG_VALUE"
+  require_arg spec || { emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  _preset="$MJ_REQUIRED_ARG_VALUE"
+  dimension_preset_ok "$_preset" || { set_error "INVALID_ARGUMENT" "spec must be a preset id (letters, digits, underscore, colon, hyphen)."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  [ -f "$_path" ] || { set_error "INVALID_TARGET" "path must be an existing manifest file."; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return 65; }
+  dimension_exec _stdout --json conform --source "$_path" --preset "$_preset" || { _rc=$?; emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"; return $_rc; }
+  emit_success_start "$REQUEST_COMMAND" "$REQUEST_ID"
+  /usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps({"engine":"dimension","op":"conform","preset":sys.argv[2],"result":d},separators=(",",":")))' "$_stdout" "$_preset"
+  emit_success_end
+  /bin/rm -f "$_stdout"
+  return 0
+}
+
 # --- src/cli/entry.zsh ---
 MJ_STDIN_REQ=""
 MJ_STDIN_HEAD_PID=""
@@ -8538,6 +8648,9 @@ dispatch_request() {
     project.preflight) handle_project_preflight ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
+    dimension.probe) handle_dimension_probe ;;
+    dimension.safezone) handle_dimension_safezone ;;
+    dimension.conform) handle_dimension_conform ;;
     *)
       set_error "NOT_IMPLEMENTED" "Command is recognized by protocol but not implemented in this build."
       emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"

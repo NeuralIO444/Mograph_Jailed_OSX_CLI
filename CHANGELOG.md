@@ -1,3 +1,8 @@
+
+## Unreleased
+
+- Dimension prong in the production bundle: `dimension.probe`, `dimension.safezone`, `dimension.conform` call Dimension_CLI 1.0.0 (`dimension --json`). `project.conform` is unchanged.
+
 # Changelog
 
 ## 0.4.0-dev.3 — 2026-10-02

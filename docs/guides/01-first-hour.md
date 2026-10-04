@@ -16,7 +16,7 @@ $ mj setup
 
 ```text
 $ mj doctor
-This Mac is ready. All 56 operations can run.
+This Mac is ready. All 59 operations can run.
 ```
 
 If something is missing, `mj doctor` says what and how to fix it.
