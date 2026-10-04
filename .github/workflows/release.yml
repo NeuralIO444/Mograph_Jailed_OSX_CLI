@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*", "[0-9]*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the release zip
+        env:
+          MJ_RELEASE_KEY: ${{ secrets.MJ_RELEASE_KEY }}
+        run: |
+          if [ -n "$MJ_RELEASE_KEY" ]; then
+            printf '%s\n' "$MJ_RELEASE_KEY" > "$RUNNER_TEMP/mj_release"
+            chmod 600 "$RUNNER_TEMP/mj_release"
+            export MJ_RELEASE_KEY="$RUNNER_TEMP/mj_release"
+          else
+            echo "MJ_RELEASE_KEY not set; shipping an unsigned zip"
+            unset MJ_RELEASE_KEY
+          fi
+          sh scripts/build.zsh
+          sh scripts/make-release.sh release
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          zip=$(echo release/MographJailed-*.zip)
+          pre=""
+          case "$GITHUB_REF_NAME" in
+            *dev*|*alpha*|*beta*|*rc*) pre="--prerelease" ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" "$zip" \
+            --title "MographJailed $GITHUB_REF_NAME" \
+            $pre \
+            --notes "Zero-install toolkit. \`mj\` is the launch screen. \`mj-man\` is the local help.
+
+The zip is Install/Uninstall plus payload/. Signing is included only when the MJ_RELEASE_KEY secret is set.
+
+Dimension prong calls Dimension_CLI v1.0.0: dimension.probe, dimension.safezone, dimension.conform."
