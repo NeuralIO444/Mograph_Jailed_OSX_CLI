@@ -506,7 +506,51 @@ m = difflib.get_close_matches(w, c, n=1, cutoff=0.6)
 print(m[0] if m else "")' "$word" "$cands"
 }
 
+# Text pasted from a chat app, a web page or a word processor arrives with typographic characters the shell does not
+# understand: “curly quotes” split a name into two words, an em dash (—apply) is not the two hyphens (--apply),
+# and a non-breaking space glues two words into one. Repair the arguments before anything else looks at them.
+# Sets `reply`; returns 64 (with a plain message) when a curly quote is opened and never closed.
+_mj_fix_pasted() {
+    setopt localoptions extendedglob
+    reply=()
+    local -a in; in=("$@")
+    local n=${#in} i=1 a prefix rest text closer
+    while (( i <= n )); do
+        a="${in[i]}"
+        a="${a//$'\xe2\x80\x8b'/}"                                          # zero-width space
+        [[ "$a" == *$'\xc2\xa0'* && ! -e "$a" ]] && a="${a//$'\xc2\xa0'/ }"       # non-breaking space -> space (unless it really is that file name)
+        if [[ "$a" == (—|–)[A-Za-z]* ]]; then a="--${a#(—|–)}"; fi             # em / en dash in front of a word: a long option
+        prefix=""; rest="$a"
+        if [[ "$a" == (#b)([A-Za-z_]##=)(*) ]]; then prefix="${match[1]}"; rest="${match[2]}"; fi
+        closer=""
+        case "$rest" in
+            (“|„|«)*) closer="(”|“|\"|»)" ;;
+            (‘|‚)*)   closer="(’|‘|\x27)" ;;
+        esac
+        if [[ -n "$closer" ]]; then
+            rest="${rest#(“|„|«|‘|‚)}"
+            text="$rest"
+            while true; do
+                if [[ "$text" == (#b)(*)(”|“|\"|»|’|\')  ]]; then text="${match[1]}"; break; fi
+                (( i++ ))
+                if (( i > n )); then
+                    print -u2 "mj: I see an opening curly quote (like “ or ‘) but not its other half."
+                    print -u2 "  These come from chat apps and web pages. Retype the quotes with the normal quote key (\") and try again."
+                    return 64
+                fi
+                text="$text ${in[i]//$'\xe2\x80\x8b'/}"
+            done
+            a="$prefix$text"
+        fi
+        reply+=("$a")
+        (( i++ ))
+    done
+}
+
 mj() {
+    local -a reply
+    _mj_fix_pasted "$@" || return $?
+    set -- "${reply[@]}"
     case "${1:-}" in
         ""|home)
             _mj_ui home
