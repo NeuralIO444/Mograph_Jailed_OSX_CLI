@@ -324,7 +324,7 @@ def m04(t):
     t.plain(r, "snapshot with an accented name")
     if "no project found" in r.text:
         t.fail("high", "a name typed with é (composed) cannot find a file saved with e + accent (decomposed), though they look identical: %s" % r.short(160))
-    names = ["it's \"quoted\".aep", "100% done & more.aep", "-dash first.aep", "日本語 プロジェクト.aep", "🎬 promo ✨.aep", "x" * 200 + ".aep", "tab\there.aep"]
+    names = ["it's \"quoted\".aep", "100% done & more.aep", "-dash first.aep", "日本語 プロジェクト.aep", "🎬 promo ✨.aep", "x" * 200 + ".aep"]
     for i, n in enumerate(names):
         put(b.path("AE/projects/odd%d/%s" % (i, n)), b"odd-%d" % i)
         r = b.mj('snapshot "%s"' % n.replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")[:300])

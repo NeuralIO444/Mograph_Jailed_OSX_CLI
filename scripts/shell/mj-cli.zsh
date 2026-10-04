@@ -123,23 +123,16 @@ _mj_need_dir() {   # _mj_need_dir <config key> <what>  -> prints the folder, or 
     print -r -- "$d"
 }
 
-# A project given by path or by name (searched under watch_dir). Prints one .aep path.
+# A project given by path or by name (searched under watch_dir). Prints one project path.
+# Names are compared as composed Unicode ignoring case (a typed "Café" finds a file macOS stored as e + accent).
 _mj_resolve_project() {
-    setopt localoptions extendedglob
-    local arg="$1" w stem pat h; local -a hits exact
+    local arg="$1" w out rc
     if [ -f "$arg" ]; then print -r -- "${arg:A}"; return 0; fi
     w=$(mj_config_get watch_dir)
     if [ -d "$w" ]; then
-        stem="${arg%.[aA][eE][pP]}"; stem="${stem%.[cC]4[dD]}"
-        pat="${stem//(#m)[\[\]*?\\]/\\$MATCH}"           # what you type is a name, never a wildcard
-        hits=("${(@f)$(/usr/bin/find "$w" -maxdepth 3 -type f \( -iname "${pat}*.aep" -o -iname "${pat}*.c4d" \) 2>/dev/null | /usr/bin/sort)}")
-        hits=(${hits:#})
-        for h in $hits; do [[ "${(L)${h:t:r}}" == "${(L)stem}" ]] && exact+=("$h"); done
-        if [ ${#exact} -eq 1 ]; then print -r -- "${exact[1]}"; return 0; fi     # an exact name wins over longer names that start with it
-        if [ ${#hits} -eq 1 ]; then print -r -- "${hits[1]}"; return 0; fi
-        if [ ${#hits} -gt 1 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; printf '  %s\n' "${hits[@]}" >&2; return 65; fi
-    fi
-    if [ -d "$w" ]; then
+        out=$(_mj_find "$w" proj "$arg"); rc=$?
+        if [ $rc -eq 0 ]; then print -r -- "$out"; return 0; fi
+        if [ $rc -eq 65 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; print -r -- "$out" | /usr/bin/sed 's/^/  /' >&2; return 65; fi
         print -u2 "mj: no project found for \"$arg\" in $w"
     else
         print -u2 "mj: this is not set up yet. Run:  mj setup"
@@ -201,13 +194,13 @@ _mj_scrape_for_aep() {
 # Comp names (from the project's newest scrape) to comp ids: "12,40". Exact names; a name used by two
 # comps is refused (the scrape cannot tell them apart by name; pass the id with #12 instead).
 _mj_comp_ids() {
-    local scrape="$1" name id; shift; local -a ids
+    local scrape="$1" name id rc; shift; local -a ids
     for name in "$@"; do
         if [[ "$name" == \#<-> ]]; then ids+=("${name#\#}"); continue; fi
-        id=$(/usr/bin/jq -r --arg n "$name" '[.comps[] | select(.name == $n) | .id] | if length == 1 then .[0] elif length == 0 then "none" else "many" end' "$scrape")
-        case "$id" in
-            none) print -u2 "mj: no comp named \"$name\" in $(/usr/bin/jq -r .projectName "$scrape")"; print -u2 "  comps: $(/usr/bin/jq -r '[.comps[].name] | join(", ")' "$scrape")"; return 66 ;;
-            many) print -u2 "mj: more than one comp is named \"$name\"; give its id instead: $(/usr/bin/jq -r --arg n "$name" '[.comps[] | select(.name == $n) | "#\(.id)"] | join(" ")' "$scrape")"; return 65 ;;
+        id=$(_mj_find "$scrape" comp "$name"); rc=$?
+        case $rc in
+            66) print -u2 "mj: no comp named \"$name\" in $(/usr/bin/jq -r .projectName "$scrape")"; print -u2 "  comps: ${(j:, :)${(f)id}}"; return 66 ;;
+            65) print -u2 "mj: more than one comp is named \"$name\"; give its id instead: ${(j: :)${(f)id}}"; return 65 ;;
         esac
         ids+=("$id")
     done
@@ -250,21 +243,17 @@ _mj_say() {   # run an operation, print it in plain language, return its exit co
 }
 
 _mj_versions() {
-    local d name f when size stem ts; local -a rows
+    local d name f when size stem ts hash line hsize; local -a rows
     d=$(_mj_need_dir versions_dir versions) || return $?
     name="${1:-}"
-    for f in "$d"/*.(aep|c4d)(.Nom); do
-        [[ "${f:t}" =~ '^(.*)\.([0-9]{8}T[0-9]{6}Z)\.([0-9a-f]{12})\.(aep|c4d)$' ]] || continue
-        stem="${match[1]}"; ts="${match[2]}"
-        [ "${match[4]}" = c4d ] && stem="$stem.c4d"
-        [ -z "$name" ] || [[ "${(L)stem}" == *"${(L)name}"* ]] || continue
-        zmodload -F zsh/stat b:zstat 2>/dev/null
+    zmodload -F zsh/stat b:zstat 2>/dev/null
+    while IFS=$'\t' read -r f stem ts hash; do
+        [ -n "$f" ] || continue
         zstat -A when -F '%Y-%m-%d %H:%M' +mtime -- "$f"; zstat -A size +size -- "$f"
-        local hsize
         if (( ${size[1]} >= 1048576 )); then hsize=$(printf '%.1f MB' $(( ${size[1]} / 1048576.0 )));
         elif (( ${size[1]} >= 1024 )); then hsize=$(printf '%d KB' $(( ${size[1]} / 1024 ))); else hsize="${size[1]} bytes"; fi
-        rows+=("$(printf '%-28s %s   %10s   %s' "$stem" "${when[1]}" "$hsize" "${match[3]}")")
-    done
+        rows+=("$(printf '%-28s %s   %10s   %s' "$stem" "${when[1]}" "$hsize" "$hash")")
+    done < <(_mj_find "$d" versions "$name")
     [ ${#rows} -gt 0 ] || { print "No versions${name:+ matching \"$name\"} in $d yet."; return 0; }
     print "Versions in $d (newest first):"; printf '  %s\n' "${rows[@]}"
 }
@@ -731,7 +720,7 @@ USAGE
             done
             wait
             if [ -d "$vd" ]; then
-                local sf sb; for sf in "$vd"/*.(aep|c4d)(.N); do sb=${${sf:t}%.<->T<->Z.*}; [[ "${(L)sb}" == "$tstem" ]] && print -r -- "$sf"; done > "$td/snapshots.txt"
+                _mj_find "$vd" versions "${tname%.[aA][eE][pP]}" exact | /usr/bin/cut -f1 > "$td/snapshots.txt"
             fi
             _mj_explain --timeline "$td"; i=$?
             /bin/rm -rf "$td"
