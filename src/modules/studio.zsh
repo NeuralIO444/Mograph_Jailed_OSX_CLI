@@ -128,7 +128,7 @@ PY_FONTS_LIB
 studio_python() {
   local _main=""
   IFS= read -r -d '' _main || true
-  printf '%s\n%s\n%s' "$MJ_PY_PROTECT_LIB" "$MJ_PY_FONTS" "$_main" | /usr/bin/python3 - 2>/dev/null
+  printf '%s\n%s\n%s\n%s' "$MJ_PY_PROTECT_LIB" "$MJ_PY_STALE" "$MJ_PY_FONTS" "$_main" | /usr/bin/python3 - 2>/dev/null
 }
 
 handle_project_preflight() {
@@ -201,14 +201,15 @@ third = sorted(fx.values(), key=lambda r: r["matchName"])
 
 bad_fonts = [f for f in fonts if f["state"] != "installed"]
 problems = len(bad_fonts) + len(footage)
-warnings = []
+stale = report_staleness(d)
+warnings = stale_warning(d)
 if ae_missing is None:
     warnings.append({"code": "FONT_REPORT_UNAVAILABLE", "message": "This scrape has no After Effects missing-font report (scraper older than 1.1 or After Effects older than 24.0); font status comes from scanning this Mac's font folders only."})
 if capped:
     warnings.append({"code": "FONT_SCAN_CAPPED", "message": "Stopped after %d font files; some installed fonts may not have been seen." % FONT_MAX_FILES})
 print(json.dumps({"ok": True, "data": {
     "schema": "MJ_PREFLIGHT_1", "projectName": d.get("projectName"), "projectPath": d.get("projectPath"), "scrapedAt": d.get("scrapedAt"),
-    "ready": problems == 0, "problems": problems,
+    "ready": problems == 0 and not stale, "problems": problems, "reportStale": stale,
     "fonts": fonts, "fontsMissing": len(bad_fonts),
     "fontScan": {"dirs": scanned, "files": nfiles, "names": len(installed)},
     "footage": footage, "footageMissing": len(footage),

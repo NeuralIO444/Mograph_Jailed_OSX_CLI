@@ -175,7 +175,7 @@ def comp(cid, name, layers, **kw):
 
 
 def scrape(path, comps, footage=(), fonts=(), **kw):
-    d = {"schema": "MJ_PROJECT_SCRAPE_1", "scraperVersion": "1.1", "projectPath": path, "projectName": os.path.basename(path), "scrapedAt": "2026-10-02T10:00:00Z",
+    d = {"schema": "MJ_PROJECT_SCRAPE_1", "scraperVersion": "1.1", "projectPath": path, "projectName": os.path.basename(path), "scrapedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
          "aeVersion": "26.5.0", "numItems": len(comps) + len(footage), "fonts": list(fonts), "missingFonts": [], "comps": list(comps), "footage": list(footage)}
     d.update(kw); return d
 

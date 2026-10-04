@@ -9,6 +9,8 @@ root = sys.argv[1]
 def mk(p, data=b""):
     os.makedirs(os.path.dirname(p), exist_ok=True)
     open(p, "wb").write(data)
+    if p.endswith((".aep", ".c4d")):
+        os.utime(p, (1790000000, 1790000000))      # saved on 2026-09-21, i.e. before the reports below were made, as in real life
 
 mk(root + "/projects/Spring Promo/Spring Promo.aep", b"spring-promo-v1")
 mk(root + "/projects/Summer Sale/Summer Sale.aep", b"summer-sale")

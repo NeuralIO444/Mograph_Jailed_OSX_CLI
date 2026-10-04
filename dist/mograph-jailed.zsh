@@ -3852,6 +3852,36 @@ handle_package_create() {
 # plugin.audit     — enumerate and hash an After Effects Plug-ins directory
 # project.snapshot — hash + versioned copy of an .aep or .c4d (time-machine primitive)
 
+# Is the report older than the project it describes? Needs only the report and the project file's modification time.
+# Returns None when the report is current or cannot be compared (no path, file gone, unreadable date).
+IFS= read -r -d '' MJ_PY_STALE <<'PY_STALE_LIB' || true
+def report_staleness(doc, slack=2):
+    import calendar
+    pp = doc.get("projectPath") or ""
+    sc = str(doc.get("scrapedAt", ""))
+    if not isinstance(pp, str) or not pp or not os.path.isfile(pp):
+        return None
+    try:
+        parsed = time.strptime(sc[:19], "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return None
+    made = calendar.timegm(parsed) if sc.endswith("Z") else time.mktime(parsed)     # a bare timestamp is the scraping machine's local time
+    try:
+        saved = os.stat(pp).st_mtime
+    except OSError:
+        return None
+    if saved <= made + slack:
+        return None
+    iso = lambda e: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(e))
+    return {"reportMadeAt": iso(made), "projectSavedAt": iso(saved), "secondsNewer": int(saved - made)}
+
+def stale_warning(doc):
+    st = report_staleness(doc)
+    if not st:
+        return []
+    return [{"code": "REPORT_OLDER_THAN_PROJECT", "message": "This report was made at %s UTC but the project was saved after that, at %s UTC, so it describes an older version of the project. Run the After Effects script on it again." % (st["reportMadeAt"].replace("T", " ")[:16], st["projectSavedAt"].replace("T", " ")[:16])}]
+PY_STALE_LIB
+
 # Max scrape JSON size accepted by ingest/lint (bytes). The scraper budgets ~5MB.
 PROJECT_OBSERVE_MAX_SCRAPE_BYTES=8388608
 # Max plugin directory entries enumerated by plugin.audit.
@@ -3887,12 +3917,19 @@ project_require_scrape_file() {
   return 0
 }
 
+# Runs python on stdin with the staleness helper in front of it.
+project_py_with_stale() {
+  local _main=""
+  IFS= read -r -d '' _main || true
+  printf '%s\n%s' "$MJ_PY_STALE" "$_main" | /usr/bin/python3 - 
+}
+
 # Runs the ingest engine on a scrape; prints the engine's JSON envelope. Shared by project.ingest and project.health.
 project_run_ingest() {
   local _path="$1"
   MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
-    /usr/bin/python3 - <<'PY_PROJECT_INGEST' 2>/dev/null
-import json, os, sys
+    project_py_with_stale <<'PY_PROJECT_INGEST' 2>/dev/null
+import json, os, sys, time
 
 def err(code, message):
     print(json.dumps({"ok": False, "code": code, "message": message}))
@@ -3991,6 +4028,7 @@ data = {
            if any(isinstance(c, dict) and c.get("layersTruncated") for c in doc["comps"]) else [])
         + ([{"code": "FOOTAGE_TRUNCATED", "message": "The scrape holds only the first footage items of a larger project."}] if doc.get("footageTruncated") else [])
         + ([{"code": "FOOTAGE_MISSING", "message": "Missing footage items: %d." % len(footage_missing)}] if footage_missing else [])
+        + stale_warning(doc)
     ),
     "sourceUnchanged": _ident(path) == _id0,
 }
@@ -4003,8 +4041,8 @@ project_run_lint() {
   local _path="$1"
   MJ_SCRAPE_PATH="$_path" MJ_SCRAPE_MAX_BYTES="$PROJECT_OBSERVE_MAX_SCRAPE_BYTES" \
     MJ_LINT_MAX_FINDINGS="$PROJECT_OBSERVE_MAX_FINDINGS" \
-    /usr/bin/python3 - <<'PY_EXPRESSION_LINT' 2>/dev/null
-import json, os, re, sys
+    project_py_with_stale <<'PY_EXPRESSION_LINT' 2>/dev/null
+import json, os, re, sys, time
 
 def err(code, message):
     print(json.dumps({"ok": False, "code": code, "message": message}))
@@ -4148,7 +4186,7 @@ data = {
     "findings": findings,
     "findingsTruncated": truncated,
     "teaching": {c: {"before": TEACH[c][2], "after": TEACH[c][3]} for c in sorted({f["code"] for f in findings}) if c in TEACH},
-    "_warnings": ([{"code": "FINDINGS_TRUNCATED", "message": "Only the first %d findings are listed." % max_findings}] if truncated else []),
+    "_warnings": ([{"code": "FINDINGS_TRUNCATED", "message": "Only the first %d findings are listed." % max_findings}] if truncated else []) + stale_warning(doc),
     "rules": ["E001", "E002", "W001", "W002", "W003", "I001"],
     "sourceUnchanged": _ident(path) == _id0,
 }
@@ -6674,7 +6712,7 @@ PY_FONTS_LIB
 studio_python() {
   local _main=""
   IFS= read -r -d '' _main || true
-  printf '%s\n%s\n%s' "$MJ_PY_PROTECT_LIB" "$MJ_PY_FONTS" "$_main" | /usr/bin/python3 - 2>/dev/null
+  printf '%s\n%s\n%s\n%s' "$MJ_PY_PROTECT_LIB" "$MJ_PY_STALE" "$MJ_PY_FONTS" "$_main" | /usr/bin/python3 - 2>/dev/null
 }
 
 handle_project_preflight() {
@@ -6747,14 +6785,15 @@ third = sorted(fx.values(), key=lambda r: r["matchName"])
 
 bad_fonts = [f for f in fonts if f["state"] != "installed"]
 problems = len(bad_fonts) + len(footage)
-warnings = []
+stale = report_staleness(d)
+warnings = stale_warning(d)
 if ae_missing is None:
     warnings.append({"code": "FONT_REPORT_UNAVAILABLE", "message": "This scrape has no After Effects missing-font report (scraper older than 1.1 or After Effects older than 24.0); font status comes from scanning this Mac's font folders only."})
 if capped:
     warnings.append({"code": "FONT_SCAN_CAPPED", "message": "Stopped after %d font files; some installed fonts may not have been seen." % FONT_MAX_FILES})
 print(json.dumps({"ok": True, "data": {
     "schema": "MJ_PREFLIGHT_1", "projectName": d.get("projectName"), "projectPath": d.get("projectPath"), "scrapedAt": d.get("scrapedAt"),
-    "ready": problems == 0, "problems": problems,
+    "ready": problems == 0 and not stale, "problems": problems, "reportStale": stale,
     "fonts": fonts, "fontsMissing": len(bad_fonts),
     "fontScan": {"dirs": scanned, "files": nfiles, "names": len(installed)},
     "footage": footage, "footageMissing": len(footage),

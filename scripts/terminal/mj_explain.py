@@ -346,8 +346,18 @@ def explain_scrape(d):
 FONT_STATE = {"missing": "missing (After Effects reported it)", "notFound": "not found on this Mac"}
 
 
+def stale_line(st):
+    when = lambda t: t.replace("T", " ")[:16] + " UTC"
+    return "The report was made %s, but the project was saved after that (%s). It describes an older version: run the After Effects script on it again." % (when(st["reportMadeAt"]), when(st["projectSavedAt"]))
+
+
 def explain_preflight(d):
-    out = ["%s: %s." % (d.get("projectName", "Project"), "ready to open on this Mac" if d.get("ready") else "%s before it opens cleanly" % plural(d["problems"], "thing to fix", "things to fix"))]
+    head = "ready to open on this Mac" if d.get("ready") else "%s before it opens cleanly" % plural(d["problems"], "thing to fix", "things to fix")
+    if d.get("reportStale") and not d["problems"]:
+        head = "cannot say yet: the report is older than the project"
+    out = ["%s: %s." % (d.get("projectName", "Project"), head)]
+    if d.get("reportStale"):
+        out.append("  " + stale_line(d["reportStale"]))
     for f in d.get("fonts", []):
         if f["state"] != "installed":
             where = f["uses"][0] if f.get("uses") else None
@@ -362,11 +372,16 @@ def explain_preflight(d):
 def explain_check(lint, health, pre):
     """mj check: one verdict from expression.lint, project.health and project.preflight data."""
     errs, warns = lint.get("errors", 0), lint.get("warnings", 0)
+    stale = pre.get("reportStale")
     fix = errs + pre.get("problems", 0)
     name = pre.get("projectName") or health.get("projectName") or "Project"
     verdict = "ready" if fix == 0 and warns == 0 else ("ready, with %s to look at" % plural(warns, "warning")) if fix == 0 else plural(fix, "thing to fix", "things to fix")
+    if stale:
+        verdict = "cannot say yet: this report is older than the project" if fix == 0 else verdict + ", and the report is older than the project"
     out = ["%s: %s." % (name, verdict), ""]
     mark = lambda ok: "  ok " if ok else "  !! "
+    if stale:
+        out.append("  !! Report: " + stale_line(stale))
     out.append(mark(errs == 0) + "Expressions: %s, %s." % (plural(errs, "error"), plural(warns, "warning")))
     out.append(mark(health.get("score", 0) >= 90) + "Health: %d out of 100 (%s)." % (health.get("score", 0), health.get("band", "?")))
     bad_fonts = [f["name"] for f in pre.get("fonts", []) if f["state"] != "installed"]
@@ -378,7 +393,7 @@ def explain_check(lint, health, pre):
         out.append("  ?? Third-party effects to confirm: %s." % names([e["matchName"] for e in tp]))
     if fix or warns:
         out += ["", "Details: mj lint, mj health, mj explain on the preflight (or mj check --details)."]
-    return out, fix == 0
+    return out, fix == 0 and not stale
 
 
 def explain_timeline(folder):
