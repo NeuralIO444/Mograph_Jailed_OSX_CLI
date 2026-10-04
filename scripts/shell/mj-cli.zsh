@@ -133,7 +133,12 @@ _mj_resolve_project() {
         out=$(_mj_find "$w" proj "$arg"); rc=$?
         if [ $rc -eq 0 ]; then print -r -- "$out"; return 0; fi
         if [ $rc -eq 65 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; print -r -- "$out" | /usr/bin/sed 's/^/  /' >&2; return 65; fi
-        print -u2 "mj: no project found for \"$arg\" in $w"
+        if [ $rc -eq 67 ]; then
+            print -u2 "mj: no project named \"$arg\" was found, but I stopped looking after $out folders in $w (it is very large)."
+            print -u2 "  Give the full path to the project, or choose a smaller projects folder:  mj setup"
+        else
+            print -u2 "mj: no project found for \"$arg\" in $w (looked in all its folders)"
+        fi
     else
         print -u2 "mj: this is not set up yet. Run:  mj setup"
         print -u2 "  (to find \"$arg\" by name it needs to know where your projects are; or give the full path to the file)"
@@ -167,7 +172,7 @@ _mj_resolve_scrape() {
 }
 
 # Newest scrape report of a project, by name (exact, else prefix, any case), or last / a report path.
-_mj_find() { /usr/bin/python3 "$_MJ_CLI_DIR/../terminal/mj_find.py" "$@"; }
+_mj_find() { MJ_FIND_CACHE="$([ -d "$(_mj_store)" ] && print -r -- "$(_mj_store)/projects-index.json")" /usr/bin/python3 "$_MJ_CLI_DIR/../terminal/mj_find.py" "$@"; }
 
 _mj_scrape_for() {
     local arg="${1:-last}" d f rc

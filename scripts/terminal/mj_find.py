@@ -9,7 +9,7 @@
 #
 # Prints the newest `count` (default 1) report paths, newest first. Exit: 0 found, 65 more than one project
 # matches (the names go to stderr), 66 none.
-import glob, json, os, re, sys, unicodedata
+import glob, json, os, re, sys, time, unicodedata
 
 
 def nfc(s):
@@ -19,30 +19,92 @@ def nfc(s):
 
 
 PROJECT_EXTS = (".aep", ".c4d")
+# Folders that hold things which are not the designer's projects: bundles, auto-saves, trash, caches.
+SKIP_SUFFIXES = (".app", ".photoslibrary", ".imovielibrary", ".fcpbundle", ".bundle", ".framework", ".lrlibrary", ".xcodeproj", ".c4dpack")
+SKIP_NAMES = {"node_modules", "__MACOSX"}
+LIMIT_ENTRIES = int(os.environ.get("MJ_FIND_MAX_ENTRIES", "400000"))
+LIMIT_SECONDS = float(os.environ.get("MJ_FIND_MAX_SECONDS", "10"))
+CACHE_SECONDS = 300
 
 
-def find_projects(folder, query, maxdepth=3):
-    """-> (exact_matches, prefix_matches), each a sorted list of paths."""
+def skip_dir(name, parent=""):
+    low = name.lower()
+    if name == "Library" and os.path.realpath(parent) == os.path.realpath(os.path.expanduser("~")):
+        return True                                           # ~/Library is the system's, not the designer's projects
+    return name.startswith(".") or name in SKIP_NAMES or low.endswith(SKIP_SUFFIXES) or "auto-save" in low
+
+
+def scan_projects(folder):
+    """Every .aep / .c4d under folder, at any depth. Does not follow links, skips bundles and auto-save folders,
+    and stops at a time or size limit (reported to the caller). -> (paths, folders_seen, hit_limit)"""
+    paths, seen, limited, t0 = [], 0, False, time.time()
+    for root, dirs, files in os.walk(folder):
+        dirs[:] = [d for d in dirs if not skip_dir(d, root)]
+        seen += 1
+        for fn in files:
+            if fn.lower().endswith(PROJECT_EXTS) and not fn.startswith("._") and not fn.startswith("."):
+                paths.append(os.path.join(root, fn))
+        if seen >= LIMIT_ENTRIES // 10 or time.time() - t0 > LIMIT_SECONDS:
+            limited = True
+            break
+    return paths, seen, limited
+
+
+def project_list(folder):
+    """-> (paths, folders_seen, hit_limit, from_cache). A short-lived list kept in the private store makes a second
+    lookup instant; a lookup that finds nothing rescans, so a project saved a moment ago is never missed."""
+    cache = os.environ.get("MJ_FIND_CACHE", "")
+    if cache:
+        try:
+            d = json.load(open(cache, encoding="utf-8"))
+            if d.get("folder") == folder and time.time() - d.get("built", 0) < CACHE_SECONDS and all(os.path.isfile(p) for p in d["paths"][:50]):
+                return d["paths"], d.get("seen", 0), d.get("limited", False), True
+        except (OSError, ValueError, KeyError):
+            pass
+    return rescan(folder, cache)
+
+
+def rescan(folder, cache):
+    paths, seen, limited = scan_projects(folder)
+    if cache and os.path.isdir(os.path.dirname(cache)):
+        try:
+            prev = 0
+            try:
+                prev = json.load(open(cache, encoding="utf-8")).get("scans", 0)
+            except (OSError, ValueError):
+                pass
+            tmp = "%s.%d" % (cache, os.getpid())
+            json.dump({"folder": folder, "built": time.time(), "paths": paths, "seen": seen, "limited": limited, "scans": prev + 1}, open(tmp, "w", encoding="utf-8"))
+            os.replace(tmp, cache)
+        except OSError:
+            pass
+    return paths, seen, limited, False
+
+
+def match_projects(paths, query):
     q = nfc(query)
     for ext in PROJECT_EXTS:
         if q.endswith(ext):
             q = q[: -len(ext)]
             break
     exact, prefix = [], []
-    base_depth = folder.rstrip("/").count("/")
-    for root, dirs, files in os.walk(folder):
-        if root.rstrip("/").count("/") - base_depth >= maxdepth - 1:
-            dirs[:] = []
-        for fn in files:
-            low = fn.lower()
-            if not low.endswith(PROJECT_EXTS):
-                continue
-            stem = nfc(os.path.splitext(fn)[0])
-            if stem == q:
-                exact.append(os.path.join(root, fn))
-            elif stem.startswith(q):
-                prefix.append(os.path.join(root, fn))
+    for p in paths:
+        stem = nfc(os.path.splitext(os.path.basename(p))[0])
+        if stem == q:
+            exact.append(p)
+        elif stem.startswith(q):
+            prefix.append(p)
     return sorted(exact), sorted(prefix)
+
+
+def find_projects(folder, query):
+    """-> (exact, prefix, folders_seen, hit_limit)"""
+    paths, seen, limited, cached = project_list(folder)
+    exact, prefix = match_projects(paths, query)
+    if not exact and not prefix and cached:                 # a cached list can be a few minutes old: look again before saying no
+        paths, seen, limited, _ = rescan(folder, os.environ.get("MJ_FIND_CACHE", ""))
+        exact, prefix = match_projects(paths, query)
+    return exact, prefix, seen, limited
 
 
 VERSION_RE = re.compile(r"^(.*)\.(\d{8}T\d{6}Z)\.([0-9a-f]{12})\.(aep|c4d)$")
@@ -66,13 +128,16 @@ def find_versions(folder, name, exact=False):
 
 def main(argv):
     if len(argv) >= 4 and argv[2] == "proj":
-        exact, prefix = find_projects(argv[1], argv[3])
+        exact, prefix, seen, limited = find_projects(argv[1], argv[3])
         if len(exact) == 1:
             print(exact[0]); return 0
         if len(prefix) == 1 and not exact:
             print(prefix[0]); return 0
         allhits = exact + prefix
         if not allhits:
+            if limited:
+                print("%d" % seen)
+                return 67
             return 66
         print("\n".join(allhits)); return 65
     if len(argv) >= 4 and argv[2] == "versions":
