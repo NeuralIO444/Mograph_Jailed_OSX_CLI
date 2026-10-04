@@ -147,6 +147,21 @@ def spark(t, vals, width):
 # -------------------------------------------------------------------- data ----
 
 
+UNSAFE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u00ad\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]")
+
+
+def scrub(v):
+    """Names and paths in the data come from projects and can carry terminal control codes or right-to-left overrides:
+    show them as visible escapes. The dashboard's own colours are added later, so they are unaffected."""
+    if isinstance(v, str):
+        return UNSAFE.sub(lambda m: "\\x%02x" % ord(m.group()) if ord(m.group()) < 256 else "\\u%04x" % ord(m.group()) if ord(m.group()) < 0x10000 else "\\U%08x" % ord(m.group()), v)
+    if isinstance(v, list):
+        return [scrub(x) for x in v]
+    if isinstance(v, dict):
+        return {k: scrub(x) for k, x in v.items()}
+    return v
+
+
 def call(op, **args):
     """One runtime request. Returns the response envelope, or None if the runtime is unusable."""
     if not os.path.isfile(CLI):
@@ -160,7 +175,7 @@ def call(op, **args):
                 f.write("arg.%s=%s\n" % (k, base64.b64encode(str(v).encode()).decode()))
         env = dict(os.environ)
         r = subprocess.run(["/bin/zsh", "-f", CLI, "--request", req], capture_output=True, text=True, timeout=60, env=env, stdin=subprocess.DEVNULL)
-        return json.loads(r.stdout)
+        return scrub(json.loads(r.stdout))
     except Exception:
         return None
     finally:

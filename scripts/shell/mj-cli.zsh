@@ -106,6 +106,8 @@ _mj_notify_cmd() {
 }
 
 # --- human commands ---------------------------------------------------------
+# Names and paths come from other people's projects: show control codes and right-to-left overrides as visible escapes.
+_mj_clean() { /usr/bin/python3 "$_MJ_CLI_DIR/../terminal/mj_explain.py" --clean; }
 _mj_explain() { /usr/bin/python3 "$_MJ_CLI_DIR/../terminal/mj_explain.py" "$@"; }
 
 # Newest file matching a glob in a folder.
@@ -132,7 +134,7 @@ _mj_resolve_project() {
     if [ -d "$w" ]; then
         out=$(_mj_find "$w" proj "$arg"); rc=$?
         if [ $rc -eq 0 ]; then print -r -- "$out"; return 0; fi
-        if [ $rc -eq 65 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; print -r -- "$out" | /usr/bin/sed 's/^/  /' >&2; return 65; fi
+        if [ $rc -eq 65 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; print -r -- "$out" | _mj_clean | /usr/bin/sed 's/^/  /' >&2; return 65; fi
         if [ $rc -eq 67 ]; then
             print -u2 "mj: no project named \"$arg\" was found, but I stopped looking after $out folders in $w (it is very large)."
             print -u2 "  Give the full path to the project, or choose a smaller projects folder:  mj setup"
@@ -168,7 +170,7 @@ _mj_resolve_scrape() {
         [ -n "$f" ] || { print -u2 "mj: there are no project reports in $d yet."; print -u2 "  In After Effects run the MographJailed script on a project (File > Scripts > Run Script File). To see which file:  mj scraper"; return 66; }
         print -r -- "$f"
     elif [ -f "$arg" ]; then print -r -- "${arg:A}"
-    else print -u2 "mj: no such receipt: $arg"; return 66; fi
+    else _mj_scrape_for "$arg"; fi              # not a file: a project name (lint, health and diff take names like check does)
 }
 
 # Newest scrape report of a project, by name (exact, else prefix, any case), or last / a report path.
@@ -180,7 +182,7 @@ _mj_scrape_for() {
     d=$(_mj_need_dir receipts_dir reports) || return $?
     f=$(_mj_find "$d" name "$arg" 1 2>"${TMPDIR:-/tmp}/mj-find.$$"); rc=$?
     if [ $rc -eq 0 ]; then /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; print -r -- "$f"; return 0; fi
-    if [ $rc -eq 65 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; /bin/cat "${TMPDIR:-/tmp}/mj-find.$$" >&2; /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; return 65; fi
+    if [ $rc -eq 65 ]; then print -u2 "mj: \"$arg\" matches more than one project; be more specific:"; _mj_clean < "${TMPDIR:-/tmp}/mj-find.$$" >&2; /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; return 65; fi
     /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"
     print -u2 "mj: no project report for \"$arg\" in $d yet."
     print -u2 "  In After Effects run the MographJailed script on it first (File > Scripts > Run Script File)."
@@ -204,8 +206,8 @@ _mj_comp_ids() {
         if [[ "$name" == \#<-> ]]; then ids+=("${name#\#}"); continue; fi
         id=$(_mj_find "$scrape" comp "$name"); rc=$?
         case $rc in
-            66) print -u2 "mj: no comp named \"$name\" in $(/usr/bin/jq -r .projectName "$scrape")"; print -u2 "  comps: ${(j:, :)${(f)id}}"; return 66 ;;
-            65) print -u2 "mj: more than one comp is named \"$name\"; give its id instead: ${(j: :)${(f)id}}"; return 65 ;;
+            66) { print -r -- "mj: no comp named \"$name\" in $(/usr/bin/jq -r .projectName "$scrape")"; print -r -- "  comps: ${(j:, :)${(f)id}}"; } | _mj_clean >&2; return 66 ;;
+            65) print -r -- "mj: more than one comp is named \"$name\"; give its id instead: ${(j: :)${(f)id}}" | _mj_clean >&2; return 65 ;;
         esac
         ids+=("$id")
     done
@@ -260,7 +262,7 @@ _mj_versions() {
         rows+=("$(printf '%-28s %s   %10s   %s' "$stem" "${when[1]}" "$hsize" "$hash")")
     done < <(_mj_find "$d" versions "$name")
     [ ${#rows} -gt 0 ] || { print "No versions${name:+ matching \"$name\"} in $d yet."; return 0; }
-    print "Versions in $d (newest first):"; printf '  %s\n' "${rows[@]}"
+    { print "Versions in $d (newest first):"; printf '  %s\n' "${rows[@]}"; } | _mj_clean
 }
 
 _mj_watch() {
@@ -274,7 +276,7 @@ _mj_watch() {
         status)
             v=$(mj_config_get versions_dir)
             if /bin/launchctl list 2>/dev/null | /usr/bin/grep -q "$label"; then print "Watcher: on  (versioning .aep and .c4d files in $(mj_config_get watch_dir))"; else print "Watcher: off  (turn on with: mj watch on)"; fi
-            if [ -r "$v/watcher.log" ]; then print "Recent activity:"; /usr/bin/tail -n 3 "$v/watcher.log" | /usr/bin/sed 's/^/  /'; fi ;;
+            if [ -r "$v/watcher.log" ]; then print "Recent activity:"; /usr/bin/tail -n 3 "$v/watcher.log" | _mj_clean | /usr/bin/sed 's/^/  /'; fi ;;
         *) print -u2 "usage: mj watch on|off|status"; return 64 ;;
     esac
 }
@@ -753,7 +755,7 @@ USAGE
             [ "${2:-}" = --all ] && max=50
             trd=$(_mj_need_dir receipts_dir reports) || return $?
             tout=$(_mj_find "$trd" name "$1" $max 2>"${TMPDIR:-/tmp}/mj-find.$$"); i=$?
-            if [ $i -eq 65 ]; then print -u2 "mj: \"$1\" matches more than one project; be more specific:"; /bin/cat "${TMPDIR:-/tmp}/mj-find.$$" >&2; /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; return 65; fi
+            if [ $i -eq 65 ]; then print -u2 "mj: \"$1\" matches more than one project; be more specific:"; _mj_clean < "${TMPDIR:-/tmp}/mj-find.$$" >&2; /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"; return 65; fi
             /bin/rm -f "${TMPDIR:-/tmp}/mj-find.$$"
             if [ $i -ne 0 ]; then print "Nothing recorded for \"$1\" yet. Run the MographJailed scraper on it in After Effects first."; return 0; fi
             trs=("${(@f)tout}"); i=0

@@ -7,6 +7,20 @@
 
 import json, os, re, sys, textwrap
 
+# Names in a project (comps, layers, fonts, files) are written by other people and can hold terminal control codes,
+# hyperlinks, carriage returns or right-to-left overrides that rewrite what the screen shows. Everything printed
+# for a person goes through clean_text(): such characters are shown as visible escapes (\x1b, \u202e), not obeyed.
+UNSAFE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u00ad\u061c\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f]")
+
+
+def clean_text(s):
+    return UNSAFE.sub(lambda m: "\\x%02x" % ord(m.group()) if ord(m.group()) < 256 else "\\u%04x" % ord(m.group()) if ord(m.group()) < 0x10000 else "\\U%08x" % ord(m.group()), s)
+
+
+def out(text):
+    print(clean_text(text))
+
+
 ROOT = os.environ.get("MOGRAPHJAILED_ROOT") or os.path.join(os.path.expanduser("~"), "Documents", "MographJailed")
 HERE = os.path.dirname(os.path.abspath(__file__))
 ERRORS_MD = next((p for p in (os.path.join(HERE, "..", "..", "docs", "man", "errors.md"), os.path.join(ROOT, "docs", "man", "errors.md")) if os.path.isfile(p)), None)
@@ -582,6 +596,9 @@ def explain(doc):
 
 
 def main(argv):
+    if len(argv) == 2 and argv[1] == "--clean":
+        sys.stdout.write(clean_text(sys.stdin.read()))
+        return 0
     if len(argv) == 5 and argv[1] == "--check":
         try:
             docs = [json.load(open(a, encoding="utf-8")) for a in argv[2:]]
@@ -590,13 +607,13 @@ def main(argv):
             return 66
         for doc in docs:
             if not doc.get("ok"):
-                print("\n".join(explain_error(doc)))
+                out("\n".join(explain_error(doc)))
                 return 65
         lines, ok = explain_check(*[doc["data"] for doc in docs])
-        print("\n".join(lines))
+        out("\n".join(lines))
         return 0 if ok else 1
     if len(argv) == 3 and argv[1] == "--timeline":
-        print("\n".join(explain_timeline(argv[2])))
+        out("\n".join(explain_timeline(argv[2])))
         return 0
     if len(argv) != 2:
         print("usage: mj_explain.py <file | ->", file=sys.stderr)
@@ -612,7 +629,7 @@ def main(argv):
         print("This is not a receipt: it is not valid JSON.", file=sys.stderr)
         return 65
     lines, ok = explain(doc)
-    print("\n".join(lines))
+    out("\n".join(lines))
     return 0 if ok else 65
 
 
