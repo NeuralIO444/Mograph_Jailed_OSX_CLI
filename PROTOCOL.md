@@ -377,3 +377,13 @@ Seven additive operations; no existing contract changed.
 | `project.jobcheck` | `path`* (job folder) | nothing | `MJ_AE_JOB_CHECK_1` |
 
 `spec` is a new argument name. A job folder holds `before.aep`, `plan.json` (`MJ_AE_JOB_1`) and `run.jsx`; After Effects writes `result.aep` and `result.json` (`MJ_AE_JOB_RESULT_1`). `cache.clean` has the new mutation class `CACHE_DELETE`. New error codes: `INVALID_SPEC` (65), `HOST_BUSY` (74), `POLICY_DENIED` (77); new warnings are listed in `docs/man/errors.md`.
+
+## Dimension prong (additive)
+
+Protocol v1 additionally allowlists `dimension.probe`, `dimension.safezone`, and `dimension.conform`. No existing command schema is reinterpreted. `project.conform` remains the studio naming plan; it does not call Dimension.
+
+- `dimension.probe`: no arguments. Runs `dimension --json catalog profiles`.
+- `dimension.safezone`: required `spec` (preset id: letters, digits, `_`, `:`, `-`). Runs `dimension --json safe-zone plan --preset <spec>`.
+- `dimension.conform`: required `path` (existing manifest file) and `spec` (preset id). Runs `dimension --json conform --source <path> --preset <spec>`.
+
+The binary is `dimension` on `PATH`, or `MJ_DIMENSION_BIN` if that path is executable. Argument values stay canonical Base64. The engine is not given a shell; argv is fixed. A non-JSON stdout is `DIMENSION_RESULT_INVALID`. A missing binary is `UNSUPPORTED` (exit 69).

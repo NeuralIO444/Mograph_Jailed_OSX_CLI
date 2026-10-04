@@ -129,6 +129,9 @@ dispatch_request() {
     project.preflight) handle_project_preflight ;;
     report.tech) handle_report_tech ;;
     package.create) handle_package_create ;;
+    dimension.probe) handle_dimension_probe ;;
+    dimension.safezone) handle_dimension_safezone ;;
+    dimension.conform) handle_dimension_conform ;;
     *)
       set_error "NOT_IMPLEMENTED" "Command is recognized by protocol but not implemented in this build."
       emit_error_response "$REQUEST_COMMAND" "$REQUEST_ID"
