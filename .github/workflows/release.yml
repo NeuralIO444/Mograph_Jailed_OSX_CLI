@@ -3,19 +3,9 @@ name: Release
 on:
   push:
     tags: ["v*", "[0-9]*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Existing tag to release, e.g. 0.4.0-dev.3"
-        required: true
-        type: string
 
 permissions:
   contents: write
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   release:
@@ -23,74 +13,31 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
-          fetch-depth: 0
-      - name: Resolve tag
-        id: tag
-        run: |
-          set -eu
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            tag="${{ inputs.tag }}"
-          else
-            tag="$GITHUB_REF_NAME"
-          fi
-          git rev-parse -q --verify "refs/tags/$tag" >/dev/null || {
-            echo "::error::tag $tag is not in this checkout"; exit 1
-          }
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Build the release zip
-        env:
-          MJ_RELEASE_KEY: ${{ secrets.MJ_RELEASE_KEY }}
-          MJ_RELEASE_KEY_PUB: ${{ secrets.MJ_RELEASE_KEY_PUB }}
         run: |
           set -eu
-          command -v zip >/dev/null
-          command -v shasum >/dev/null
           sh scripts/build.zsh
           grep -q 'handle_dimension_probe' dist/mograph-jailed.zsh
-          if [ -n "$MJ_RELEASE_KEY" ] && [ -n "$MJ_RELEASE_KEY_PUB" ]; then
-            printf '%s\n' "$MJ_RELEASE_KEY" > "$RUNNER_TEMP/mj_release"
-            printf '%s\n' "$MJ_RELEASE_KEY_PUB" > "$RUNNER_TEMP/mj_release.pub"
-            chmod 600 "$RUNNER_TEMP/mj_release" "$RUNNER_TEMP/mj_release.pub"
-            export MJ_RELEASE_KEY="$RUNNER_TEMP/mj_release"
-            echo "signing with MJ_RELEASE_KEY"
-          else
-            echo "signing skipped: set both MJ_RELEASE_KEY and MJ_RELEASE_KEY_PUB to sign"
-            unset MJ_RELEASE_KEY
-          fi
           sh scripts/make-release.sh release
-          zip=$(echo release/MographJailed-*.zip)
-          test -s "$zip"
+          test -s release/MographJailed-*.zip
           ( cd release && sha256sum MographJailed-*.zip > SHA256SUMS )
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -eu
+          tag="$GITHUB_REF_NAME"
           zip=$(echo release/MographJailed-*.zip)
           pre=""
-          case "$TAG" in
+          case "$tag" in
             *dev*|*alpha*|*beta*|*rc*) pre="--prerelease" ;;
           esac
-          notes=$(mktemp)
-          cat > "$notes" <<NOTES
-Zero-install toolkit. \`mj\` is the launch screen. \`mj-man\` is the local help.
-
-The zip is Install/Uninstall plus payload/. It is signed only when both MJ_RELEASE_KEY and MJ_RELEASE_KEY_PUB are set.
-
-Dimension prong calls Dimension_CLI: dimension.probe, dimension.safezone, dimension.conform.
-
-SHA-256 is in the attached SHA256SUMS.
-NOTES
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG already exists; uploading assets"
-            gh release upload "$TAG" "$zip" release/SHA256SUMS --clobber
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$zip" release/SHA256SUMS --clobber
           else
-            gh release create "$TAG" "$zip" release/SHA256SUMS \
-              --title "MographJailed $TAG" \
+            gh release create "$tag" "$zip" release/SHA256SUMS \
+              --title "MographJailed $tag" \
               $pre \
-              --notes-file "$notes" \
-              --verify-tag
+              --verify-tag \
+              --notes "Install/Uninstall plus payload. Dimension prong calls a local dimension binary: probe, safezone, conform. No network."
           fi

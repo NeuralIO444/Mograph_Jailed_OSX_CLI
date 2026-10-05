@@ -38,3 +38,5 @@ No sudo. No package manager. No Xcode requirement. No background daemon. No arbi
 Topics: `mj-man mj`, `mj-man render`, `mj-man frames`, `mj-man audit`, `mj-man library`.
 
 Use `mj-man commands` for the public operation list.
+
+Tutorials: `docs/tutorials/`. No network prong. Dimension is local.

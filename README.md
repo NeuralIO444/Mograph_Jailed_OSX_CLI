@@ -168,3 +168,12 @@ No generic `shell.execute`, `db.query`, or similar escape hatch is introduced.
 - `tests/FRAMEKIT_M2_MAC_QUALIFICATION.md`
 - `docs/integrations/MJ_Organize_Native_Handoff.md`
 - `tests/STDLIB_1_MAC_QUALIFICATION.md`
+
+
+## Tutorials
+
+- [Install and the Dimension binary](docs/tutorials/01-install.md)
+- [Hosts and the real render gate](docs/tutorials/02-hosts.md)
+- [Cinema 4D reports, and the jail](docs/tutorials/03-c4d-and-jail.md)
+
+Dimension_CLI 1.0.0 is a local binary. This tool does not call it over the network.
