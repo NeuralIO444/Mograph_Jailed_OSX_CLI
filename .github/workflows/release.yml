@@ -18,7 +18,7 @@ jobs:
           set -eu
           sh scripts/build.zsh
           grep -q 'handle_dimension_probe' dist/mograph-jailed.zsh
-          sh scripts/make-release.sh release
+          sh scripts/make-release.sh "$PWD/release"
           test -s release/MographJailed-*.zip
           ( cd release && sha256sum MographJailed-*.zip > SHA256SUMS )
       - name: Publish GitHub Release
